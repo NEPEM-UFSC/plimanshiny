@@ -24,7 +24,8 @@ The development version of `plimanshiny` can be installed from
 
 ``` r
 install.packages("pak")
-pak::pkg_install("TiagoOlivoto/plimanshiny")
+pak::pkg_install("NEPEM-UFSC/pliman")
+pak::pkg_install("NEPEM-UFSC/plimanshiny")
 ```
 
 *Note*: If you are a Windows user, you should also first download and
