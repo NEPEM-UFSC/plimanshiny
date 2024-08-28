@@ -1,0 +1,64 @@
+Package: plimanshiny
+Title: A shiny app for the pliman package
+Version: 0.0.0.9000
+Authors@R: 
+    person("Tiago", "Olivoto", , "tiagoolivoto@gmail.com", role = c("aut", "cre"))
+Description: provides an interactive Shiny-based graphical user interface
+    for the pliman package, facilitating user-friendly access to advanced
+    plant image analysis tools without the need for extensive programming
+    knowledge. This package integrates a variety of functionalities for
+    high-throughput phenotyping, including but not limited to orthomosaic
+    analysis from drone and satellite imagery, shapefile creation and
+    handling, time series analysis, image analysis, and phytopathometry,
+    into a cohesive and intuitive application.
+License: MIT + file LICENSE
+Imports: 
+    bs4Dash,
+    config (>= 0.3.2),
+    datamods,
+    doFuture,
+    dplyr,
+    drc,
+    esquisse,
+    exactextractr,
+    fields,
+    foreach,
+    future,
+    ggplot2,
+    glue,
+    golem (>= 0.4.1),
+    graphics,
+    grDevices,
+    histoslider,
+    leaflet,
+    leaflet.extras2,
+    leafsync,
+    magick,
+    mapedit,
+    mapview (>= 2.11.2),
+    parallel,
+    pliman,
+    plotly,
+    purrr,
+    reactable,
+    rintrojs,
+    scales,
+    segmented,
+    sf,
+    shiny (>= 1.7.5.1),
+    shinycssloaders,
+    shinyFiles,
+    shinyWidgets,
+    sparkline,
+    terra,
+    tibble,
+    tidyr,
+    tidyterra,
+    utils,
+    waiter
+Remotes: 
+    TiagoOlivoto/pliman
+Config/testthat/edition: 3
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.3.2
