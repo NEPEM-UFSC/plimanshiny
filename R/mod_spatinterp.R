@@ -101,7 +101,14 @@ mod_spatinterp_ui <- function(id){
               ns("interpolate"),
               label = "Interpolate",
               icon = icon("check")
+            ),
+            conditionalPanel(
+              condition = "input.interpolate%2==1", ns = ns,
+              hl(),
+              mod_download_mosaic_ui(ns("downloadinterp"), "Download Raster")
+
             )
+
           )
         )
       ),
@@ -143,7 +150,7 @@ mod_spatinterp_ui <- function(id){
                   value = 100,
                 )
               ),
-              col_8(
+              col_6(
                 pickerpalette(id, "colorpalette", selected = "RdYlGn"),
               ),
               col_2(
@@ -155,6 +162,11 @@ mod_spatinterp_ui <- function(id){
                   status = "success",
                   animation = "rotate"
                 )
+              ),
+              col_2(
+                downloadBttn(ns("downloadinterp"),
+                             label = "Take a shot",
+                             style = "pill")
               )
             ),
             plotOutput(ns("interpplot"),  height = "660px") |> add_spinner()
@@ -184,7 +196,6 @@ mod_spatinterp_server <- function(id, dfs, shapefile){
 
     dfactive <- reactiveValues()
     observeEvent(input$dfinterp, {
-      req(input$dfinterp)
       if(input$dfinterp != "none"){
         if(input$dforshape == "data.frame"){
           dfactive$df <- dfs[[input$dfinterp]]$data |> convert_numeric_cols()
@@ -248,6 +259,50 @@ mod_spatinterp_server <- function(id, dfs, shapefile){
                         col = return_colors(input$colorpalette, reverse = input$revert, n = input$colnumber))
 
       })
+      output$downloadinterp <- downloadHandler(
+        filename = "surface.jpg",
+        content = function(file) {
+          jpeg(file, height = 1280, width = 1280)
+          fields::surface(fitted$mod,
+                          asp = 1,
+                          type=ifelse(input$contours, "C", "I"),
+                          nx = input$resx,
+                          ny = input$resy,
+                          xlab = "Longitute (UTM)",
+                          ylab = "Latitude (UTM)",
+                          col = return_colors(input$colorpalette, reverse = input$revert, n = input$colnumber))
+          dev.off()
+        }
+      )
+
+
+      xy <- cbind(x, y)
+      # Create a grid for predictions
+      grid_x <- seq(min(xy[, 1]), max(xy[, 1]), length.out = input$resx)
+      grid_y <- seq(min(xy[, 2]), max(xy[, 2]), length.out = input$resy)
+
+      grid <- expand.grid(grid_x, grid_y)
+
+      # Predict using the fitted TPS model
+      predictions <- predict(fitted$mod, grid)
+
+      # Reshape the predictions to match the grid
+      z_matrix <- matrix(predictions,
+                         nrow = length(grid_x),
+                         ncol = length(grid_y),
+                         byrow = TRUE)
+
+      # Convert to a SpatRaster
+      rast <- terra::rast(nrows = length(grid_y),
+                          ncols = length(grid_x),
+                          xmin = min(grid_x),
+                          xmax = max(grid_x),
+                          ymin = min(grid_y),
+                          ymax = max(grid_y))
+      terra::values(rast) <- z_matrix
+      mod_download_mosaic_server("downloadinterp", rast)
+
+
 
     })
 

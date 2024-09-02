@@ -400,11 +400,9 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
             )
           }
         }
-      }
-      if (input$showmosaic == "bands") {
+      } else if (input$showmosaic == "bands") {
         terra::plot(mosaic_data[[input$mosaictoanalyze]]$data)
-      }
-      if (input$showmosaic == "hist") {
+      } else {
         terra::hist(mosaic_data[[input$mosaictoanalyze]]$data)
       }
     })
