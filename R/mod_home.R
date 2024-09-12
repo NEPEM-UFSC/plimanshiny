@@ -58,7 +58,6 @@ mod_home_ui <- function(id){
           icon = icon("code-compare")
         ),
         # Add a div to display messages
-        div(id = NS("example", "message"), "Message will appear here."),
 
         # Include custom JavaScript
         tags$script(HTML("
@@ -66,7 +65,6 @@ mod_home_ui <- function(id){
     function showAlert() {
       alert('Button clicked!');
       // You can also manipulate DOM elements, e.g., change text
-      document.getElementById('example-message').innerHTML = 'Button was clicked!';
     }
 
     // Attach the JavaScript function to the Shiny button click event

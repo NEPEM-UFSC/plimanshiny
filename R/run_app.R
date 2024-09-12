@@ -15,9 +15,10 @@
 #' @importFrom utils data stack write.csv
 #' @importFrom future plan multisession
 #' @importFrom doFuture `%dofuture%`
-#' @import shinyWidgets mapview leaflet mapedit sf rintrojs leafsync esquisse waiter shinycssloaders ggplot2 shinyFiles foreach histoslider tidyterra datamods reactable drc shinyjs
+#' @import shinyWidgets mapview leaflet mapedit sf rintrojs leafsync esquisse waiter shinycssloaders ggplot2 shinyFiles foreach histoslider tidyterra datamods reactable drc
 #' @rawNamespace import(bs4Dash, except = c(progressBar, insertTab, actionButton, updateTabsetPanel, column, tabsetPanel, tabPanel, navbarMenu))
 #' @rawNamespace import(terra, except = c(panel, shift, distance))
+#' @rawNamespace import(shinyjs, except = c(alert, runExample, click))
 #' @rawNamespace import(fields, except = c(addLegend, describe))
 #' @rawNamespace import(purrr, except = c(accumulate, when))
 #' @rawNamespace import(leaflet.extras2, except = c(menuItem, addSpinner))
