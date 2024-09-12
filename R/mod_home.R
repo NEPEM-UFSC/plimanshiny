@@ -61,18 +61,38 @@ mod_home_ui <- function(id){
         div(id = NS("example", "message"), "Message will appear here."),
 
         # Include custom JavaScript
-        # Include custom JavaScript
         tags$script(HTML("
-    // JavaScript function to run when the button is clicked
-    function showAlert() {
-      alert('Button clicked!');
-      // You can also manipulate DOM elements, e.g., change text
-      document.getElementById('example-message').innerHTML = 'Button was clicked!';
+  const fetchLatestVersion = async () => {
+    try {
+      const response = await fetch('https://nepemverse.vercel.app/latest-version/pliman-shiny');
+      const data = await response.json();
+      return data.latest_version;
+    } catch (error) {
+      console.error('Error fetching the latest version:', error);
+      return null;
     }
+  };
+  const CheckUpdates = async () => {
+    try {
+      const latestVersion = await fetchLatestVersion();
+      console.log('Latest version:', latestVersion);
+      if (latestVersion) {
+        let currentVersion = '1.0.0'
+        if (latestVersion == currentVersion) {
+              document.getElementById('example-message').innerHTML = 'The application is up to date';
+        } else {
+          document.getElementById('example-message').innerHTML = 'The application is outdated';
+          }
 
-    // Attach the JavaScript function to the Shiny button click event
+      }
+        }
+    catch (error) {
+        console.error('Error checking for updates:', error);
+        document.getElementById('example-message').innerHTML = 'Error while checking for updates';
+        }
+};
     $(document).on('click', '#example-checkupdate', function() {
-      showAlert();
+      CheckUpdates();
     });
   "))
       )
