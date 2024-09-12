@@ -72,7 +72,7 @@ app_server <- function(input, output, session) {
   mod_dfjoin_server("dfjoin_1", dfs, shapefile)
 
   # Geostatistics
-  mod_spatinterp_server("spatinterp_1", dfs, shapefile)
+  # mod_spatinterp_server("spatinterp_1", dfs, shapefile)
 
   # Drone traits
   mod_matanalyze_server("matanalyze_1", dfs, shapefile, basemap)
