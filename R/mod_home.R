@@ -58,6 +58,24 @@ mod_home_ui <- function(id){
           icon = icon("code-compare")
         ),
 
+        tags$head(
+          # Include Font Awesome for icons and additional CSS for shadow effects
+          tags$link(rel = "stylesheet", href = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css"),
+          tags$style(HTML("
+    .modal-content {
+      box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+    }
+    .icon-center {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 4em; /* Five times larger */
+      color: orange;
+      margin-top: -20px; /* Adjust as needed to position correctly */
+    }
+  "))
+        ),
+
         # Bootstrap modal for popup message
         tags$div(
           class = "modal fade", id = NS("example", "messageModal"), tabindex = "-1", role = "dialog",
@@ -74,7 +92,15 @@ mod_home_ui <- function(id){
               ),
               tags$div(
                 class = "modal-body",
-                p(id = NS("example", "popupMessage"), "Message will appear here in the popup.")
+                # Center the icon at the top and allow its class to change
+                tags$div(class = "icon-center",
+                         tags$i(id = "example-icon", class = "fas fa-exclamation-triangle")  # Initial icon class with correct ID
+                ),
+                # Message text below the icon
+                p(id = NS("example", "popupMessage"),
+                  "The application is outdated. Use the following command to install the latest version from GitHub: ",
+                  code("pak::pkg_install(\"NEPEM-UFSC/plimanshiny\")")
+                )
               ),
               tags$div(
                 class = "modal-footer",
@@ -84,6 +110,8 @@ mod_home_ui <- function(id){
           )
         ),
 
+
+        # Include custom JavaScript
         # Include custom JavaScript
         tags$script(HTML("
     const fetchCurrentVersion = async () => {
@@ -108,6 +136,16 @@ mod_home_ui <- function(id){
       }
     };
 
+    // Function to update the icon based on the result
+    const updateIcon = (iconClass) => {
+      const iconElement = document.getElementById('example-icon');
+      if (iconElement) {
+        iconElement.className = iconClass;  // Update icon class
+      } else {
+        console.error('Icon element not found');
+      }
+    };
+
     const CheckUpdates = async () => {
       try {
         const latestVersion = await fetchLatestVersion();
@@ -115,23 +153,32 @@ mod_home_ui <- function(id){
         console.log('Latest version:', latestVersion);
         console.log('Current version:', currentVersion);
         let message = '';
+        let iconClass = '';
+
         if (latestVersion && currentVersion) {
           if (latestVersion === currentVersion) {
-            message = 'The application is up to date';
+            message = 'The application is up to date.';
+            iconClass = 'fas fa-check-circle text-success';  // Green checkmark icon for up-to-date
           } else {
-            message = 'The application is outdated';
+            message = 'The application is outdated. Use the following command to install the latest version from GitHub: pak::pkg_install(\"NEPEM-UFSC/plimanshiny\")';
+            iconClass = 'fas fa-exclamation-triangle text-warning';  // Yellow warning icon for outdated
           }
         } else {
           message = 'Error while checking for updates';
+          iconClass = 'fas fa-times-circle text-danger';  // Red error icon for errors
         }
+
         // Update the popup modal with the message
         document.getElementById('example-popupMessage').innerHTML = message;
+        // Update the icon
+        updateIcon(iconClass);
         // Show the modal
         $('#example-messageModal').modal('show');
       } catch (error) {
         console.error('Error checking for updates:', error);
         let errorMessage = 'Error while checking for updates';
         document.getElementById('example-popupMessage').innerHTML = errorMessage;
+        updateIcon('fas fa-times-circle text-danger');  // Red error icon for errors
         $('#example-messageModal').modal('show');
       }
     };
@@ -140,7 +187,7 @@ mod_home_ui <- function(id){
     $(document).on('click', '#example-checkupdate', function() {
       CheckUpdates();
     });
-  "))
+"))
 
 
       )
@@ -185,19 +232,20 @@ mod_home_server <- function(id){
                 "Department of Plant Science", br(),
                 "Federal University of Santa Catarina", br(), br(),
                 h2("Contribution"),
-                a("Dr. Leonardo Volpato", href = "https://www.linkedin.com/in/leonardo-volpato/", target = "_blank"), br(),br(),br(),
+                a("Matheus Lopes Machado", href = "https://www.linkedin.com/in/matheus-lopesma/", target = "_blank"), br(),
+                a("Dr. Leonardo Volpato", href = "https://www.linkedin.com/in/leonardo-volpato/", target = "_blank"), br(),br(),
                 fluidRow(
                   col_6(
                     shiny::actionButton(inputId= ns("gitpliman"),
                                         label="pliman",
                                         icon = icon("github"),
-                                        onclick ="window.open('https://github.com/TiagoOlivoto/pliman', '_blank')"),
+                                        onclick ="window.open('https://github.com/NEPEM-UFSC/pliman', '_blank')"),
                   ),
                   col_6(
                     shiny::actionButton(inputId= ns("gitplimanshiny"),
                                         label="plimanshiny",
                                         icon = icon("github"),
-                                        onclick ="window.open('https://github.com/TiagoOlivoto/plimanshiny', '_blank')"),
+                                        onclick ="window.open('https://github.com/NEPEM-UFSC/plimanshiny', '_blank')"),
                   )
                 )
               )
