@@ -57,44 +57,92 @@ mod_home_ui <- function(id){
           color = "success",
           icon = icon("code-compare")
         ),
-        # Add a div to display messages
-        div(id = NS("example", "message"), "Message will appear here."),
+
+        # Bootstrap modal for popup message
+        tags$div(
+          class = "modal fade", id = NS("example", "messageModal"), tabindex = "-1", role = "dialog",
+          tags$div(
+            class = "modal-dialog", role = "document",
+            tags$div(
+              class = "modal-content",
+              tags$div(
+                class = "modal-header",
+                tags$h5(class = "modal-title", "Update Check Result"),
+                tags$button(type = "button", class = "close", `data-dismiss` = "modal", `aria-label` = "Close",
+                            tags$span(`aria-hidden` = "true", HTML("&times;"))
+                )
+              ),
+              tags$div(
+                class = "modal-body",
+                p(id = NS("example", "popupMessage"), "Message will appear here in the popup.")
+              ),
+              tags$div(
+                class = "modal-footer",
+                tags$button(type = "button", class = "btn btn-secondary", `data-dismiss` = "modal", "Close")
+              )
+            )
+          )
+        ),
 
         # Include custom JavaScript
         tags$script(HTML("
-  const fetchLatestVersion = async () => {
-    try {
-      const response = await fetch('https://nepemverse.vercel.app/latest-version/pliman-shiny');
-      const data = await response.json();
-      return data.latest_version;
-    } catch (error) {
-      console.error('Error fetching the latest version:', error);
-      return null;
-    }
-  };
-  const CheckUpdates = async () => {
-    try {
-      const latestVersion = await fetchLatestVersion();
-      console.log('Latest version:', latestVersion);
-      if (latestVersion) {
-        let currentVersion = '1.0.0'
-        if (latestVersion == currentVersion) {
-              document.getElementById('example-message').innerHTML = 'The application is up to date';
-        } else {
-          document.getElementById('example-message').innerHTML = 'The application is outdated';
-          }
-
+    const fetchCurrentVersion = async () => {
+      try {
+        const response = await fetch('/myjson/version.json');  // Adjust path to match resource path
+        const data = await response.json();
+        return data.version;
+      } catch (error) {
+        console.error('Error fetching the current version:', error);
+        return null;
       }
+    };
+
+    const fetchLatestVersion = async () => {
+      try {
+        const response = await fetch('https://nepemverse.vercel.app/latest-version/pliman-shiny');
+        const data = await response.json();
+        return data.latest_version;
+      } catch (error) {
+        console.error('Error fetching the latest version:', error);
+        return null;
+      }
+    };
+
+    const CheckUpdates = async () => {
+      try {
+        const latestVersion = await fetchLatestVersion();
+        const currentVersion = await fetchCurrentVersion();
+        console.log('Latest version:', latestVersion);
+        console.log('Current version:', currentVersion);
+        let message = '';
+        if (latestVersion && currentVersion) {
+          if (latestVersion === currentVersion) {
+            message = 'The application is up to date';
+          } else {
+            message = 'The application is outdated';
+          }
+        } else {
+          message = 'Error while checking for updates';
         }
-    catch (error) {
+        // Update the popup modal with the message
+        document.getElementById('example-popupMessage').innerHTML = message;
+        // Show the modal
+        $('#example-messageModal').modal('show');
+      } catch (error) {
         console.error('Error checking for updates:', error);
-        document.getElementById('example-message').innerHTML = 'Error while checking for updates';
-        }
-};
+        let errorMessage = 'Error while checking for updates';
+        document.getElementById('example-popupMessage').innerHTML = errorMessage;
+        $('#example-messageModal').modal('show');
+      }
+    };
+
+    // Attach the CheckUpdates function to the button click event
     $(document).on('click', '#example-checkupdate', function() {
       CheckUpdates();
     });
   "))
+
+
       )
     )
   )
@@ -106,6 +154,10 @@ mod_home_ui <- function(id){
 mod_home_server <- function(id){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
+
+    json_file_path <- system.file("app/www/version.json", package = "plimanshiny", mustWork = TRUE)
+    addResourcePath('myjson', dirname(json_file_path))
+
 
     observeEvent(input$about, {
       showModal(
