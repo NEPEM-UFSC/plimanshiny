@@ -432,7 +432,8 @@ golem_add_external_resources <- function() {
       app_title = "plimanshiny"
     ),
     rintrojs::introjsUI(),
-    waiter::use_waiter()
+    waiter::use_waiter(),
+    shinyjs::useShinyjs()
     # Add here other external resources
     # for example, you can add shinyalert::useShinyalert()
   )

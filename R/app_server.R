@@ -7,7 +7,6 @@
 app_server <- function(input, output, session) {
   # Home
   mod_home_server("home_1")
-
   # Mosaic analysis
   mosaic_data <- reactiveValues()
   r <- reactiveValues(r = 1)
@@ -82,7 +81,6 @@ app_server <- function(input, output, session) {
   # Tools
   mod_utmzonesel_server("utmzonesel_1")
   mod_geometricmeasures_server("geometricmeasures_1", shapefile)
-
 }
 
 

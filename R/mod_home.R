@@ -50,7 +50,30 @@ mod_home_ui <- function(id){
           label = "Similar tools",
           color = "success",
           icon = icon("screwdriver-wrench")
-        )
+        ),
+        actionBttn(
+          inputId = NS("example", "checkupdate"),  # Ensure proper namespacing
+          label = "Check for updates",
+          color = "success",
+          icon = icon("code-compare")
+        ),
+        # Add a div to display messages
+        div(id = NS("example", "message"), "Message will appear here."),
+
+        # Include custom JavaScript
+        tags$script(HTML("
+    // JavaScript function to run when the button is clicked
+    function showAlert() {
+      alert('Button clicked!');
+      // You can also manipulate DOM elements, e.g., change text
+      document.getElementById('example-message').innerHTML = 'Button was clicked!';
+    }
+
+    // Attach the JavaScript function to the Shiny button click event
+    $(document).on('click', '#example-checkupdate', function() {
+      showAlert();
+    });
+  "))
       )
     )
   )
@@ -151,8 +174,12 @@ mod_home_server <- function(id){
           easyClose = TRUE,
           size = "xl"
         )
+
+
+
       )
     })
+
 
   })
 }
