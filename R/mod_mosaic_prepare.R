@@ -331,14 +331,14 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
       activemosaic$name <- input$mosaictoanalyze
       nl <- terra::nlyr(mosaic_data[[input$mosaictoanalyze]]$data)
       updateSelectInput(session, "r_band",
-                        choices = 1:nl,
+                        choices = paste0(c("NA", paste(1:nl))),
                         selected = "1")
       updateSelectInput(session, "g_band",
-                        choices = 1:nl,
-                        selected = "2")
+                        choices = paste0(c("NA", paste(1:nl))),
+                        selected = ifelse(nl > 1, "2", "NA"))
       updateSelectInput(session, "b_band",
-                        choices = 1:nl,
-                        selected = "3")
+                        choices = paste0(c("NA", paste(1:nl))),
+                        selected = ifelse(nl > 2, "3", "NA"))
       updateSelectInput(session, "re_band",
                         choices = paste0(c("NA", paste(1:nl))))
       updateSelectInput(session, "nir_band",
