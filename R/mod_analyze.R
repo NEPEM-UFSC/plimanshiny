@@ -263,6 +263,20 @@ mod_analyze_ui <- function(id){
                                numericInput(ns("filterval"),
                                             label = "Median filter",
                                             value = 2),
+                             ),
+                             prettyCheckbox(
+                               inputId = ns("opening"),
+                               label = "Opening",
+                               value = FALSE,
+                               icon = icon("check"),
+                               status = "success",
+                               animation = "rotate"
+                             ),
+                             conditionalPanel(
+                               condition = "input.opening == true", ns = ns,
+                               numericInput(ns("openingval"),
+                                            label = "Opening",
+                                            value = 2),
                              )
                            )
                   )
@@ -952,6 +966,7 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
                            include_if = input$includeif,
                            threshold = ifelse(input$threshold == "Otsu", "Otsu", input$threshvalue),
                            filter = ifelse(input$filter, input$filterval, FALSE),
+                           opening = ifelse(input$opening, input$openingval, FALSE),
                            lower_noise = input$lower_noise,
                            lower_size = lower_size,
                            upper_size = upper_size,
@@ -1027,6 +1042,7 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
                                include_if = input$includeif,
                                threshold = ifelse(input$threshold == "Otsu", "Otsu", input$threshvalue),
                                filter = ifelse(input$filter, input$filterval, FALSE),
+                               opening = ifelse(input$opening, input$openingval, FALSE),
                                lower_noise = input$lower_noise,
                                lower_size = lower_size,
                                upper_size = upper_size,
@@ -1077,6 +1093,7 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
             include_if <- input$includeif
             threshold <- ifelse(input$threshold == "Otsu", "Otsu", input$threshvalue)
             filter <- ifelse(input$filter, input$filterval, FALSE)
+            opening <- ifelse(input$opening, input$openingval, FALSE)
             lower_noise <- input$lower_noise
             simplify <- input$simplify
             pathmosaic <- pathmosaic$path
@@ -1108,6 +1125,7 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
                                include_if = include_if,
                                threshold = threshold,
                                filter = filter,
+                               opening = opening,
                                lower_noise = lower_noise,
                                lower_size = lower_size,
                                upper_size = upper_size,

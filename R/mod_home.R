@@ -69,9 +69,23 @@ mod_home_ui <- function(id){
       display: flex;
       justify-content: center;
       align-items: center;
-      font-size: 4em; /* Five times larger */
-      color: orange;
-      margin-top: -20px; /* Adjust as needed to position correctly */
+      font-size: 4em; /* Icon size */
+      color: orange;  /* Icon color */
+      margin-top: -20px; /* Positioning adjustment */
+    }
+    .modal-header .close {
+      color: #28A745; /* Close button color */
+    }
+    .modal-header .close:hover {
+      color: #1e7e34; /* Hover color for close button */
+    }
+    .btn-secondary {
+      background-color: #28A745; /* Button color */
+      border-color: #28A745; /* Button border color */
+    }
+    .btn-secondary:hover {
+      background-color: #218838; /* Hover color for button */
+      border-color: #1e7e34; /* Hover border color for button */
     }
   "))
         ),
@@ -98,8 +112,7 @@ mod_home_ui <- function(id){
                 ),
                 # Message text below the icon
                 p(id = NS("example", "popupMessage"),
-                  "The application is outdated. Use the following command to install the latest version from GitHub: ",
-                  code("pak::pkg_install(\"NEPEM-UFSC/plimanshiny\")")
+                  ""
                 )
               ),
               tags$div(
@@ -160,7 +173,7 @@ mod_home_ui <- function(id){
             message = 'The application is up to date.';
             iconClass = 'fas fa-check-circle text-success';  // Green checkmark icon for up-to-date
           } else {
-            message = 'The application is outdated. Use the following command to install the latest version from GitHub: pak::pkg_install(\"NEPEM-UFSC/plimanshiny\")';
+            message = 'The application is outdated. Use the package {pak} to install the latest version from GitHub: <p/><p/>pak::pkg_install(\"NEPEM-UFSC/plimanshiny\")';
             iconClass = 'fas fa-exclamation-triangle text-warning';  // Yellow warning icon for outdated
           }
         } else {

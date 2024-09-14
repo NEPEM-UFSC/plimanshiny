@@ -728,11 +728,10 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
     })
 
 
-
     # Import a shapefile
     observeEvent(input$shapetype, {
-      observeEvent(input$import_shapefile, {
-        if (input$shapetype == "Import") {
+      if (input$shapetype == "Import") {
+        observeEvent(input$import_shapefile, {
           newshpname <- input$import_shapefile$name
           # Check if the mosaic already exists in shapefile
           if (any(newshpname %in% names(shapefile))) {
@@ -953,8 +952,8 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
               }
             })
           })
-        }
-      })
+        })
+      }
     })
 
 
@@ -1038,8 +1037,9 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
                     col.bg = "salmon",
                     cex = 1.5)
           }
-          boxtext(x =  mean(ncoors[, 1]),
-                  y =  mean(ncoors[, 2]),
+          cmass <- poly_mass(ncoors)
+          boxtext(x =  mean(cmass[1]),
+                  y =  mean(cmass[2]),
                   labels = paste0(round(area$val, 2), " m2"),
                   col.bg = "salmon",
                   cex = 1.5)
@@ -1177,8 +1177,8 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
 
 
 
-    })
-    }
+  })
+}
 
 ## To be copied in the UI
 # mod_shapefile_prepare_ui("shapefile_prepare_1")
