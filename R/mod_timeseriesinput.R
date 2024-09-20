@@ -734,7 +734,7 @@ mod_timeseriesinput_server <- function(id, shapefile, mosaiclist, r, g, b, re, n
                                       optimize = TRUE,
                                       dispose = "previous")
         output$animation <- renderImage({
-          list(src = anim |> image_write(tempfile(fileext = ".gif")), contentType = "image/jpeg")
+          list(src = anim |> magick::image_write(tempfile(fileext = ".gif")), contentType = "image/jpeg")
         },
         deleteFile = TRUE)
       })

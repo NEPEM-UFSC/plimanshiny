@@ -152,7 +152,7 @@ app_ui <- function(request) {
           ),
           bs4SidebarMenuItem(
             "Spatial interpolation",
-            tabName = "spatinterpolate2",
+            tabName = "spatinterpolate",
             icon = shiny::icon("chart-line"),
             condition = "input['config_1-geostats'] === true"
           ),

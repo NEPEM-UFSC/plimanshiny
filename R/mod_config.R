@@ -27,6 +27,22 @@ mod_config_ui <- function(id){
         status = "success",
         fill = TRUE
       ),
+      hl(),
+      fluidRow(
+        col_2(
+          h4("Feature"),
+        ),
+        col_5(
+          h4("Description"),
+        ),
+        col_3(
+          h4("Dependencies"),
+        ),
+        col_2(
+          h4("Check dependencies"),
+        )
+      ),
+      h5("Full modules"),
       enable_module(mod_id = "geostats",
                     mod_name = "Spatial interpolation",
                     description = "Tools for spatial interpolation.",
@@ -42,6 +58,8 @@ mod_config_ui <- function(id){
                     description = "Tools for digital computing canopy height models",
                     deps = "fields",
                     ns = ns),
+      hl(),
+      h5("Features"),
       enable_module(mod_id = "animatets",
                     mod_name = "Time series animation",
                     description = "Create an animation in the module 'Time series'",
@@ -61,6 +79,11 @@ mod_config_ui <- function(id){
                     mod_name = "Histogram Slider",
                     description = "Enable the histogram slider to adjust the range of values of computed indexes in the 'Index' module.",
                     deps = "histoslider",
+                    ns = ns),
+      enable_module(mod_id = "tidyterra",
+                    mod_name = "ggplot2-like plots for raster",
+                    description = "Enable the 'plot attribute' option in 'see as' dropdown menu of 'Evolution plot' in the 'Analyze' tab of time series module. This uses the tidyterra::geom_spatraster() to produce a ggplot2-like plot for the vegetation indexes.",
+                    deps = "tidyterra",
                     ns = ns),
 
       hl(),
@@ -86,7 +109,8 @@ mod_config_server <- function(id, settings){
                              animatets =  FALSE,
                              cssloaders = FALSE,
                              synckmaps = FALSE,
-                             histoslider = FALSE)
+                             histoslider = FALSE,
+                             tidyterra = FALSE)
     saveRDS(default_settings, settings_file_default)
 
 
@@ -109,7 +133,7 @@ mod_config_server <- function(id, settings){
     # load all
     observeEvent(input$enableall, {
       if (input$enableall) {
-        pkgs <- c("fields", "drc", "segmented", "magick", "shinycssloaders", "leafsync", "histoslider")
+        pkgs <- c("fields", "drc", "segmented", "magick", "shinycssloaders", "leafsync", "histoslider", "tidyterra")
         check_and_install_dependencies(pkgs, ns, input, "enableall")
         settings(lapply(default_settings, \(x){x = TRUE}))
       }
@@ -124,6 +148,7 @@ mod_config_server <- function(id, settings){
       updatePrettySwitch(session = session, inputId = "cssloaders", value = settings()$cssloaders)
       updatePrettySwitch(session = session, inputId = "synckmaps", value = settings()$synckmaps)
       updatePrettySwitch(session = session, inputId = "histoslider", value = settings()$histoslider)
+      updatePrettySwitch(session = session, inputId = "tidyterra", value = settings()$tidyterra)
     })
 
     # Reactively save the settings whenever the switch is changed
@@ -134,7 +159,8 @@ mod_config_server <- function(id, settings){
                                animatets = input$animatets,
                                cssloaders = input$cssloaders,
                                synckmaps = input$synckmaps,
-                               histoslider = input$histoslider)
+                               histoslider = input$histoslider,
+                               tidyterra = input$tidyterra)
       settings(current_settings)  # Update global reactive settings
       saveRDS(current_settings, settings_file_user)
       showNotification("Settings saved for further sections!", type = "message")
@@ -222,10 +248,21 @@ mod_config_server <- function(id, settings){
         check_and_install_dependencies(c("histoslider"), ns, input, "histoslider")
       }
     }, ignoreInit = TRUE)
-
     observeEvent(input$check_histoslider, {
       if (input$check_histoslider) {
         check_and_install_dependencies(c("histoslider"), ns, input, "check_histoslider")
+      }
+    }, ignoreInit = TRUE)
+
+    # tidyterra
+    observeEvent(input$tidyterra, {
+      if (input$tidyterra) {
+        check_and_install_dependencies(c("tidyterra"), ns, input, "tidyterra")
+      }
+    }, ignoreInit = TRUE)
+    observeEvent(input$check_tidyterra, {
+      if (input$check_tidyterra) {
+        check_and_install_dependencies(c("tidyterra"), ns, input, "check_tidyterra")
       }
     }, ignoreInit = TRUE)
 

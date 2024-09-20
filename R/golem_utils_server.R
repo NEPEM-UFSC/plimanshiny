@@ -586,10 +586,10 @@ enable_module <- function(mod_id, mod_name, description, deps, ns) {
       description  # Display the module description
     ),
     col_3(
-      paste("Dependencies:", paste(deps, collapse = ", "))  # Display the dependencies
+      paste(paste(deps, collapse = ", "))  # Display the dependencies
     ),
     col_2(
-      actionButton(ns(paste0("check", "_", mod_id)), label = tagList(icon("eye"), "Check deps"), class = "btn btn-primary"),
+      actionButton(ns(paste0("check", "_", mod_id)), label = tagList(icon("eye"), "Check"), class = "btn btn-primary"),
     )
   )
 }

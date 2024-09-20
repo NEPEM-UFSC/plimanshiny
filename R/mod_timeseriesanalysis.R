@@ -417,12 +417,24 @@ mod_timeseriesanalysis_ui <- function(id){
                 )
               ),
               col_4(
-                pickerInput(
-                  inputId = ns("rgborattribute"),
-                  label = "See as...",
-                  choices = c("RGB", "plot attribute"),
-                  multiple = FALSE
-                )
+                conditionalPanel(
+                  condition = "input['config_1-tidyterra'] === true",
+                  pickerInput(
+                    inputId = ns("rgborattribute"),
+                    label = "See as...",
+                    choices = c("RGB", "plot attribute"),
+                    multiple = FALSE
+                  )
+                ),
+                conditionalPanel(
+                  condition = "input['config_1-tidyterra'] === false",
+                  pickerInput(
+                    inputId = ns("rgborattribute"),
+                    label = "See as...",
+                    choices = c("RGB"),
+                    multiple = FALSE
+                  )
+                ),
               ),
               col_2(
                 numericInput(
