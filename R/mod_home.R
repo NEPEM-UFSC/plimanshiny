@@ -14,6 +14,7 @@ mod_home_ui <- function(id){
       column(
         width = 10,
         bs4Card(
+          title = glue::glue("{plimanshiny} version [packageVersion('plimanshiny')]", .open = "[", .close = "]"),
           width = 12,
           solidHeader = FALSE,
           img(src = "www/plimanshiny.png", width = "100%", height = "80%")
@@ -125,7 +126,6 @@ mod_home_ui <- function(id){
 
 
         # Include custom JavaScript
-        # Include custom JavaScript
         tags$script(HTML("
     const fetchCurrentVersion = async () => {
       try {
@@ -159,7 +159,7 @@ mod_home_ui <- function(id){
       }
     };
 
-    const CheckUpdates = async () => {
+    const CheckUpdates = async (is_start) => {
       try {
         const latestVersion = await fetchLatestVersion();
         const currentVersion = await fetchCurrentVersion();
@@ -167,13 +167,28 @@ mod_home_ui <- function(id){
         console.log('Current version:', currentVersion);
         let message = '';
         let iconClass = '';
+      if (is_start) {
 
         if (latestVersion && currentVersion) {
+          if (latestVersion != currentVersion) {
+              message = `The application is outdated. You have version '${currentVersion}', but version '${latestVersion}' is now available. Use the package {pak} to install the latest version from GitHub:<p/><p/>pak::pkg_install(\"NEPEM-UFSC/plimanshiny\")`;
+            iconClass = 'fas fa-exclamation-triangle text-warning';  // Yellow warning icon for outdated
+                    // Update the popup modal with the message
+        document.getElementById('example-popupMessage').innerHTML = message;
+        // Update the icon
+        updateIcon(iconClass);
+        // Show the modal
+        $('#example-messageModal').modal('show');
+          }
+        }
+
+      } else{
+        if (latestVersion && currentVersion) {
           if (latestVersion === currentVersion) {
-            message = 'The application is up to date.';
-            iconClass = 'fas fa-check-circle text-success';  // Green checkmark icon for up-to-date
+              message = 'Congratulations! You are using the latest version of plimanshiny!';
+              iconClass = 'fas fa-check-circle text-success';  // Green checkmark icon for up-to-date
           } else {
-            message = 'The application is outdated. Use the package {pak} to install the latest version from GitHub: <p/><p/>pak::pkg_install(\"NEPEM-UFSC/plimanshiny\")';
+            message = `The application is outdated. You have version '${currentVersion}', but version '${latestVersion}' is now available. Use the package {pak} to install the latest version from GitHub:<p/><p/>pak::pkg_install(\"NEPEM-UFSC/plimanshiny\")`;
             iconClass = 'fas fa-exclamation-triangle text-warning';  // Yellow warning icon for outdated
           }
         } else {
@@ -187,6 +202,8 @@ mod_home_ui <- function(id){
         updateIcon(iconClass);
         // Show the modal
         $('#example-messageModal').modal('show');
+
+       }
       } catch (error) {
         console.error('Error checking for updates:', error);
         let errorMessage = 'Error while checking for updates';
@@ -199,6 +216,11 @@ mod_home_ui <- function(id){
     // Attach the CheckUpdates function to the button click event
     $(document).on('click', '#example-checkupdate', function() {
       CheckUpdates();
+    });
+        // Automatically check for updates when the page loads
+    document.addEventListener('DOMContentLoaded', function() {
+    const is_start = true;
+      CheckUpdates(is_start);
     });
 "))
 
