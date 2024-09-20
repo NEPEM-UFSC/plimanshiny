@@ -140,7 +140,7 @@ mod_home_ui <- function(id){
 
     const fetchLatestVersion = async () => {
       try {
-        const response = await fetch('https://nepemverse.vercel.app/latest-version/pliman-shiny');
+        const response = await fetch('https://nepemufsc.com/.netlify/functions/verser?project=plimanshiny');
         const data = await response.json();
         return data.latest_version;
       } catch (error) {

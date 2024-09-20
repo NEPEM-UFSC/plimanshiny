@@ -73,20 +73,20 @@ app_server <- function(input, output, session) {
 
   # Conditional modules
   # slider
-  observeEvent(input[["modconfig_1-compslider"]], {
-    if (input[["modconfig_1-compslider"]]) {
+  observeEvent(input[["config_1-compslider"]], {
+    if (input[["config_1-compslider"]]) {
       mod_slider_server("slider_1", imgdata, settings)
     }
   })
   # Drone traits
-  observeEvent(input[["modconfig_1-plantmat"]], {
-    if (input[["modconfig_1-plantmat"]]) {
+  observeEvent(input[["config_1-plantmat"]], {
+    if (input[["config_1-plantmat"]]) {
       mod_matanalyze_server("matanalyze_1", dfs, shapefile, basemap, settings)
     }
   })
 
-  observeEvent(input[["modconfig_1-plantmeas"]], {
-    if (input[["modconfig_1-plantmeas"]]) {
+  observeEvent(input[["config_1-plantmeas"]], {
+    if (input[["config_1-plantmeas"]]) {
       mod_phanalyze_server("phanalyze_1", mosaic_data, shapefile, basemap, dfs, settings)
     }
   })
@@ -97,7 +97,7 @@ app_server <- function(input, output, session) {
 
   # Settings
   settings <- reactiveVal()
-  mod_modconfig_server("modconfig_1", settings)
+  mod_config_server("config_1", settings)
 }
 
 

@@ -142,19 +142,19 @@ app_ui <- function(request) {
             "Plant Maturity",
             icon = shiny::icon("calendar-days"),
             tabName = "matanalyzemod",
-            condition = "input['modconfig_1-plantmat'] === true"
+            condition = "input['config_1-plantmat'] === true"
           ),
           bs4SidebarMenuItem(
             "Plant Measures",
             tabName = "phanalyze",
             icon = shiny::icon("ruler-combined"),
-            condition = "input['modconfig_1-plantmeas'] === true"
+            condition = "input['config_1-plantmeas'] === true"
           ),
           bs4SidebarMenuItem(
             "Spatial interpolation",
             tabName = "spatinterpolate2",
             icon = shiny::icon("chart-line"),
-            condition = "input['modconfig_1-geostats'] === true"
+            condition = "input['config_1-geostats'] === true"
           ),
 
           # Phytopathometry
@@ -242,7 +242,7 @@ app_ui <- function(request) {
             startExpanded = F,
             bs4SidebarMenuSubItem(
               text = "Module configuration",
-              tabName = "modconfig",
+              tabName = "config",
               icon = shiny::icon("box-open", verify_fa = FALSE)
             )
           )
@@ -382,8 +382,8 @@ app_ui <- function(request) {
 
           # Settings
           bs4TabItem(
-            tabName = "modconfig",
-            mod_modconfig_ui("modconfig_1")
+            tabName = "config",
+            mod_config_ui("config_1")
           )
 
 

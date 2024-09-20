@@ -1,4 +1,4 @@
-#' modconfig UI Function
+#' config UI Function
 #'
 #' @description A shiny Module.
 #'
@@ -7,7 +7,7 @@
 #' @noRd
 #'
 #' @importFrom shiny NS tagList
-mod_modconfig_ui <- function(id){
+mod_config_ui <- function(id){
   ns <- NS(id)
   tagList(
     bs4Card(
@@ -70,10 +70,10 @@ mod_modconfig_ui <- function(id){
   )
 }
 
-#' modconfig Server Functions
+#' config Server Functions
 #'
 #' @noRd
-mod_modconfig_server <- function(id, settings){
+mod_config_server <- function(id, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     # Define paths: inst for default, user-specific for custom settings
@@ -248,7 +248,7 @@ mod_modconfig_server <- function(id, settings){
 }
 
 ## To be copied in the UI
-# mod_modconfig_ui("modconfig_1")
+# mod_config_ui("config_1")
 
 ## To be copied in the server
-# mod_modconfig_server("modconfig_1")
+# mod_config_server("config_1")

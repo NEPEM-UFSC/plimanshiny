@@ -62,7 +62,7 @@ golem::add_module(name = "matanalyze")
 golem::add_module(name = "phanalyze")
 golem::add_module(name = "utmzonesel")
 golem::add_module(name = "geometricmeasures")
-golem::add_module(name = "modconfig")
+golem::add_module(name = "config")
 
 ## Add packages
 usethis::use_package("shiny")

@@ -161,7 +161,7 @@ mod_indexes_ui <- function(id){
             fluidRow(
               col_4(
                 conditionalPanel(
-                  condition = "input['modconfig_1-histoslider'] === true",
+                  condition = "input['config_1-histoslider'] === true",
                   materialSwitch(
                     inputId = ns("truncateindex"),
                     label = "Truncate index?",
@@ -189,7 +189,7 @@ mod_indexes_ui <- function(id){
               fluidRow(
                 col_5(
                   conditionalPanel(
-                    condition = "input['modconfig_1-histoslider'] === true",
+                    condition = "input['config_1-histoslider'] === true",
                     histoslider::input_histoslider(
                       id = ns("truncslider"),
                       label = "Truncate to...",
