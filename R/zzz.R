@@ -1,8 +1,9 @@
 #' @importFrom utils  globalVariables
 .onAttach <- function(libname, pkgname) {
+  versao <- sub('.*"version": *"(.*)".*', '\\1', grep('"version"', readLines("inst/app/www/version.json"), value = TRUE))
   vers <-  "0.0.0.9000"
   packageStartupMessage("|============================================================|")
-  packageStartupMessage("| Shiny App for the pliman package  (plimanshiny ", vers,  ") |")
+  packageStartupMessage("| Shiny App for the pliman package  (plimanshiny ", versao,  ") |")
   packageStartupMessage("| Author: Tiago Olivoto                                      |")
   packageStartupMessage("| Type `citation('plimanshiny')` to know how to cite pliman  |")
   # packageStartupMessage("| Visit 'http://bit.ly/pkg_pliman' for a complete tutorial |")
