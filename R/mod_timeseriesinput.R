@@ -251,7 +251,7 @@ mod_timeseriesinput_ui <- function(id){
       ),
       col_9(
         bs4TabCard(
-          id = "tabs",
+          id = ns("tabs"),
           width = 12,
           height = "780px",
           status = "success",
@@ -270,6 +270,27 @@ mod_timeseriesinput_ui <- function(id){
               choices = NA
             )
           ),
+          tabPanel(
+            title = "Interactive visualization",
+            leafletOutput(ns("leafletmap"), height = "720px")  |> add_spinner()
+          )
+        )
+      )
+    )
+  )
+}
+
+#' timeseriesinput Server Functions
+#'
+#' @noRd
+mod_timeseriesinput_server <- function(id, shapefile, mosaiclist, r, g, b, re, nir,  swir, tir,  basemap, quantiles, settings){
+  moduleServer( id, function(input, output, session){
+    ns <- session$ns
+    # Insert or remove Time Series tab based on settings()$animatets
+    observe({
+      if(settings()$animatets){
+        insertTab(
+          inputId = "tabs",
           tabPanel(
             title = "Animation",
             fluidRow(
@@ -323,24 +344,15 @@ mod_timeseriesinput_ui <- function(id){
               )
             ),
             imageOutput(ns("animation"), height = "720px") |> add_spinner()
-
           ),
-          tabPanel(
-            title = "Interactive visualization",
-            leafletOutput(ns("leafletmap"), height = "720px")  |> add_spinner()
-          )
+          target = "Time series",
+          position = "after"
         )
-      )
-    )
-  )
-}
+      } else {
+        removeTab(inputId = "tabs", target = "Animation")
+      }
+    })
 
-#' timeseriesinput Server Functions
-#'
-#' @noRd
-mod_timeseriesinput_server <- function(id, shapefile, mosaiclist, r, g, b, re, nir,  swir, tir,  basemap, quantiles){
-  moduleServer( id, function(input, output, session){
-    ns <- session$ns
 
     observeEvent(input$donebands, {
       # Update reactiveValues for color bands
@@ -703,24 +715,24 @@ mod_timeseriesinput_server <- function(id, shapefile, mosaiclist, r, g, b, re, n
       }
 
       dir <- pliman::file_dir(glue::glue(system.file("app", package = "plimanshiny" ), "/www/animation{i}.png"))
-      num_images <- image_read(paste0(dir, "/", list.files(dir, pattern = "animation")))
-      anim <- image_animate(num_images,
-                            fps = input$fps |> chrv2numv(),
-                            loop = 1,
-                            optimize = TRUE,
-                            dispose = "previous")
+      num_images <- magick::image_read(paste0(dir, "/", list.files(dir, pattern = "animation")))
+      anim <- magick::image_animate(num_images,
+                                    fps = input$fps |> chrv2numv(),
+                                    loop = 1,
+                                    optimize = TRUE,
+                                    dispose = "previous")
 
       output$animation <- renderImage({
-        list(src = anim |> image_write(tempfile(fileext = ".gif")), contentType = "image/jpeg")
+        list(src = anim |> magick::image_write(tempfile(fileext = ".gif")), contentType = "image/jpeg")
       },
       deleteFile = TRUE)
 
       observeEvent(input$loop, {
-        anim <- image_animate(num_images,
-                              fps = input$fps |> chrv2numv(),
-                              loop = 1,
-                              optimize = TRUE,
-                              dispose = "previous")
+        anim <- magick::image_animate(num_images,
+                                      fps = input$fps |> chrv2numv(),
+                                      loop = 1,
+                                      optimize = TRUE,
+                                      dispose = "previous")
         output$animation <- renderImage({
           list(src = anim |> image_write(tempfile(fileext = ".gif")), contentType = "image/jpeg")
         },
@@ -731,7 +743,7 @@ mod_timeseriesinput_server <- function(id, shapefile, mosaiclist, r, g, b, re, n
       output$downloadgif <- downloadHandler(
         filename = "timeseries_animation.gif",
         content = function(file) {
-          anim |> image_write(file)
+          anim |> magick::image_write(file)
         }
       )
 

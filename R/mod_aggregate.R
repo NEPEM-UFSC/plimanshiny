@@ -77,7 +77,7 @@ mod_aggregate_ui <- function(id){
 #' aggregate Server Functions
 #'
 #' @noRd
-mod_aggregate_server <- function(id, mosaic_data, r, g, b, basemap){
+mod_aggregate_server <- function(id, mosaic_data, r, g, b, basemap, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
 

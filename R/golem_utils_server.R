@@ -276,7 +276,7 @@ create_palette <- function(img, points, width = 150, height = 100, shape = "box"
     yrmin <- trunc(points[, 2][i]) - r
     yrmax <- trunc(points[, 2][i]) + r
     sqr <- xrmax - xrmin + 1
-    kern <- as.logical(EBImage::makeBrush(sqr, shape = shape))
+    kern <- as.logical(pliman::make_brush(sqr, shape = shape))
     R <- img[xrmin:xrmax, yrmin:yrmax, 1][kern]
     G <- img[xrmin:xrmax, yrmin:yrmax, 2][kern]
     B <- img[xrmin:xrmax, yrmin:yrmax, 3][kern]
@@ -285,9 +285,9 @@ create_palette <- function(img, points, width = 150, height = 100, shape = "box"
   dim_mat <- trunc(sqrt(nrow(bind)))
   bind <- bind[sample(1:nrow(bind)), ][1:dim_mat^2, ]
   pal <-
-    EBImage::Image(c(bind[, 1], bind[, 2], bind[, 3]),
-                   dim = c(dim_mat, dim_mat, 3),
-                   colormode = "Color") |>
+    pliman::as_image(c(bind[, 1], bind[, 2], bind[, 3]),
+                     dim = c(dim_mat, dim_mat, 3),
+                     colormode = "Color") |>
     image_resize(width = width, height = height)
   return(pal)
 }
@@ -533,4 +533,61 @@ epsg <- function(lat, lon) {
     32700 + utm_zone
   }
   return(paste0("EPSG:", epsg_code))
+}
+
+check_and_install_dependencies <- function(pkg_list, ns, input, inputId_check) {
+  missing_pkgs <- pkg_list[!sapply(pkg_list, require, character.only = TRUE, quietly = TRUE)]
+  if (length(missing_pkgs) > 0) {
+    # Ask for confirmation to install missing packages
+    shinyWidgets::ask_confirmation(
+      inputId = "myconfirmation",
+      type = "warning",
+      title = "Missing Packages",
+      text = paste("The following packages are missing and need to be installed:",
+                   paste(missing_pkgs, collapse = ", "), ". Do you want to install them?"),
+      btn_labels = c("Nope", "Yep"),
+      btn_colors = c("#FE642E", "#04B404")
+    )
+    # Observe the confirmation
+    observe({
+      if (!is.null(input$myconfirmation)) {
+        if (input$myconfirmation) {
+          pak::pkg_install(missing_pkgs)
+          suppressMessages(
+            suppressWarnings(
+              sapply(missing_pkgs, library, character.only = TRUE, quietly = TRUE, warn.conflicts = FALSE)
+            )
+          )
+          showNotification("Packages installed successfully!", type = "message")
+        } else {
+          showNotification("Package installation canceled.", type = "warning")
+        }
+      }
+    })
+  } else {
+    showNotification("All required packages are already installed.", type = "message")
+  }
+}
+
+enable_module <- function(mod_id, mod_name, description, deps, ns) {
+  # Create a fluid row with module switch, description, and dependencies
+  fluidRow(
+    col_2(
+      prettySwitch(
+        inputId = ns(mod_id),
+        label = mod_name,
+        status = "success",
+        fill = TRUE
+      )
+    ),
+    col_5(
+      description  # Display the module description
+    ),
+    col_3(
+      paste("Dependencies:", paste(deps, collapse = ", "))  # Display the dependencies
+    ),
+    col_2(
+      actionButton(ns(paste0("check", "_", mod_id)), label = tagList(icon("eye"), "Check deps"), class = "btn btn-primary"),
+    )
+  )
 }

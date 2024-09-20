@@ -81,7 +81,7 @@ mod_interpolate_ui <- function(id){
 #' interpolate Server Functions
 #'
 #' @noRd
-mod_interpolate_server <- function(id, mosaic_data, r, g, b, basemap){
+mod_interpolate_server <- function(id, mosaic_data, r, g, b, basemap, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     observe({

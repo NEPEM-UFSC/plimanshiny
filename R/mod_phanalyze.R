@@ -100,7 +100,7 @@ mod_phanalyze_ui <- function(id){
 #' phanalyze Server Functions
 #'
 #' @noRd
-mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs){
+mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     output$resultphmodel <- renderUI({

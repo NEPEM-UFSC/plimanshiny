@@ -520,7 +520,7 @@ mod_imageanal_ui <- function(id){
 #' imageanal Server Functions
 #'
 #' @noRd
-mod_imageanal_server <- function(id, imgdata, dfs){
+mod_imageanal_server <- function(id, imgdata, dfs, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
 

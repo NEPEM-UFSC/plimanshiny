@@ -75,7 +75,7 @@ mod_sentinel_ui <- function(id){
 #' sentinel Server Functions
 #'
 #' @noRd
-mod_sentinel_server <- function(id, mosaic_data){
+mod_sentinel_server <- function(id, mosaic_data, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
 

@@ -67,7 +67,7 @@ mod_dffilter_ui <- function(id){
 #' dffilter Server Functions
 #'
 #' @noRd
-mod_dffilter_server <- function(id, dfs, shapefile){
+mod_dffilter_server <- function(id, dfs, shapefile, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
 

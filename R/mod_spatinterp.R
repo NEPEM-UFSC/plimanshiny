@@ -180,7 +180,7 @@ mod_spatinterp_ui <- function(id){
 #' spatinterp Server Functions
 #'
 #' @noRd
-mod_spatinterp_server <- function(id, dfs, shapefile){
+mod_spatinterp_server <- function(id, dfs, shapefile, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
 

@@ -171,7 +171,7 @@ mod_measurediseasepick_ui <- function(id){
 #' measurediseasepick Server Functions
 #'
 #' @noRd
-mod_measurediseasepick_server <- function(id, imgdata){
+mod_measurediseasepick_server <- function(id, imgdata, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     basemap <- reactiveValues(map = NULL)

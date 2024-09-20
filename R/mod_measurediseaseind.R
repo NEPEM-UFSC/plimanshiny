@@ -367,7 +367,7 @@ mod_measurediseaseind_ui <- function(id){
 #' measurediseaseind Server Functions
 #'
 #' @noRd
-mod_measurediseaseind_server <- function(id, imgdata, dfs){
+mod_measurediseaseind_server <- function(id, imgdata, dfs, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     output$uiresults <- renderUI({

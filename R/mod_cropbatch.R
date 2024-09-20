@@ -146,7 +146,7 @@ mod_cropbatch_ui <- function(id){
 #' cropbatch Server Functions
 #'
 #' @noRd
-mod_cropbatch_server <- function(id, shapefile, mosaiclist){
+mod_cropbatch_server <- function(id, shapefile, mosaiclist, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
 

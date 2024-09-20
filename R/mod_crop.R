@@ -101,7 +101,7 @@ mod_crop_ui <- function(id){
 #' crop Server Functions
 #'
 #' @noRd
-mod_crop_server <- function(id, mosaic_data, shapefile, r, g, b, basemap){
+mod_crop_server <- function(id, mosaic_data, shapefile, r, g, b, basemap, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     observe({

@@ -73,7 +73,7 @@ mod_imageindex_ui <- function(id){
 #' imageindex Server Functions
 #'
 #' @noRd
-mod_imageindex_server <- function(id, imgdata){
+mod_imageindex_server <- function(id, imgdata, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     observe({

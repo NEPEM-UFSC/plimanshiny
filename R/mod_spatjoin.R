@@ -119,7 +119,7 @@ mod_spatjoin_ui <- function(id){
 #' spatjoin Server Functions
 #'
 #' @noRd
-mod_spatjoin_server <- function(id, shapefile) {
+mod_spatjoin_server <- function(id, shapefile, settings) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     shpemod <- reactiveValues(res = NULL)

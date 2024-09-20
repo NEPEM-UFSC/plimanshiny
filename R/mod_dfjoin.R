@@ -98,7 +98,7 @@ mod_dfjoin_ui <- function(id){
 #' dfjoin Server Functions
 #'
 #' @noRd
-mod_dfjoin_server <- function(id, dfs, shapefile){
+mod_dfjoin_server <- function(id, dfs, shapefile, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
 

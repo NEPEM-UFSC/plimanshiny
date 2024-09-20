@@ -310,7 +310,7 @@ mod_measurediseasepal_ui <- function(id){
 #' measurediseasepal Server Functions
 #'
 #' @noRd
-mod_measurediseasepal_server <- function(id, imgdata, dfs){
+mod_measurediseasepal_server <- function(id, imgdata, dfs, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     observe({

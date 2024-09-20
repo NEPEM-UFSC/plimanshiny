@@ -52,7 +52,7 @@ mod_utmzonesel_ui <- function(id){
 #' utmzonesel Server Functions
 #'
 #' @noRd
-mod_utmzonesel_server <- function(id){
+mod_utmzonesel_server <- function(id, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     output$map <- renderLeaflet({

@@ -77,7 +77,7 @@ mod_manipula_ui <- function(id){
 #' manipula Server Functions
 #'
 #' @noRd
-mod_manipula_server <- function(id){
+mod_manipula_server <- function(id, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
 

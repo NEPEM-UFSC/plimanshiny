@@ -148,7 +148,7 @@ mod_indexes_ui <- function(id){
       ),
       col_8(
         bs4TabCard(
-          id = "tabsindex",
+          id = ns("tabsindex"),
           width = 12,
           height = "790px",
           status = "success",
@@ -160,11 +160,14 @@ mod_indexes_ui <- function(id){
             title = "Plot Index (raster)",
             fluidRow(
               col_4(
-                materialSwitch(
-                  inputId = ns("truncateindex"),
-                  label = "Truncate index?",
-                  value = FALSE,
-                  status = "success"
+                conditionalPanel(
+                  condition = "input['modconfig_1-histoslider'] === true",
+                  materialSwitch(
+                    inputId = ns("truncateindex"),
+                    label = "Truncate index?",
+                    value = FALSE,
+                    status = "success"
+                  )
                 )
               ),
               col_6(
@@ -185,11 +188,14 @@ mod_indexes_ui <- function(id){
               condition = "input.truncateindex == true", ns = ns,
               fluidRow(
                 col_5(
-                  input_histoslider(
-                    id = ns("truncslider"),
-                    label = "Truncate to...",
-                    values = runif(50),
-                    height = 350,
+                  conditionalPanel(
+                    condition = "input['modconfig_1-histoslider'] === true",
+                    histoslider::input_histoslider(
+                      id = ns("truncslider"),
+                      label = "Truncate to...",
+                      values = runif(50),
+                      height = 350,
+                    )
                   ),
                   actionBttn(
                     inputId = ns("truncindex"),
@@ -233,10 +239,6 @@ mod_indexes_ui <- function(id){
             leafletOutput(ns("indexshp"), height = "680px")|> add_spinner()
           ),
           tabPanel(
-            title = "Syncked maps",
-            uiOutput(ns("indexsync"))|> add_spinner()
-          ),
-          tabPanel(
             "Index profile",
             fluidRow(
               col_6(
@@ -272,9 +274,26 @@ helpind <-
 #' indexes Server Functions
 #'
 #' @noRd
-mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, basemap, index, shapefile){
+mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, basemap, index, shapefile, settings){
   moduleServer( id, function(input, output, session){
+
     ns <- session$ns
+    observe({
+      if(settings()$synckmaps){
+        insertTab(
+          inputId = "tabsindex",
+          tabPanel(
+            title = "Syncked maps",
+            uiOutput(ns("indexsync"))|> add_spinner()
+          ),
+          target = "Index profile",
+          position = "before"
+        )
+      } else {
+        removeTab(inputId = "tabsindex", target = "Syncked maps")
+      }
+    })
+
     observeEvent(input$guideindex, introjs(session,
                                            options = list("nextLabel"="Next",
                                                           "prevLabel"="Previous",
@@ -456,7 +475,9 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
       req(magg$agg)
       req(input$indextosync %in% names(magg$agg))
       tt$tt <- magg$agg[[input$indextosync]]
-      update_histoslider("truncslider", values = terra::values(tt$tt), breaks = 100)
+      if(settings()$histoslider){
+        histoslider::update_histoslider("truncslider", values = terra::values(tt$tt), breaks = 100)
+      }
     })
 
     # Plot the main index based on the selected indextosync
@@ -520,7 +541,7 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
     })
 
     output$indexsync <- renderUI({
-      if(input$indextosync %in% names(magg$agg)){
+      if(settings()$synckmaps & (input$indextosync %in% names(magg$agg))){
         req(basemap$map)
         leafsync::sync(basemap$map@map, mosaic_view(magg$agg[[input$indextosync]],
                                                     index = input$indextosync,

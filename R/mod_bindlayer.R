@@ -55,7 +55,7 @@ mod_bindlayer_ui <- function(id){
 #' bindlayer Server Functions
 #'
 #' @noRd
-mod_bindlayer_server <- function(id, mosaic_data){
+mod_bindlayer_server <- function(id, mosaic_data, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     observe({

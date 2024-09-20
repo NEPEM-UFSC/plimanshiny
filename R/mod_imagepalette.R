@@ -65,7 +65,7 @@ mod_imagepalette_ui <- function(id){
 #' imagepalette Server Functions
 #'
 #' @noRd
-mod_imagepalette_server <- function(id, imgdata){
+mod_imagepalette_server <- function(id, imgdata, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     observe({

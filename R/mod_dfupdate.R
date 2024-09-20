@@ -67,7 +67,7 @@ mod_dfupdate_ui <- function(id){
 #' dfupdate Server Functions
 #'
 #' @noRd
-mod_dfupdate_server <- function(id, dfs, shapefile){
+mod_dfupdate_server <- function(id, dfs, shapefile, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     observe({

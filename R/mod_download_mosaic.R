@@ -34,7 +34,7 @@ mod_download_mosaic_ui <- function(id, button_label = "Download") {
 #' download_mosaic Server Functions
 #'
 #' @noRd
-mod_download_mosaic_server <- function(id, data, name = "mosaic") {
+mod_download_mosaic_server <- function(id, data, name = "mosaic", settings) {
 
   moduleServer(
     id,

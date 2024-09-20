@@ -579,7 +579,7 @@ mod_timeseriesanalysis_ui <- function(id){
 #' timeseriesanalysis Server Functions
 #'
 #' @noRd
-mod_timeseriesanalysis_server <- function(id, shapefile, mosaiclist, r, g, b, re, nir, swir, tir, basemap, dfs){
+mod_timeseriesanalysis_server <- function(id, shapefile, mosaiclist, r, g, b, re, nir, swir, tir, basemap, dfs, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
 

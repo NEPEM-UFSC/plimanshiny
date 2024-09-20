@@ -18,10 +18,8 @@ Imports:
     datamods,
     doFuture,
     dplyr,
-    drc,
     esquisse,
     exactextractr,
-    fields,
     foreach,
     future,
     ggplot2,
@@ -29,13 +27,11 @@ Imports:
     golem (>= 0.4.1),
     graphics,
     grDevices,
-    histoslider,
     leaflet,
     leaflet.extras2,
-    leafsync,
-    magick,
     mapedit,
     mapview (>= 2.11.2),
+    pak,
     parallel,
     pliman,
     plotly,
@@ -43,10 +39,8 @@ Imports:
     reactable,
     rintrojs,
     scales,
-    segmented,
     sf,
     shiny (>= 1.7.5.1),
-    shinycssloaders,
     shinyFiles,
     shinyjs,
     shinyWidgets,
@@ -57,6 +51,14 @@ Imports:
     tidyterra,
     utils,
     waiter
+Suggests:
+    drc,
+    fields,
+    histoslider,
+    leafsync,
+    magick,
+    segmented,
+    shinycssloaders
 Remotes: 
     TiagoOlivoto/pliman
 Config/testthat/edition: 3

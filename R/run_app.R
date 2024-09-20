@@ -6,8 +6,6 @@
 #' @importFrom golem with_golem_options
 #' @importFrom plotly ggplotly renderPlotly plotlyOutput
 #' @importFrom shiny shinyApp
-#' @importFrom segmented segmented.lm seg.control intercept
-#' @importFrom magick image_read image_animate image_write
 #' @importFrom tidyr unnest
 #' @importFrom graphics abline par title layout legend matplot
 #' @importFrom stats binomial glm reorder runif dist D coef integrate lm nls nls.control optimise setNames smooth approx loess
@@ -15,11 +13,10 @@
 #' @importFrom utils data stack write.csv
 #' @importFrom future plan multisession
 #' @importFrom doFuture `%dofuture%`
-#' @import shinyWidgets mapview leaflet mapedit sf rintrojs leafsync esquisse waiter shinycssloaders ggplot2 shinyFiles foreach histoslider tidyterra datamods reactable drc
+#' @import shinyWidgets mapview leaflet mapedit sf rintrojs esquisse waiter ggplot2 shinyFiles foreach tidyterra datamods reactable pak
 #' @rawNamespace import(bs4Dash, except = c(progressBar, insertTab, actionButton, updateTabsetPanel, column, tabsetPanel, tabPanel, navbarMenu))
 #' @rawNamespace import(terra, except = c(panel, shift, distance))
 #' @rawNamespace import(shinyjs, except = c(alert, runExample, click))
-#' @rawNamespace import(fields, except = c(addLegend, describe))
 #' @rawNamespace import(purrr, except = c(accumulate, when))
 #' @rawNamespace import(leaflet.extras2, except = c(menuItem, addSpinner))
 #' @rawNamespace import(pliman, except = c(`%>%`))

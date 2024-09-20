@@ -67,7 +67,7 @@ mod_dfedit_ui <- function(id){
 #' dfedit Server Functions
 #'
 #' @noRd
-mod_dfedit_server <- function(id, dfs, shapefile){
+mod_dfedit_server <- function(id, dfs, shapefile, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     observe({

@@ -55,7 +55,7 @@ mod_datasets_ui <- function(id){
 #' datasets Server Functions
 #'
 #' @noRd
-mod_datasets_server <- function(id, dfs){
+mod_datasets_server <- function(id, dfs, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
 

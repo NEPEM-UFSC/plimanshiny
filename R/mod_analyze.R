@@ -426,7 +426,7 @@ helpout <-
 #' analyze Server Functions
 #'
 #' @noRd
-mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathmosaic, dfs){
+mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathmosaic, dfs, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
 
@@ -815,7 +815,7 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
     })
 
     output$baseshapeindex <- renderUI({
-      if(!input$byplot){
+      if(settings()$synckmaps & !input$byplot){
         req(input$activeindex)
         # req(index[[input$activeindex]]$data)
         req(mosaic_data$mosaic)

@@ -29,7 +29,7 @@ mod_download_shapefile_ui <- function(id, label = "Download shapefile"){
 #' download_shapefile Server Functions
 #'
 #' @noRd
-mod_download_shapefile_server <- function(id, data, name = "shapefile"){
+mod_download_shapefile_server <- function(id, data, name = "shapefile", settings){
   moduleServer(
     id,
     function(input, output, session) {

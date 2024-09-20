@@ -97,7 +97,7 @@ mod_matanalyze_ui <- function(id){
 #' matanalyze Server Functions
 #'
 #' @noRd
-mod_matanalyze_server <- function(id, dfs, shapefile, basemap){
+mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     #

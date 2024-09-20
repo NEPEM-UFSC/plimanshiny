@@ -117,7 +117,7 @@ mod_plotclip_ui <- function(id){
 #' plotclip Server Functions
 #'
 #' @noRd
-mod_plotclip_server <- function(id, mosaic_data, shapefile, r, g, b, basemap){
+mod_plotclip_server <- function(id, mosaic_data, shapefile, r, g, b, basemap, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     observe({

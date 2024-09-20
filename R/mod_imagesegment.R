@@ -225,7 +225,7 @@ mod_imagesegment_ui <- function(id){
 #' imagesegment Server Functions
 #'
 #' @noRd
-mod_imagesegment_server <- function(id, imgdata){
+mod_imagesegment_server <- function(id, imgdata, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     observe({

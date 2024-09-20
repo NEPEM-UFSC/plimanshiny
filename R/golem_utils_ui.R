@@ -416,7 +416,8 @@ return_colors <- function(pal, reverse = FALSE, n = 8){
     return(pals)
   }
 }
-add_spinner <- function(x, type = 4, color = "#28a745"){
+add_spinner <- function(x, type = 4, color = "#28a745") {
+  # Access the settings reactively and determine if the spinner should be used
   shinycssloaders::withSpinner(x, type = type, color = color)
 }
 #' Make the current tag behave like an action button

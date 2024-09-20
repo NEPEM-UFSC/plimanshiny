@@ -633,7 +633,7 @@ mod_segmented <-  function(data, flight_date = "date", predictor = "median.NDVI"
           seg_loop<-try(segmented::segmented(mod,
                                              seg.Z = ~ flights,
                                              npsi = 1,
-                                             control = seg.control(n.boot = 50, random=T, tol=0.01)),
+                                             control = segmented::seg.control(n.boot = 50, random=T, tol=0.01)),
                         silent = T) # try to run the segmented function
 
           if("try-error" %in% class(seg_loop)) { # if the segmented function fails, run a linear model

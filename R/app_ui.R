@@ -18,8 +18,8 @@ app_ui <- function(request) {
       scrollToTop = TRUE,
       footer =  dashboardFooter(
         left = a(
-          href = "https://olivoto.netlify.app/",
-          target = "_blank", "@Olivoto"
+          href = "https://nepemufsc.com",
+          target = "_blank", "@NEPEM"
         ),
         right = "2024"
       ),
@@ -40,18 +40,10 @@ app_ui <- function(request) {
           type = "messages",
           badgeStatus = "danger",
           messageItem(
-            from = "Olivoto",
-            message = "If you want to contact me",
+            from = "NEPEM",
+            message = 'Visit our webpage at nepemufsc.com',
             time = "today",
-            icon = shiny::icon("envelope"),
-            href = "https://olivoto.netlify.app/"
-          ),
-          messageItem(
-            from = "Olivoto",
-            message = "If you want to contact me",
-            time = "today",
-            icon = shiny::icon("envelope"),
-            href = "https://olivoto.netlify.app/"
+            icon = shiny::icon("globe")
           )
         )
       ),
@@ -145,54 +137,26 @@ app_ui <- function(request) {
               icon = shiny::icon("chart-line")
             )
           ),
-          ### to be included ###
-
+          # "Drone traits",
           bs4SidebarMenuItem(
-            "Drone traits",
+            "Plant Maturity",
+            icon = shiny::icon("calendar-days"),
+            tabName = "matanalyzemod",
+            condition = "input['modconfig_1-plantmat'] === true"
+          ),
+          bs4SidebarMenuItem(
+            "Plant Measures",
+            tabName = "phanalyze",
+            icon = shiny::icon("ruler-combined"),
+            condition = "input['modconfig_1-plantmeas'] === true"
+          ),
+          bs4SidebarMenuItem(
+            "Spatial interpolation",
+            tabName = "spatinterpolate2",
             icon = shiny::icon("chart-line"),
-            startExpanded = F,
-            bs4SidebarMenuSubItem(
-              text = "Plant Maturity",
-              tabName = "matanalyzemod",
-              icon = shiny::icon("calendar-check")
-            ),
-            bs4SidebarMenuSubItem(
-              text = "Plant Measures",
-              tabName = "phanalyze",
-              icon = shiny::icon("ruler-combined")
-            ),
-            bs4SidebarMenuSubItem(
-              text = "Crop Surface",
-              tabName = "coveranalyze",
-              icon = shiny::icon("seedling")
-            ),
-            bs4SidebarMenuSubItem(
-              text = "Plot uniformity",
-              tabName = "plotunifanalyze",
-              icon = shiny::icon("layer-group")
-            ),
-            bs4SidebarMenuSubItem(
-              text = "Plant Count",
-              tabName = "plcountanalyze",
-              icon = shiny::icon("leaf")
-            )
+            condition = "input['modconfig_1-geostats'] === true"
           ),
-          # Geostatistics
-          bs4SidebarMenuItem(
-            "Geostatistics",
-            icon = shiny::icon("globe"),
-            startExpanded = FALSE,
-            bs4SidebarMenuSubItem(
-              text = "Spatial interpolation",
-              tabName = "spatinterpolate",
-              icon = shiny::icon("chart-line")
-            ),
-            bs4SidebarMenuSubItem(
-              text = "Spatial autocorrelation",
-              tabName = "spatautocor",
-              icon = shiny::icon("chart-line")
-            )
-          ),
+
           # Phytopathometry
           bs4SidebarMenuItem(
             "Phytopathometry",
@@ -269,6 +233,17 @@ app_ui <- function(request) {
               text = "Geometric measurements",
               tabName = "geometricmeasures",
               icon = shiny::icon("earth-americas", verify_fa = FALSE)
+            )
+          ),
+          ### Settings
+          bs4SidebarMenuItem(
+            "Settings",
+            icon = shiny::icon("gear"),
+            startExpanded = F,
+            bs4SidebarMenuSubItem(
+              text = "Module configuration",
+              tabName = "modconfig",
+              icon = shiny::icon("box-open", verify_fa = FALSE)
             )
           )
           ####
@@ -403,7 +378,14 @@ app_ui <- function(request) {
           bs4TabItem(
             tabName = "geometricmeasures",
             mod_geometricmeasures_ui("geometricmeasures_1")
+          ),
+
+          # Settings
+          bs4TabItem(
+            tabName = "modconfig",
+            mod_modconfig_ui("modconfig_1")
           )
+
 
         )
       )
@@ -434,7 +416,5 @@ golem_add_external_resources <- function() {
     rintrojs::introjsUI(),
     waiter::use_waiter(),
     shinyjs::useShinyjs()
-    # Add here other external resources
-    # for example, you can add shinyalert::useShinyalert()
   )
 }

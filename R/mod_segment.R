@@ -125,7 +125,7 @@ mod_segment_ui <- function(id){
 #' segment Server Functions
 #'
 #' @noRd
-mod_segment_server <- function(id, mosaic_data, r, g, b, re, nir){
+mod_segment_server <- function(id, mosaic_data, r, g, b, re, nir, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     observe({

@@ -211,7 +211,7 @@ mod_home_ui <- function(id){
 #' home Server Functions
 #'
 #' @noRd
-mod_home_server <- function(id){
+mod_home_server <- function(id, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
 

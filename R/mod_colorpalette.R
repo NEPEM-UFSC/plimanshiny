@@ -91,7 +91,7 @@ mod_colorpalette_ui <- function(id){
 #' colorpalette Server Functions
 #'
 #' @noRd
-mod_colorpalette_server <- function(id, imgdata){
+mod_colorpalette_server <- function(id, imgdata, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     bmap <- reactiveValues(map = NULL)

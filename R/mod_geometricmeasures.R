@@ -58,7 +58,7 @@ mod_geometricmeasures_ui <- function(id){
 #' geometricmeasures Server Functions
 #'
 #' @noRd
-mod_geometricmeasures_server <- function(id, shapefile){
+mod_geometricmeasures_server <- function(id, shapefile, settings){
   moduleServer( id, function(input, output, session){
     observe({
       updatePickerInput(session, "dftofilter",

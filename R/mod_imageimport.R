@@ -106,7 +106,7 @@ mod_imageimport_ui <- function(id){
 #' imageimport Server Functions
 #'
 #' @noRd
-mod_imageimport_server <- function(id, imgdata){
+mod_imageimport_server <- function(id, imgdata, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     observeEvent(input$import_image, {

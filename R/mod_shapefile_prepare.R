@@ -366,7 +366,7 @@ shapeimp <-
 #' shapefile_prepare Server Functions
 #'
 #' @noRd
-mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, activemosaic, r, g, b){
+mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, activemosaic, r, g, b, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     observeEvent(input$guideshape, introjs(session,
