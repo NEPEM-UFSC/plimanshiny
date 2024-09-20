@@ -565,7 +565,9 @@ check_and_install_dependencies <- function(pkg_list, ns, input, inputId_check) {
       }
     })
   } else {
-    showNotification("All required packages are already installed.", type = "message")
+    if(grepl("check_", inputId_check)){
+      showNotification("All required packages are already installed.", type = "message")
+    }
   }
 }
 

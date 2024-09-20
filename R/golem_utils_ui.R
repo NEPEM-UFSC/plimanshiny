@@ -409,7 +409,7 @@ return_colors <- function(pal, reverse = FALSE, n = 8){
            "Brewer1" = sample(c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "#FFFF33"), n, replace = ifelse(n > 6, TRUE, FALSE)),
            "Brewer2" = sample(c("#66C2A5", "#FC8D62", "#8DA0CB", "#E78AC3", "#A6D854", "#FFD92F"), n, replace = ifelse(n > 6, TRUE, FALSE)),
            "Brewer3" = sample(c("#8DD3C7", "#FFFFB3", "#BEBADA", "#FB8072", "#80B1D3", "#FDB462"),  n, replace = ifelse(n > 6, TRUE, FALSE))
-  )
+    )
   if(reverse){
     return(rev(pals))
   } else{
@@ -418,7 +418,20 @@ return_colors <- function(pal, reverse = FALSE, n = 8){
 }
 add_spinner <- function(x, type = 4, color = "#28a745") {
   # Access the settings reactively and determine if the spinner should be used
-  shinycssloaders::withSpinner(x, type = type, color = color)
+  user_settings_dir <- tools::R_user_dir("plimanshiny", which = "config")
+  settings_file_user <- file.path(user_settings_dir, "user_module_settings.rds")
+  if (file.exists(settings_file_user)) {
+    pars <- readRDS(settings_file_user)
+  } else {
+    inst_dir <- file.path(system.file(package = "plimanshiny"), "app/www")
+    settings_file_default <- file.path(inst_dir, "default_module_settings.rds")
+    pars <- readRDS(settings_file_default)
+  }
+  if(pars$cssloaders){
+    shinycssloaders::withSpinner(x, type = type, color = color)
+  } else{
+    x
+  }
 }
 #' Make the current tag behave like an action button
 #'
