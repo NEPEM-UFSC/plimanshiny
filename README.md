@@ -10,6 +10,7 @@
 [![Lifecycle:
 experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 [![DOI](https://zenodo.org/badge/739532807.svg)](https://zenodo.org/doi/10.5281/zenodo.10476816)
+![NEPEMVERSE](https://img.shields.io/endpoint?url=https://nepemufsc.com/.netlify/functions/verser?project=plimanshiny-stamp&label=LatestVersion:&labelColor=5288ce&logo=nepemverse&logoColor=white&style=metallic&color=#9e2621&cacheSeconds=3600)
 
 <!-- badges: end -->
 
