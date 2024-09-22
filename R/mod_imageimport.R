@@ -29,17 +29,13 @@ mod_imageimport_ui <- function(id){
           status = "success",
           footer = "Here, you can configure the img for further analysis. First to import, you can choose the correct order of bands (layers), the maximum number of pixels to be rendered, and the upper and lower quantiles used for color stretching.",
           br(),
-          div(class = "prep4",
-              fileInput(ns("import_image"),
-                        "Browse img file(s) (.jpg, .png)",
-                        accept = c('.jpg','.jpeg','.png'),
-                        multiple = TRUE)
-          ),
-          div(class = "prep5",
-              selectInput(ns("activeimg"),
-                          label = "Active image",
-                          choices = NULL)
-          ),
+          fileInput(ns("import_image"),
+                    "Browse img file(s) (.jpg, .png)",
+                    accept = c('.jpg','.jpeg','.png'),
+                    multiple = TRUE),
+          selectInput(ns("activeimg"),
+                      label = "Active image",
+                      choices = NULL),
           prettyCheckbox(
             inputId = ns("resizeimg"),
             label = "Resize",
@@ -80,11 +76,8 @@ mod_imageimport_ui <- function(id){
                        icon = icon("expand"),
                        color = "success")
           ),
-
           hl(),
-          div(class = "prep7",
-              mod_download_mosaic_ui(ns("downloadimg"))
-          )
+          mod_download_mosaic_ui(ns("downloadimg"))
 
         )
       ),

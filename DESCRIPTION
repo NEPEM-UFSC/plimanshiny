@@ -11,6 +11,10 @@ Description: provides an interactive Shiny-based graphical user interface
     analysis from drone and satellite imagery, shapefile creation and
     handling, time series analysis, image analysis, and phytopathometry,
     into a cohesive and intuitive application.
+URL: https://github.com/NEPEM-UFSC/plimanshiny
+BugReports: https://github.com/NEPEM-UFSC/plimanshiny/issues
+Depends: 
+    R (>= 4.1)
 License: MIT + file LICENSE
 Imports: 
     bs4Dash,
@@ -28,7 +32,6 @@ Imports:
     graphics,
     grDevices,
     leaflet,
-    leaflet.extras2,
     mapedit,
     mapview (>= 2.11.2),
     pak,
@@ -37,14 +40,12 @@ Imports:
     plotly,
     purrr,
     reactable,
-    rintrojs,
     scales,
     sf,
     shiny (>= 1.7.5.1),
     shinyFiles,
     shinyjs,
     shinyWidgets,
-    sparkline,
     terra,
     tibble,
     tidyr,
@@ -54,10 +55,13 @@ Suggests:
     drc,
     fields,
     histoslider,
+    leaflet.extras2,
     leafsync,
     magick,
+    rintrojs,
     segmented,
     shinycssloaders,
+    sparkline,
     tidyterra
 Remotes: 
     TiagoOlivoto/pliman

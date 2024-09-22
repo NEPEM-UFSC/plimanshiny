@@ -417,12 +417,6 @@ mod_analyze_ui <- function(id){
   )
 }
 
-helpanal <-
-  read.csv(file = system.file("app/www/helps.csv", package = "plimanshiny", mustWork = TRUE), sep = ";") |>
-  dplyr::filter(type == "analyze")
-helpout <-
-  read.csv(file = system.file("app/www/helps.csv", package = "plimanshiny", mustWork = TRUE), sep = ";") |>
-  dplyr::filter(type == "output")
 #' analyze Server Functions
 #'
 #' @noRd
@@ -430,18 +424,6 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
   moduleServer( id, function(input, output, session){
     ns <- session$ns
 
-    observeEvent(input$guideanalyze, introjs(session,
-                                             options = list("nextLabel"="Next",
-                                                            "prevLabel"="Previous",
-                                                            "skipLabel"="Skip",
-                                                            steps = helpanal),
-                                             events = list("oncomplete"=I('alert("Hope it helped!")'))))
-    observeEvent(input$guideoutput, introjs(session,
-                                            options = list("nextLabel"="Next",
-                                                           "prevLabel"="Previous",
-                                                           "skipLabel"="Skip",
-                                                           steps = helpout),
-                                            events = list("oncomplete"=I('alert("Hope it helped!")'))))
 
     output$uiresults <- renderUI({
       if(input$segmentindividuals){
@@ -499,11 +481,14 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
               title = "Map plot",
               fluidRow(
                 col_4(
-                  materialSwitch(
-                    inputId = ns("compareslidermap"),
-                    label = "Comparison slider?",
-                    value = FALSE,
-                    status = "success"
+                  conditionalPanel(
+                    condition = "input['config_1-slider'] === true",
+                    materialSwitch(
+                      inputId = ns("compareslidermap"),
+                      label = "Comparison slider?",
+                      value = FALSE,
+                      status = "success"
+                    )
                   )
                 ),
                 col_8(
@@ -522,11 +507,14 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
               title = "Map individuals",
               fluidRow(
                 col_4(
-                  materialSwitch(
-                    inputId = ns("compareslidermapind"),
-                    label = "Comparison slider?",
-                    value = FALSE,
-                    status = "success"
+                  conditionalPanel(
+                    condition = "input['config_1-slider'] === true",
+                    materialSwitch(
+                      inputId = ns("compareslidermapind"),
+                      label = "Comparison slider?",
+                      value = FALSE,
+                      status = "success"
+                    )
                   )
                 ),
                 col_8(
@@ -600,11 +588,14 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
               title = "Map plot",
               fluidRow(
                 col_4(
-                  materialSwitch(
-                    inputId = ns("compareslidermap"),
-                    label = "Comparison slider?",
-                    value = FALSE,
-                    status = "success"
+                  conditionalPanel(
+                    condition = "input['config_1-slider'] === true",
+                    materialSwitch(
+                      inputId = ns("compareslidermap"),
+                      label = "Comparison slider?",
+                      value = FALSE,
+                      status = "success"
+                    )
                   )
                 ),
                 col_8(
@@ -623,11 +614,14 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
               title = "Map individuals",
               fluidRow(
                 col_4(
-                  materialSwitch(
-                    inputId = ns("compareslidermapind"),
-                    label = "Comparison slider?",
-                    value = FALSE,
-                    status = "success"
+                  conditionalPanel(
+                    condition = "input['config_1-slider'] === true",
+                    materialSwitch(
+                      inputId = ns("compareslidermapind"),
+                      label = "Comparison slider?",
+                      value = FALSE,
+                      status = "success"
+                    )
                   )
                 ),
                 col_8(
@@ -684,11 +678,14 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
             title = "Map plot",
             fluidRow(
               col_4(
-                materialSwitch(
-                  inputId = ns("compareslidermap"),
-                  label = "Comparison slider?",
-                  value = FALSE,
-                  status = "success"
+                conditionalPanel(
+                  condition = "input['config_1-slider'] === true",
+                  materialSwitch(
+                    inputId = ns("compareslidermap"),
+                    label = "Comparison slider?",
+                    value = FALSE,
+                    status = "success"
+                  )
                 )
               ),
               col_8(
@@ -727,11 +724,14 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
             title = "Map plot",
             fluidRow(
               col_4(
-                materialSwitch(
-                  inputId = ns("compareslidermap"),
-                  label = "Comparison slider?",
-                  value = FALSE,
-                  status = "success"
+                conditionalPanel(
+                  condition = "input['config_1-slider'] === true",
+                  materialSwitch(
+                    inputId = ns("compareslidermap"),
+                    label = "Comparison slider?",
+                    value = FALSE,
+                    status = "success"
+                  )
                 )
               ),
               col_8(
@@ -888,6 +888,16 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
           type = "error"
         )
       }
+      t3 <- !is.numeric(input$extension) || input$extension <= 0 || input$extension != as.integer(input$extension)
+      if(t3) {
+        sendSweetAlert(
+          session = session,
+          title = "Ops, invalid arguments.",
+          text = "`extension` must be a positive integer",
+          type = "error"
+        )
+      }
+
 
       if((input$segmentplot | input$segmentindividuals)){
         indcomp <- input$segmentindex
@@ -931,7 +941,7 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
         quantiles <- NULL
       }
 
-      if(!t1 & !t2){
+      if(!t1 && !t2 && !t3){
 
         if(!input$byplot){
           req(index[[input$activeindex]]$data)  # Ensure mosaic_data$mosaic is not NULL
@@ -975,7 +985,6 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
                            map_individuals = input$mapindividuals,
                            map_direction = input$mapdirection,
                            verbose = FALSE)
-          # assign("resulttt", res, envir = globalenv())
           centr <-
             suppressWarnings(
               res$result_plot |>
@@ -1657,81 +1666,76 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
             )
           }
         )
-        # }
-      }
+        # Sent do datasets
+        report <- reactive({
+          req(res)
+          if(input$segmentindividuals){
+            list(result_plot = res$result_plot,
+                 result_plot_summ = res$result_plot_summ,
+                 result_individ = res$result_indiv,
+                 result_individ_map = res$result_individ_map,
+                 map_plot = (basemap$map + mapshape$mapshape),
+                 map_individual = (basemap$map + mapindiv$mapindiv),
+                 shapefile = shapefile[[input$activeshape]]$data)
+          } else if(input$segmentplot){
+            list(result_plot = res$result_plot,
+                 map_plot = (basemap$map + mapshape$mapshape),
+                 shapefile = shapefile[[input$activeshape]]$data)
+          } else{
+            list(result_plot = res$result_plot,
+                 map_plot = (basemap$map + mapshape$mapshape),
+                 shapefile = shapefile[[input$activeshape]]$data)
 
-      # Sent do datasets
-      report <- reactive({
-        req(res)
-        if(input$segmentindividuals){
-          list(result_plot = res$result_plot,
-               result_plot_summ = res$result_plot_summ,
-               result_individ = res$result_indiv,
-               result_individ_map = res$result_individ_map,
-               map_plot = (basemap$map + mapshape$mapshape),
-               map_individual = (basemap$map + mapindiv$mapindiv),
-               shapefile = shapefile[[input$activeshape]]$data)
-        } else if(input$segmentplot){
-          list(result_plot = res$result_plot,
-               map_plot = (basemap$map + mapshape$mapshape),
-               shapefile = shapefile[[input$activeshape]]$data)
-        } else{
-          list(result_plot = res$result_plot,
-               map_plot = (basemap$map + mapshape$mapshape),
-               shapefile = shapefile[[input$activeshape]]$data)
-
-        }
-      })
-
-      observe({
-        req(report())
-        dfs[["result_plot"]] <- create_reactval("result_plot", report()$result_plot |> sf::st_drop_geometry())
-        if(!is.null(report()$result_plot_summ)){
-          dfs[["result_plot_summ"]] <- create_reactval("result_plot_summ", report()$result_plot_summ|> sf::st_drop_geometry())
-        }
-        if(!is.null(report()$result_individ)){
-          dfs[["result_individ"]] <- create_reactval("result_individ", report()$result_individ|> sf::st_drop_geometry())
-        }
-      })
-
-      # send the results to the global environment
-      observeEvent(input$savetoglobalenv, {
-
-        if (exists(input$globalvarname, envir = globalenv())) {
-          sendSweetAlert(
-            session = session,
-            title = "Error",
-            text = paste0("The object '", input$globalvarname, "' already exists in the global environment. Please, change the name."),
-            type = "success"
-          )
-        } else {
-          assign(input$globalvarname, report(), envir = globalenv())
-          ask_confirmation(
-            inputId = "myconfirmation",
-            type = "warning",
-            title = "Close the App?",
-            text = paste0("The object '", input$globalvarname, "' has been created in the Global environment. To access the created object, you need first to stop the App. Do you really want to close the app now?"),
-            btn_labels = c("Nope", "Yep"),
-            btn_colors = c("#FE642E", "#04B404")
-          )
-        }
-      })
-
-      observe({
-        if (!is.null(input$myconfirmation)) {
-          if (input$myconfirmation) {
-            stopApp()
-          } else {
-            # Do something else or simply return if the confirmation is false
-            return()
           }
-        }
-      })
+        })
 
+        observe({
+          req(report())
+          dfs[["result_plot"]] <- create_reactval("result_plot", report()$result_plot |> sf::st_drop_geometry())
+          if(!is.null(report()$result_plot_summ)){
+            dfs[["result_plot_summ"]] <- create_reactval("result_plot_summ", report()$result_plot_summ|> sf::st_drop_geometry())
+          }
+          if(!is.null(report()$result_individ)){
+            dfs[["result_individ"]] <- create_reactval("result_individ", report()$result_individ|> sf::st_drop_geometry())
+          }
+        })
 
+        # send the results to the global environment
+        observeEvent(input$savetoglobalenv, {
+
+          if (exists(input$globalvarname, envir = globalenv())) {
+            sendSweetAlert(
+              session = session,
+              title = "Error",
+              text = paste0("The object '", input$globalvarname, "' already exists in the global environment. Please, change the name."),
+              type = "success"
+            )
+          } else {
+            assign(input$globalvarname, report(), envir = globalenv())
+            ask_confirmation(
+              inputId = "myconfirmation",
+              type = "warning",
+              title = "Close the App?",
+              text = paste0("The object '", input$globalvarname, "' has been created in the Global environment. To access the created object, you need first to stop the App. Do you really want to close the app now?"),
+              btn_labels = c("Nope", "Yep"),
+              btn_colors = c("#FE642E", "#04B404")
+            )
+          }
+        })
+
+        observe({
+          if (!is.null(input$myconfirmation)) {
+            if (input$myconfirmation) {
+              stopApp()
+            } else {
+              # Do something else or simply return if the confirmation is false
+              return()
+            }
+          }
+        })
+
+      }
     })
-
-
   })
 }
 

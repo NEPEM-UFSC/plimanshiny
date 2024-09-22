@@ -268,9 +268,6 @@ mod_indexes_ui <- function(id){
   )
 }
 
-helpind <-
-  read.csv(file = system.file("app/www/helps.csv", package = "plimanshiny", mustWork = TRUE), sep = ";") |>
-  dplyr::filter(type == "index")
 #' indexes Server Functions
 #'
 #' @noRd
@@ -294,12 +291,6 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
       }
     })
 
-    observeEvent(input$guideindex, introjs(session,
-                                           options = list("nextLabel"="Next",
-                                                          "prevLabel"="Previous",
-                                                          "skipLabel"="Skip",
-                                                          steps = helpind),
-                                           events = list("oncomplete"=I('alert("Hope it helped!")'))))
     mosaictmp <- reactiveValues(mosaic =NULL)
     observe({
       nam <- c("none", setdiff(names(shapefile), c("shapefile", "shapefileplot")))

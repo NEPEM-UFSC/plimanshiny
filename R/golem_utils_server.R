@@ -412,19 +412,25 @@ render_reactable <- function(df,
                              striped = TRUE,
                              pagination = TRUE,
                              defaultPageSize = 15,
-                             defaultColDef = colDef(
-                               maxWidth = 400,
-                               footer = function(values) {
-                                 if (!is.numeric(values)) return()
-                                 sparkline::sparkline(values, type = "box", width = 100, height = 30)
-                               }),
                              theme = reactableTheme(
                                cellPadding = "8px 10px",
                                style = list(fontFamily = "-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif"),
                                searchInputStyle = list(width = "100%")
                              ),
                              ...){
-
+  pars <- read_pars()
+  if(pars$sparkline){
+    dcd = colDef(
+      maxWidth = 400,
+      footer = function(values) {
+        if (!is.numeric(values)) return()
+        sparkline::sparkline(values, type = "box", width = 100, height = 30)
+      })
+  } else{
+    dcd = colDef(
+      maxWidth = 400
+    )
+  }
 
   reactable(
     df,
@@ -433,7 +439,7 @@ render_reactable <- function(df,
     striped = striped,
     pagination = pagination,
     defaultPageSize = defaultPageSize,
-    defaultColDef = defaultColDef,
+    defaultColDef = dcd,
     theme = theme,
     ...
   )
@@ -552,12 +558,14 @@ check_and_install_dependencies <- function(pkg_list, ns, input, inputId_check) {
     observe({
       if (!is.null(input$myconfirmation)) {
         if (input$myconfirmation) {
+          showNotification("Installing packages, please wait...", type = "message", duration = NULL) # duration = NULL keeps it until dismissed
           pak::pkg_install(missing_pkgs)
           suppressMessages(
             suppressWarnings(
               sapply(missing_pkgs, library, character.only = TRUE, quietly = TRUE, warn.conflicts = FALSE)
             )
           )
+          removeNotification()
           showNotification("Packages installed successfully!", type = "message")
         } else {
           showNotification("Package installation canceled.", type = "warning")
@@ -592,4 +600,12 @@ enable_module <- function(mod_id, mod_name, description, deps, ns) {
       actionButton(ns(paste0("check", "_", mod_id)), label = tagList(icon("eye"), "Check"), class = "btn btn-primary"),
     )
   )
+}
+# Generic function to observe events and check/install dependencies
+observe_dependency <- function(input_id, packages, ns, input) {
+  observeEvent(input[[input_id]], {
+    if (input[[input_id]]) {
+      check_and_install_dependencies(packages, ns, input, input_id)
+    }
+  }, ignoreInit = TRUE)
 }

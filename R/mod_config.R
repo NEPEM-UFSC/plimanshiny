@@ -14,7 +14,6 @@ mod_config_ui <- function(id){
       title = tagList(icon("cogs"), tags$strong("Module and Tools Configuration Center")),
       collapsible = FALSE,
       width = 12,
-      height = "760px",
       # Enhanced description for better clarity
       tags$div(
         tags$p("Use the switches below to enable or disable the modules. Changes will take effect immediately, and you can save your configuration for future sessions."),
@@ -85,6 +84,21 @@ mod_config_ui <- function(id){
                     description = "Enable the 'plot attribute' option in 'see as' dropdown menu of 'Evolution plot' in the 'Analyze' tab of time series module. This uses the tidyterra::geom_spatraster() to produce a ggplot2-like plot for the vegetation indexes.",
                     deps = "tidyterra",
                     ns = ns),
+      enable_module(mod_id = "introjs",
+                    mod_name = "Step-by-step introduction",
+                    description = "Enable step-by-step introductions, and clickable hints in the application",
+                    deps = "rintrojs",
+                    ns = ns),
+      enable_module(mod_id = "sparkline",
+                    mod_name = "Sparklines",
+                    description = "Include interactive sparkline charts at the bottom of a reactable output.",
+                    deps = "sparkline",
+                    ns = ns),
+      enable_module(mod_id = "slider",
+                    mod_name = "Slider comparision",
+                    description = "Allows using a comparision slider in the 'Map individuals' and 'Map plot' tabs of the 'Analyze' menu.",
+                    deps = "leaflet.extras2",
+                    ns = ns),
 
       hl(),
       actionButton(ns("save_btn"), label = tagList(icon("save"), "Save Settings"), class = "btn btn-primary"),
@@ -110,7 +124,10 @@ mod_config_server <- function(id, settings){
                              cssloaders = FALSE,
                              synckmaps = FALSE,
                              histoslider = FALSE,
-                             tidyterra = FALSE)
+                             tidyterra = FALSE,
+                             introjs = FALSE,
+                             sparkline = FALSE,
+                             slider = FALSE)
     saveRDS(default_settings, settings_file_default)
 
 
@@ -133,7 +150,8 @@ mod_config_server <- function(id, settings){
     # load all
     observeEvent(input$enableall, {
       if (input$enableall) {
-        pkgs <- c("fields", "drc", "segmented", "magick", "shinycssloaders", "leafsync", "histoslider", "tidyterra")
+        pkgs <- c("fields", "drc", "segmented", "magick", "shinycssloaders", "leafsync", "histoslider", "tidyterra", "rintrojs",
+                  "sparkline", "leaflet.extras2")
         check_and_install_dependencies(pkgs, ns, input, "enableall")
         settings(lapply(default_settings, \(x){x = TRUE}))
       }
@@ -149,6 +167,9 @@ mod_config_server <- function(id, settings){
       updatePrettySwitch(session = session, inputId = "synckmaps", value = settings()$synckmaps)
       updatePrettySwitch(session = session, inputId = "histoslider", value = settings()$histoslider)
       updatePrettySwitch(session = session, inputId = "tidyterra", value = settings()$tidyterra)
+      updatePrettySwitch(session = session, inputId = "introjs", value = settings()$introjs)
+      updatePrettySwitch(session = session, inputId = "sparkline", value = settings()$sparkline)
+      updatePrettySwitch(session = session, inputId = "slider", value = settings()$slider)
     })
 
     # Reactively save the settings whenever the switch is changed
@@ -160,115 +181,49 @@ mod_config_server <- function(id, settings){
                                cssloaders = input$cssloaders,
                                synckmaps = input$synckmaps,
                                histoslider = input$histoslider,
-                               tidyterra = input$tidyterra)
+                               tidyterra = input$tidyterra,
+                               introjs = input$introjs,
+                               sparkline = input$sparkline,
+                               slider = input$slider)
       settings(current_settings)  # Update global reactive settings
       saveRDS(current_settings, settings_file_user)
-      showNotification("Settings saved for further sections!", type = "message")
+      showNotification("Settings saved successfully! You may need to restart the app to apply changes.", type = "message")
     })
 
     # check for installed packages
-    # geostatistic
-    observeEvent(input$geostats, {
-      if (input$geostats) {
-        check_and_install_dependencies(c("fields"), ns, input, "geostats")
-      }
-    })
-    observeEvent(input$check_geostats, {
-      if (input$check_geostats) {
-        check_and_install_dependencies(c("fields"), ns, input, "check_geostats")
-      }
-    })
-    # plant maturity
-    observeEvent(input$plantmat, {
-      if (input$plantmat) {
-        check_and_install_dependencies(c("drc", "segmented"), ns, input, "plantmat")
-      }
-    }, ignoreInit = TRUE)
-    observeEvent(input$check_plantmat, {
-      if (input$check_plantmat) {
-        check_and_install_dependencies(c("drc", "segmented"), ns, input, "check_plantmat")
-      }
-    }, ignoreInit = TRUE)
+    # Applying the function to different use cases
+    observe_dependency("geostats", c("fields"), ns, input)
+    observe_dependency("check_geostats", c("fields"), ns, input)
 
-    # plant measures
-    observeEvent(input$plantmeas, {
-      if (input$plantmeas) {
-        check_and_install_dependencies(c("fields"), ns, input, "plantmeas")
-      }
-    }, ignoreInit = TRUE)
+    observe_dependency("plantmat", c("drc", "segmented"), ns, input)
+    observe_dependency("check_plantmat", c("drc", "segmented"), ns, input)
 
-    observeEvent(input$check_plantmeas, {
-      if (input$check_plantmeas) {
-        check_and_install_dependencies(c("fields"), ns, input, "check_plantmeas")
-      }
-    }, ignoreInit = TRUE)
+    observe_dependency("plantmeas", c("fields"), ns, input)
+    observe_dependency("check_plantmeas", c("fields"), ns, input)
 
-    # Animate
-    observeEvent(input$animatets, {
-      if (input$animatets) {
-        check_and_install_dependencies(c("magick"), ns, input, "animatets")
-      }
-    }, ignoreInit = TRUE)
+    observe_dependency("animatets", c("magick"), ns, input)
+    observe_dependency("check_animatets", c("magick"), ns, input)
 
-    observeEvent(input$check_animatets, {
-      if (input$check_animatets) {
-        check_and_install_dependencies(c("magick"), ns, input, "check_animatets")
-      }
-    }, ignoreInit = TRUE)
+    observe_dependency("cssloaders", c("shinycssloaders"), ns, input)
+    observe_dependency("check_cssloaders", c("shinycssloaders"), ns, input)
 
-    # cssloaders
-    observeEvent(input$cssloaders, {
-      if (input$cssloaders) {
-        check_and_install_dependencies(c("shinycssloaders"), ns, input, "cssloaders")
-      }
-    }, ignoreInit = TRUE)
+    observe_dependency("synckmaps", c("leafsync"), ns, input)
+    observe_dependency("check_synckmaps", c("leafsync"), ns, input)
 
-    observeEvent(input$check_cssloaders, {
-      if (input$check_cssloaders) {
-        check_and_install_dependencies(c("shinycssloaders"), ns, input, "check_cssloaders")
-      }
-    }, ignoreInit = TRUE)
+    observe_dependency("histoslider", c("histoslider"), ns, input)
+    observe_dependency("check_histoslider", c("histoslider"), ns, input)
 
-    # synckmaps
-    observeEvent(input$synckmaps, {
-      if (input$synckmaps) {
-        check_and_install_dependencies(c("leafsync"), ns, input, "synckmaps")
-      }
-    }, ignoreInit = TRUE)
+    observe_dependency("tidyterra", c("tidyterra"), ns, input)
+    observe_dependency("check_tidyterra", c("tidyterra"), ns, input)
 
-    observeEvent(input$check_synckmaps, {
-      if (input$check_synckmaps) {
-        check_and_install_dependencies(c("leafsync"), ns, input, "check_synckmaps")
-      }
-    }, ignoreInit = TRUE)
+    observe_dependency("introjs", c("rintrojs"), ns, input)
+    observe_dependency("check_introjs", c("rintrojs"), ns, input)
 
-    # histoslider
-    observeEvent(input$histoslider, {
-      if (input$histoslider) {
-        check_and_install_dependencies(c("histoslider"), ns, input, "histoslider")
-      }
-    }, ignoreInit = TRUE)
-    observeEvent(input$check_histoslider, {
-      if (input$check_histoslider) {
-        check_and_install_dependencies(c("histoslider"), ns, input, "check_histoslider")
-      }
-    }, ignoreInit = TRUE)
+    observe_dependency("sparkline", c("sparkline"), ns, input)
+    observe_dependency("check_sparkline", c("sparkline"), ns, input)
 
-    # tidyterra
-    observeEvent(input$tidyterra, {
-      if (input$tidyterra) {
-        check_and_install_dependencies(c("tidyterra"), ns, input, "tidyterra")
-      }
-    }, ignoreInit = TRUE)
-    observeEvent(input$check_tidyterra, {
-      if (input$check_tidyterra) {
-        check_and_install_dependencies(c("tidyterra"), ns, input, "check_tidyterra")
-      }
-    }, ignoreInit = TRUE)
-
-
-
-
+    observe_dependency("slider", c("leaflet.extras2"), ns, input)
+    observe_dependency("check_slider", c("leaflet.extras2"), ns, input)
 
     # Option to reset to default settings
     observeEvent(input$reset_btn, {

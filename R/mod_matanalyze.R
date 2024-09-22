@@ -333,7 +333,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
       if(input$dftoedit != "none"){
         dfactive$df <-
           dfs[[input$dftoedit]]$data |>
-          mutate(unique_plot = paste0(block, "_", plot_id)) |>
+          dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
           convert_numeric_cols()
       }
     })
@@ -513,7 +513,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
 
           dfpars <-
             modl() |>
-            filter(unique_plot == input$fittedmodel)
+            dplyr::filter(unique_plot == input$fittedmodel)
 
           output$fittedplot <- renderPlot({
             ggplot(dfplot, aes(x = doy, y = vindex)) +
@@ -543,7 +543,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
 
           dfpars <-
             modl() |>
-            filter(unique_plot == input$fittedmodel)
+            dplyr::filter(unique_plot == input$fittedmodel)
 
           #
           # Plot the fitted models

@@ -407,14 +407,19 @@ golem_add_external_resources <- function() {
     app_sys("app/www")
   )
 
-  tags$head(
+  pars <- read_pars()
+
+  # Create the head content dynamically based on the condition
+  head_content <- tags$head(
     favicon(ext = 'png'),
     bundle_resources(
       path = app_sys("app/www"),
       app_title = "plimanshiny"
     ),
-    rintrojs::introjsUI(),
+    if (pars$introjs) rintrojs::introjsUI(),
     waiter::use_waiter(),
     shinyjs::useShinyjs()
   )
+
+  return(head_content)
 }

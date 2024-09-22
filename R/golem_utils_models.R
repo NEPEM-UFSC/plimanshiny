@@ -36,7 +36,7 @@ mod_L3 <-  function(data, flight_date = "date", predictor = "median.NDVI", sowin
       fflight <- min(flights)
       lflight <- max(flights) + 20
       flights_seq <- fflight:lflight
-      y <- df %>% pull()
+      y <- df |> dplyr::pull()
 
       # Logistic regression to predict median.NDVI as a function of flights
       model <- try(nls(y ~ SSlogis(flights, Asym, xmid, scal),
@@ -135,7 +135,7 @@ mod_L3_thresh <-  function(data, flight_date = "date", predictor = "median.NDVI"
       fflight <- min(flights)
       lflight <- max(flights) + 20
       flights_seq <- fflight:lflight
-      y <- df %>% pull()
+      y <- df |> dplyr::pull()
 
       # Logistic regression to predict median.NDVI as a function of flights
       model <- try(nls(y ~ SSlogis(flights, Asym, xmid, scal),
@@ -239,7 +239,7 @@ mod_L4 <-  function(data, flight_date = "date", predictor = "median.NDVI", sowin
       fflight <- min(flights)
       lflight <- max(flights) + 20
       flights_seq <- fflight:lflight
-      y <- df %>% pull()
+      y <- df |> dplyr::pull()
       model <- drc::drm(y ~ flights, fct = drc::L.4(), data = df)
       coefslog <- coef(model)
       b0 <- coefslog[1]
@@ -385,7 +385,7 @@ mod_L5 <-  function(data, flight_date = "date", predictor = "median.NDVI", sowin
       fflight <- min(flights)
       lflight <- max(flights) + 20
       flights_seq <- fflight:lflight
-      y <- df %>% pull()
+      y <- df |> dplyr::pull()
 
       model <- drc::drm(y ~ flights, fct = drc::L.5(), data = df)
       coefslog <- coef(model)
@@ -514,7 +514,7 @@ mod_loess <-  function(data, flight_date = "date", predictor = "median.NDVI", so
       fflight <- min(flights)
       lflight <- max(flights) + 20
       flights_seq <- fflight:lflight
-      y <- df %>% pull()
+      y <- df |> dplyr::pull()
 
       if(nrow(df) <= 7) {
         # extract the date of maturity
@@ -562,7 +562,7 @@ mod_segmented <-  function(data, flight_date = "date", predictor = "median.NDVI"
       fflight <- min(flights)
       lflight <- max(flights) + 20
       flights_seq <- fflight:lflight
-      y <- df %>% pull()
+      y <- df |> dplyr::pull()
 
       # create linear model
       mod<-lm(y ~ flights)

@@ -90,6 +90,12 @@ app_server <- function(input, output, session) {
       mod_phanalyze_server("phanalyze_1", mosaic_data, shapefile, basemap, dfs, settings)
     }
   })
+  # Spatial interpolation
+  observeEvent(input[["config_1-geostats"]], {
+    if (input[["config_1-geostats"]]) {
+      mod_spatinterp_server("spatinterp_1", dfs, shapefile, settings)
+    }
+  })
 
   # Tools
   mod_utmzonesel_server("utmzonesel_1", settings)

@@ -17,104 +17,105 @@ mod_mosaic_prepare_ui <- function(id){
         color = "success",
         fluidRow(
           col_4(
-            actionButton(
-              inputId = ns("guidemosaic"),
-              label = tagList(
-                icon = icon("question-circle", verify_fa = FALSE), "Guide"
-              ),
-              style = "color: white ; background-color: #dd4b39",
-              class = "btn-danger"
+            conditionalPanel(
+              condition = "input['config_1-introjs'] === true",
+              actionButton(
+                inputId = ns("guidemosaic"),
+                label = tagList(
+                  icon = icon("question-circle", verify_fa = FALSE), "Guide"
+                ),
+                style = "color: white ; background-color: #dd4b39",
+                class = "btn-danger"
+              )
             )
           ),
           col_3(
-            div(class = "prep1",
-                dropdown(
-                  tags$h3("Settings"),
-                  fluidRow(
-                    col_3(
-                      selectInput(
-                        inputId = ns("r_band"),
-                        label = "R",
-                        choices = 1:5,
-                        selected = 1
-                      )
-                    ),
-                    col_3(
-                      selectInput(
-                        inputId = ns("g_band"),
-                        label = "G",
-                        choices = 1:5,
-                        selected = 2,
-                      )
-                    ),
-                    col_3(
-                      selectInput(
-                        inputId = ns("b_band"),
-                        label = "B",
-                        choices = 1:5,
-                        selected = 3,
-                      )
-                    ),
-                    col_3(
-                      selectInput(
-                        inputId = ns("re_band"),
-                        label = "RE",
-                        choices = NA
-                      )
-                    )
-                  ),
-                  fluidRow(
-                    col_4(
-                      selectInput(
-                        inputId = ns("nir_band"),
-                        label = "NIR",
-                        choices = NA
-                      )
-                    ),
-                    col_4(
-                      selectInput(
-                        inputId = ns("swir_band"),
-                        label = "SWIR",
-                        choices = NA
-                      )
-                    ),
-                    col_4(
-                      selectInput(
-                        inputId = ns("tir_band"),
-                        label = "TIR",
-                        choices = NA
-                      )
-                    )
-                  ),
-                  div(class = "prep2",
-                      sliderInput(ns("quantileplot"),
-                                  label = "Quantiles",
-                                  min = 0,
-                                  max = 1,
-                                  value = c(0, 1),
-                                  step = 0.001)
-                  ),
-                  div(class = "prep3",
-                      numericInput(ns("maxpixels"),
-                                   label = "Maximum Pixels",
-                                   value = 1e6)
-                  ),
-                  actionBttn(
-                    ns("donebands"),
-                    label = "Done",
-                    no_outline = FALSE,
-                    icon = icon("check"),
-                    color = "success"
-                  ),
-                  circle = FALSE,
-                  status = "success",
-                  style = "unite",
-                  width = "420px",
-                  icon = icon("gear"),
-                  animate = animateOptions(enter = "fadeInLeft", exit = "fadeOutRight", duration = 1),
-                  tooltip = tooltipOptions(title = "Configure the bands")
+            dropdown(
+              tags$h3("Settings"),
+              fluidRow(
+                col_3(
+                  selectInput(
+                    inputId = ns("r_band"),
+                    label = "R",
+                    choices = 1:5,
+                    selected = 1
+                  )
+                ),
+                col_3(
+                  selectInput(
+                    inputId = ns("g_band"),
+                    label = "G",
+                    choices = 1:5,
+                    selected = 2,
+                  )
+                ),
+                col_3(
+                  selectInput(
+                    inputId = ns("b_band"),
+                    label = "B",
+                    choices = 1:5,
+                    selected = 3,
+                  )
+                ),
+                col_3(
+                  selectInput(
+                    inputId = ns("re_band"),
+                    label = "RE",
+                    choices = NA
+                  )
                 )
-            )
+              ),
+              fluidRow(
+                col_4(
+                  selectInput(
+                    inputId = ns("nir_band"),
+                    label = "NIR",
+                    choices = NA
+                  )
+                ),
+                col_4(
+                  selectInput(
+                    inputId = ns("swir_band"),
+                    label = "SWIR",
+                    choices = NA
+                  )
+                ),
+                col_4(
+                  selectInput(
+                    inputId = ns("tir_band"),
+                    label = "TIR",
+                    choices = NA
+                  )
+                )
+              ),
+              sliderInput(ns("quantileplot"),
+                          label = "Quantiles",
+                          min = 0,
+                          max = 1,
+                          value = c(0, 1),
+                          step = 0.001),
+              numericInput(ns("maxpixels"),
+                           label = "Maximum Pixels",
+                           value = 1e6),
+
+              actionBttn(
+                ns("donebands"),
+                label = "Done",
+                no_outline = FALSE,
+                icon = icon("check"),
+                color = "success"
+              ),
+              circle = FALSE,
+              status = "success",
+              style = "unite",
+              width = "420px",
+              icon = icon("gear"),
+              animate = animateOptions(enter = "fadeInLeft", exit = "fadeOutRight", duration = 1),
+              tooltip = tooltipOptions(title = "Configure the bands")
+            ) |>
+              add_help(step = 1,
+                       intro = "Here, the bands are configured. You can configure up
+                       to 7 layers and also define the maximum number of pixels to be rendered in the basemap.")
           ),
           col_5(
             actionButton(
@@ -123,65 +124,73 @@ mod_mosaic_prepare_ui <- function(id){
                 icon = icon("circle-info", verify_fa = FALSE), "Mosaic Info"
               ),
               status = "info"
-            )
+            ) |> add_help(step = 2,
+                          intro = "Here, you can see the information about the mosaic.")
           )
         ),
         width = 12,
         status = "success",
-        br(),
-        div(class = "prep4",
-            shinyFilesButton(id=ns("filemosaic"),
-                             label="Raster file(s)",
-                             title="Raster file(s)",
-                             buttonType = "primary",
-                             multiple = TRUE,
-                             class = NULL,
-                             icon = icon("magnifying-glass"),
-                             style = NULL),
-            fluidRow(
-              textInput(
-                ns("filemosaicpath"),
-                label = "Choosen file(s)",
-                value = "",
-                width = "100%"
-              )
-            ),
-            conditionalPanel(
-              condition = "input.filemosaicpath != ''", ns = ns,
-              fluidRow(
-                actionBttn(ns("importmosaic"),
-                           label = "Import the choosen file(s)",
-                           no_outline = FALSE,
-                           icon = icon("file-import"),
-                           style = "material-flat",
-                           color = "primary")
-              )
-            )
-        ),
-        br(),
-        div(class = "prep5",
-            selectInput(ns("mosaictoanalyze"),
-                        label = "Active Mosaic",
-                        choices = NULL)
-        ),
-        hl(),
-        fluidRow(
-          col_6(
-            awesomeRadio(
-              inputId = ns("showmosaic"),
-              label = "Show",
-              choices = c("rgb", "bands", "hist"),
-              selected = "rgb",
-              inline = FALSE
+        add_help(
+          shinyFilesButton(id=ns("filemosaic"),
+                           label="Raster file(s)",
+                           title="Raster file(s)",
+                           buttonType = "primary",
+                           multiple = TRUE,
+                           class = NULL,
+                           icon = icon("magnifying-glass"),
+                           style = NULL),
+          fluidRow(
+            textInput(
+              ns("filemosaicpath"),
+              label = "Choosen file(s)",
+              value = "",
+              width = "100%"
             )
           ),
-          col_6(
-            selectInput(
-              ns("stretch"),
-              label = "Stretch",
-              choices = c("none", "lin", "hist")
-            )
+          step = 3,
+          intro = "Search by rasters files to be imported."),
+        conditionalPanel(
+          condition = "input.filemosaicpath != ''", ns = ns,
+          fluidRow(
+            actionBttn(ns("importmosaic"),
+                       label = "Import the choosen file(s)",
+                       no_outline = FALSE,
+                       icon = icon("file-import"),
+                       style = "material-flat",
+                       color = "primary")
           )
+        ),
+        br(),
+        selectInput(ns("mosaictoanalyze"),
+                    label = "Active Mosaic",
+                    choices = NULL) |>
+          add_help(step = 4,
+                   intro = "Here you can define which raster file is active.
+                   It will define the basemap for further modules"),
+        hl(),
+        add_help(
+          fluidRow(
+            col_6(
+              awesomeRadio(
+                inputId = ns("showmosaic"),
+                label = "Show",
+                choices = c("rgb", "bands", "hist"),
+                selected = "rgb",
+                inline = FALSE
+              )
+            ),
+            col_6(
+              selectInput(
+                ns("stretch"),
+                label = "Stretch",
+                choices = c("none", "lin", "hist")
+              )
+            )
+          ),
+          step = 5,
+          intro = "Choose how to display the mosaic. You can select the display
+            mode (RGB, individual bands, or histogram) and apply optional stretch
+            techniques to enhance the image visualization."
         ),
         prettyCheckbox(
           inputId = ns("intmap"),
@@ -190,7 +199,12 @@ mod_mosaic_prepare_ui <- function(id){
           icon = icon("check"),
           status = "success",
           animation = "rotate"
-        ),
+        ) |>
+          add_help(step = 6,
+                   intro = "Enable this option to create an interactive basemap.
+                   Depending on the size of the mosaic and the `maxpixel` value
+                   set in the configuration, this process might take a while."),
+
         conditionalPanel(
           condition = "input.intmap == true", ns = ns,
           selectInput(ns("howtoplot"),
@@ -209,10 +223,9 @@ mod_mosaic_prepare_ui <- function(id){
           )
         ),
         hl(),
-        div(class = "prep7",
-            mod_download_mosaic_ui(ns("downloadmosaic"))
-        )
-
+        mod_download_mosaic_ui(ns("downloadmosaic")) |>
+          add_help(step = 7,
+                   intro = "Download the active mosaic.")
       )
     ),
     col_9(
@@ -236,22 +249,23 @@ mod_mosaic_prepare_ui <- function(id){
   )
 }
 
-
-helpmo <-
-  read.csv(file = system.file("app/www/helps.csv", package = "plimanshiny", mustWork = TRUE), sep = ";") |>
-  dplyr::filter(type == "mosaic")
 #' mosaic_prepare Server Functions
 #'
 #' @noRd
 mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, basemap, pathmosaic, quantiles, maxpixel, activemosaic, settings) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
-    observeEvent(input$guidemosaic, introjs(session,
-                                            options = list("nextLabel"="Next",
-                                                           "prevLabel"="Previous",
-                                                           "skipLabel"="Skip",
-                                                           steps = helpmo),
-                                            events = list("oncomplete"=I('alert("Hope it helped!")'))))
+
+    observeEvent(input$guidemosaic,
+                 if(read_pars()$introjs){
+                   rintrojs::introjs(session,
+                                     options = list("nextLabel"="Next",
+                                                    "prevLabel"="Previous",
+                                                    "skipLabel"="Skip"),
+                                     events = list("oncomplete"=I('alert("Hope it helped!")')))
+                 }
+    )
+
     # GUIA
 
     observeEvent(input$donebands, {
@@ -265,6 +279,12 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
       tir$tir <- input$tir_band
       quantiles$q <- input$quantileplot
       maxpixel$mp <- input$maxpixels
+      showNotification(
+        ui = "Configuring the layers and re-building the basemap. Please, wait!",
+        type = "message",
+        duration = NULL,   # Infinite duration until manually removed
+        id = "importmosaic"
+      )
     })
 
     input_file_selected <- reactiveValues(paths = NULL)
@@ -301,7 +321,7 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
             if (!is.null(input$confirmmosaicname)) {
               if (input$confirmmosaicname) {
                 for (i in 1:length(new_mosaic_name)) {
-                  mosaic_data[[new_mosaic_name[[i]]]] <- create_reactval(new_mosaic_name[[i]], terra::rast(input_file_selected$paths$datapath[[i]]))
+                  mosaic_data[[new_mosaic_name[[i]]]] <- create_reactval(new_mosaic_name[[i]], mosaic_input(input_file_selected$paths$datapath[[i]], info = FALSE))
                 }
               } else {
                 return()
@@ -311,7 +331,7 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
         } else {
           # If it doesn't exist, create a new reactiveValues and add it to mosaic_data
           for (i in 1:length(new_mosaic_name)) {
-            mosaic_data[[new_mosaic_name[[i]]]] <- create_reactval(new_mosaic_name[[i]], terra::rast(input_file_selected$paths$datapath[[i]]))
+            mosaic_data[[new_mosaic_name[[i]]]] <- create_reactval(new_mosaic_name[[i]], mosaic_input(input_file_selected$paths$datapath[[i]], info = FALSE))
           }
         }
 
@@ -352,6 +372,12 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
     observe({
       # Check if a mosaic is selected
       req(input$mosaictoanalyze)
+      showNotification(
+        ui = "Importing the mosaic and generating the basemap. Please, wait!",
+        type = "message",
+        duration = NULL,   # Infinite duration until manually removed
+        id = "importmosaic"
+      )
       updateSelectInput(session, "howtoplot",
                         choices = c("RGB", names(mosaic_data[[input$mosaictoanalyze]]$data)))
     })
@@ -405,6 +431,7 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
       } else {
         terra::hist(mosaic_data[[input$mosaictoanalyze]]$data)
       }
+      removeNotification(id = "importmosaic")
     })
 
     #
@@ -446,6 +473,7 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
         basemap$map <- bmtmp
         output$mosaic_mapview <- renderLeaflet({
           req(bmtmp)
+          removeNotification(id = "importmosaic")
           bmtmp@map
         })
       }

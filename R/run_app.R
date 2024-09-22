@@ -13,12 +13,11 @@
 #' @importFrom utils data stack write.csv
 #' @importFrom future plan multisession
 #' @importFrom doFuture `%dofuture%`
-#' @import shinyWidgets mapview leaflet mapedit sf rintrojs esquisse waiter ggplot2 shinyFiles foreach datamods reactable pak
+#' @import shinyWidgets mapview leaflet mapedit sf esquisse waiter ggplot2 shinyFiles foreach datamods reactable pak
 #' @rawNamespace import(bs4Dash, except = c(progressBar, insertTab, actionButton, updateTabsetPanel, column, tabsetPanel, tabPanel, navbarMenu))
 #' @rawNamespace import(terra, except = c(panel, shift, distance))
 #' @rawNamespace import(shinyjs, except = c(alert, runExample, click))
 #' @rawNamespace import(purrr, except = c(accumulate, when))
-#' @rawNamespace import(leaflet.extras2, except = c(menuItem, addSpinner))
 #' @rawNamespace import(pliman, except = c(`%>%`))
 run_app <- function(upload_size = 10000,
                     ...) {

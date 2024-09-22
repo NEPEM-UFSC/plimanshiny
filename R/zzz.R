@@ -1,12 +1,16 @@
 #' @importFrom utils  globalVariables
 .onAttach <- function(libname, pkgname) {
-  versao <- sub('.*"version": *"(.*)".*', '\\1', grep('"version"', readLines("inst/app/www/version.json"), value = TRUE))
+  file <- readLines(system.file("app/www/version.json", package = "plimanshiny", mustWork = TRUE))
+  versao <- sub('.*"version": *"(.*)".*', '\\1', grep('"version"', file, value = TRUE))
   packageStartupMessage("|============================================================|")
-  packageStartupMessage("| Shiny App for the pliman package  (plimanshiny ", versao,  ") |")
-  packageStartupMessage("| Author: Tiago Olivoto                                      |")
-  packageStartupMessage("| Type `citation('plimanshiny')` to know how to cite pliman  |")
-  # packageStartupMessage("| Visit 'http://bit.ly/pkg_pliman' for a complete tutorial |")
+  packageStartupMessage("| Welcome to the plimanShiny package!                        |")
+  packageStartupMessage("| A Shiny App for the pliman package (version ", versao, ")         |")
+  packageStartupMessage("| Developed collaboratively by NEPEM - nepemufsc.com         |")
+  packageStartupMessage("| Group lead: Prof. Tiago Olivoto                            |")
+  packageStartupMessage("| For citation: type `citation('plimanshiny')`               |")
+  packageStartupMessage("| We welcome your feedback and suggestions!                  |")
   packageStartupMessage("|============================================================|")
+
 }
 
 if (getRversion() >= "2.15.1") {

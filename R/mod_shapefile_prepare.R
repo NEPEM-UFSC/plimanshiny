@@ -369,18 +369,7 @@ shapeimp <-
 mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, activemosaic, r, g, b, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
-    observeEvent(input$guideshape, introjs(session,
-                                           options = list("nextLabel"="Next",
-                                                          "prevLabel"="Previous",
-                                                          "skipLabel"="Skip",
-                                                          steps = helpshp),
-                                           events = list("oncomplete"=I('alert("Hope it helped!")'))))
-    observeEvent(input$guideshapeimput, introjs(session,
-                                                options = list("nextLabel"="Next",
-                                                               "prevLabel"="Previous",
-                                                               "skipLabel"="Skip",
-                                                               steps = shapeimp),
-                                                events = list("oncomplete"=I('alert("Hope it helped!")'))))
+
 
     output$uishape <- renderUI({
       if(input$shapetype == "Build" & !input$editplots & !input$shapedone){

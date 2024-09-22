@@ -416,7 +416,7 @@ return_colors <- function(pal, reverse = FALSE, n = 8){
     return(pals)
   }
 }
-add_spinner <- function(x, type = 4, color = "#28a745") {
+read_pars <- function(){
   # Access the settings reactively and determine if the spinner should be used
   user_settings_dir <- tools::R_user_dir("plimanshiny", which = "config")
   settings_file_user <- file.path(user_settings_dir, "user_module_settings.rds")
@@ -427,10 +427,30 @@ add_spinner <- function(x, type = 4, color = "#28a745") {
     settings_file_default <- file.path(inst_dir, "default_module_settings.rds")
     pars <- readRDS(settings_file_default)
   }
+  return(pars)
+}
+
+add_spinner <- function(x, type = 4, color = "#28a745") {
+  pars <- read_pars()
   if(pars$cssloaders){
     shinycssloaders::withSpinner(x, type = type, color = color)
   } else{
     x
+  }
+}
+
+add_help <- function(...,
+                     step = 1,
+                     intro = "Intro here",
+                     hint = "click"){
+  pars <- read_pars()
+  if(pars$introjs){
+    rintrojs::introBox(...,
+                       data.step = step,
+                       data.intro = intro,
+                       data.hint = hint)
+  } else{
+    return(list(...))
   }
 }
 #' Make the current tag behave like an action button

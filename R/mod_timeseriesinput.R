@@ -18,86 +18,84 @@ mod_timeseriesinput_ui <- function(id){
           fluidRow(
             col_3(
               col_4(
-                div(class = "prep1",
-                    dropdown(
-                      tags$h3("Bands"),
-                      fluidRow(
-                        col_3(
-                          selectInput(
-                            inputId = ns("r_band"),
-                            label = "R",
-                            choices = 1:5,
-                            selected = 1
-                          )
-                        ),
-                        col_3(
-                          selectInput(
-                            inputId = ns("g_band"),
-                            label = "G",
-                            choices = 1:5,
-                            selected = 2,
-                          )
-                        ),
-                        col_3(
-                          selectInput(
-                            inputId = ns("b_band"),
-                            label = "B",
-                            choices = 1:5,
-                            selected = 3,
-                          )
-                        ),
-                        col_3(
-                          selectInput(
-                            inputId = ns("re_band"),
-                            label = "RE",
-                            choices = NA
-                          )
-                        )
-                      ),
-                      fluidRow(
-                        col_4(
-                          selectInput(
-                            inputId = ns("nir_band"),
-                            label = "NIR",
-                            choices = NA
-                          )
-                        ),
-                        col_4(
-                          selectInput(
-                            inputId = ns("swir_band"),
-                            label = "SWIR",
-                            choices = NA
-                          )
-                        ),
-                        col_4(
-                          selectInput(
-                            inputId = ns("tir_band"),
-                            label = "TIR",
-                            choices = NA
-                          )
-                        )
-                      ),
-                      sliderInput(ns("quantileplot"),
-                                  label = "Quantiles",
-                                  min = 0,
-                                  max = 1,
-                                  value = c(0, 1),
-                                  step = 0.001),
-                      actionBttn(
-                        ns("donebands"),
-                        label = "Done",
-                        no_outline = FALSE,
-                        icon = icon("check"),
-                        color = "success"
-                      ),
-                      circle = FALSE,
-                      status = "success",
-                      style = "unite",
-                      width = "420px",
-                      icon = icon("layer-group"),
-                      animate = animateOptions(enter = "fadeInLeft", exit = "fadeOutRight", duration = 1),
-                      tooltip = tooltipOptions(title = "Configure the bands")
+                dropdown(
+                  tags$h3("Bands"),
+                  fluidRow(
+                    col_3(
+                      selectInput(
+                        inputId = ns("r_band"),
+                        label = "R",
+                        choices = 1:5,
+                        selected = 1
+                      )
+                    ),
+                    col_3(
+                      selectInput(
+                        inputId = ns("g_band"),
+                        label = "G",
+                        choices = 1:5,
+                        selected = 2,
+                      )
+                    ),
+                    col_3(
+                      selectInput(
+                        inputId = ns("b_band"),
+                        label = "B",
+                        choices = 1:5,
+                        selected = 3,
+                      )
+                    ),
+                    col_3(
+                      selectInput(
+                        inputId = ns("re_band"),
+                        label = "RE",
+                        choices = NA
+                      )
                     )
+                  ),
+                  fluidRow(
+                    col_4(
+                      selectInput(
+                        inputId = ns("nir_band"),
+                        label = "NIR",
+                        choices = NA
+                      )
+                    ),
+                    col_4(
+                      selectInput(
+                        inputId = ns("swir_band"),
+                        label = "SWIR",
+                        choices = NA
+                      )
+                    ),
+                    col_4(
+                      selectInput(
+                        inputId = ns("tir_band"),
+                        label = "TIR",
+                        choices = NA
+                      )
+                    )
+                  ),
+                  sliderInput(ns("quantileplot"),
+                              label = "Quantiles",
+                              min = 0,
+                              max = 1,
+                              value = c(0, 1),
+                              step = 0.001),
+                  actionBttn(
+                    ns("donebands"),
+                    label = "Done",
+                    no_outline = FALSE,
+                    icon = icon("check"),
+                    color = "success"
+                  ),
+                  circle = FALSE,
+                  status = "success",
+                  style = "unite",
+                  width = "420px",
+                  icon = icon("layer-group"),
+                  animate = animateOptions(enter = "fadeInLeft", exit = "fadeOutRight", duration = 1),
+                  tooltip = tooltipOptions(title = "Configure the bands")
                 )
               )
             ),
