@@ -1473,18 +1473,25 @@ mod_timeseriesanalysis_server <- function(id, shapefile, mosaiclist, r, g, b, re
       }
     ")
       output$rawresults <- reactable::renderReactable({
-        render_reactable(
+        reactable(
           result_plot |>
             sf::st_drop_geometry() |>
             roundcols(digits = 3),
-          groupBy = "date",
-          columns = list(
-            date = colDef(minWidth = 150)
-          ),
+          filterable = TRUE,
+          searchable = TRUE,
+          striped = TRUE,
+          pagination = TRUE,
+          defaultPageSize = 15,
           defaultColDef = colDef(
             aggregated = jsf
+          ),
+          theme = reactableTheme(
+            cellPadding = "8px 10px",
+            style = list(fontFamily = "-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif"),
+            searchInputStyle = list(width = "100%")
           )
         )
+
       })
 
       # Sent do datasets
