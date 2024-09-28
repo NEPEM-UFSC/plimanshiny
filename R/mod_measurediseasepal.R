@@ -277,7 +277,7 @@ mod_measurediseasepal_ui <- function(id){
           ),
           tabPanel(
             title = "Configure Output",
-            h3("Assign output to the R environment"),
+            h3("Save the output to a temporary file"),
             fluidRow(
               col_4(
                 actionButton(

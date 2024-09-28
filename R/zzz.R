@@ -4,7 +4,7 @@
   versao <- sub('.*"version": *"(.*)".*', '\\1', grep('"version"', file, value = TRUE))
   packageStartupMessage("|============================================================|")
   packageStartupMessage("| Welcome to the plimanShiny package!                        |")
-  packageStartupMessage("| A Shiny App for the pliman package (version ", versao, ")         |")
+  packageStartupMessage("| A Shiny App for the pliman package (version ", versao, ")        |")
   packageStartupMessage("| Developed collaboratively by NEPEM - nepemufsc.com         |")
   packageStartupMessage("| Group lead: Prof. Tiago Olivoto                            |")
   packageStartupMessage("| For citation: type `citation('plimanshiny')`               |")

@@ -388,24 +388,15 @@ mod_analyze_ui <- function(id){
               )
             ),
             hl(),
-            h3("Assign output to the R environment"),
-            fluidRow(
-              col_4(
-                actionButton(
-                  inputId = ns("savetoglobalenv"),
-                  label = "Assign",
-                  icon = icon("share-from-square"),
-                  status = "success",
-                  gradient = TRUE,
-                  width = "150px",
-                  flat = TRUE
-                )
-              ),
-              col_8(
-                textInput(ns("globalvarname"),
-                          label = "Variable name",
-                          value = "plimanshiny_output")
-              )
+            h3("Assign output to an .Rdata file"),
+            actionButton(
+              inputId = ns("savetoglobalenv"),
+              label = "Assign",
+              icon = icon("share-from-square"),
+              status = "success",
+              gradient = TRUE,
+              width = "150px",
+              flat = TRUE
             )
           )
         )
@@ -1572,7 +1563,7 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
           sendSweetAlert(
             session = session,
             title = "Mosaic successfully analyzed!!",
-            text = "To see the raw data, go to 'Configure the output' tab, and assign the results to a variable in the R environment",
+            text = "To see the raw data, go to 'Configure the output' tab, and assign the results to a .Rdata file that can be imported into R with `get_results()`.",
             type = "success"
           )
         }
@@ -1702,25 +1693,20 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
 
         # send the results to the global environment
         observeEvent(input$savetoglobalenv, {
-
-          if (exists(input$globalvarname, envir = globalenv())) {
-            sendSweetAlert(
-              session = session,
-              title = "Error",
-              text = paste0("The object '", input$globalvarname, "' already exists in the global environment. Please, change the name."),
-              type = "success"
-            )
-          } else {
-            assign(input$globalvarname, report(), envir = globalenv())
-            ask_confirmation(
-              inputId = "myconfirmation",
-              type = "warning",
-              title = "Close the App?",
-              text = paste0("The object '", input$globalvarname, "' has been created in the Global environment. To access the created object, you need first to stop the App. Do you really want to close the app now?"),
-              btn_labels = c("Nope", "Yep"),
-              btn_colors = c("#FE642E", "#04B404")
-            )
-          }
+          req(report())
+          tf <- tempfile(pattern = "plimanshiny_output", fileext = ".RData")
+          plimanshiny_results <- report()
+          save(plimanshiny_results, file = tf)
+          ask_confirmation(
+            inputId = "myconfirmation",
+            type = "warning",
+            title = "Close the App?",
+            text = glue::glue("The results were saved in a temporary file ({basename(tf)}).
+              To access the created object, you need first to stop the App and run\n get_results()\n to load the list into your R environment.
+              Do you really want to close the app now?"),
+            btn_labels = c("Nope", "Yep"),
+            btn_colors = c("#FE642E", "#04B404")
+          )
         })
 
         observe({
@@ -1728,7 +1714,6 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
             if (input$myconfirmation) {
               stopApp()
             } else {
-              # Do something else or simply return if the confirmation is false
               return()
             }
           }
