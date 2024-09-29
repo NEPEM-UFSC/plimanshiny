@@ -282,7 +282,7 @@ mod_measurediseasepal_ui <- function(id){
               col_4(
                 actionButton(
                   inputId = ns("savetoglobalenv"),
-                  label = "Assign",
+                  label = "Save",
                   icon = icon("share-from-square"),
                   status = "success",
                   gradient = TRUE,

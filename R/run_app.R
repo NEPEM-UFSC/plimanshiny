@@ -57,10 +57,10 @@ run_app <- function(upload_size = 10000,
 #'
 #' @examples
 #' # Assuming you have run the {plimanshiny} app and results are saved in a temporary file
-#' results <- get_results()
+#' results <- get_plimanshiny_results()
 #'
 #' @export
-get_results <- function() {
+get_plimanshiny_results <- function() {
   files <- list.files(pattern = "plimanshiny_output", path = tempdir())
 
   if (length(files) == 0) {

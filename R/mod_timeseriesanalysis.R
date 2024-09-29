@@ -341,23 +341,14 @@ mod_timeseriesanalysis_ui <- function(id){
             ),
             hl(),
             h3("Save the output to a temporary file"),
-            fluidRow(
-              col_4(
-                actionButton(
-                  inputId = ns("savetoglobalenv"),
-                  label = "Assign",
-                  icon = icon("share-from-square"),
-                  status = "success",
-                  gradient = TRUE,
-                  width = "150px",
-                  flat = TRUE
-                )
-              ),
-              col_8(
-                textInput(ns("globalvarname"),
-                          label = "Variable name",
-                          value = "time_serie_output")
-              )
+            actionButton(
+              inputId = ns("savetoglobalenv"),
+              label = "Save",
+              icon = icon("share-from-square"),
+              status = "success",
+              gradient = TRUE,
+              width = "150px",
+              flat = TRUE
             )
           )
         )
@@ -1509,36 +1500,42 @@ mod_timeseriesanalysis_server <- function(id, shapefile, mosaiclist, r, g, b, re
 
       closeSweetAlert(session = session)
 
-    })
-
-    # save to global env
-    # send the results to the global environment
-    observeEvent(input$savetoglobalenv, {
-      req(report())
-      tf <- tempfile(pattern = "plimanshiny_output", fileext = ".RData")
-      plimanshiny_results <- report()
-      save(plimanshiny_results, file = tf)
-      ask_confirmation(
-        inputId = "myconfirmation",
-        type = "warning",
-        title = "Close the App?",
-        text = glue::glue("The results were saved in a temporary file ({basename(tf)}).
-              To access the created object, you need first to stop the App and run\n get_results()\n to load the list into your R environment.
+      # save to global env
+      # send the results to the global environment
+      observeEvent(input$savetoglobalenv, {
+        req(result_plot)
+        tf <- tempfile(pattern = "plimanshiny_output", fileext = ".RData")
+        plimanshiny_timeseries <- list(result_plot = result_plot,
+                                       result_indiv = result_indiv)
+        save(plimanshiny_timeseries, file = tf)
+        ask_confirmation(
+          inputId = "myconfirmation",
+          type = "warning",
+          title = "Close the App?",
+          text = glue::glue("The results were saved in a temporary file ({basename(tf)}).
+              To access the created object, you need first to stop the App and run
+              get_plimanshiny_results()
+              to load the list into your R environment.
               Do you really want to close the app now?"),
-        btn_labels = c("Nope", "Yep"),
-        btn_colors = c("#FE642E", "#04B404")
-      )
+          btn_labels = c("Nope", "Yep"),
+          btn_colors = c("#FE642E", "#04B404")
+        )
+      })
+
+      observe({
+        if (!is.null(input$myconfirmation)) {
+          if (input$myconfirmation) {
+            stopApp()
+          } else {
+            return()
+          }
+        }
+      })
+
+
     })
 
-    observe({
-      if (!is.null(input$myconfirmation)) {
-        if (input$myconfirmation) {
-          stopApp()
-        } else {
-          return()
-        }
-      }
-    })
+
 
     # # remove temp images after session is ended
     observe({

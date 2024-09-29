@@ -337,7 +337,7 @@ mod_measurediseaseind_ui <- function(id){
             h3("Save the output to a temporary file"),
             actionButton(
               inputId = ns("savetoglobalenv"),
-              label = "Assign",
+              label = "Save",
               icon = icon("share-from-square"),
               status = "success",
               gradient = TRUE,
@@ -911,7 +911,7 @@ mod_measurediseaseind_server <- function(id, imgdata, dfs, settings){
         type = "warning",
         title = "Close the App?",
         text = glue::glue("The results were saved in a temporary file ({basename(tf)}).
-              To access the created object, you need first to stop the App and run\n get_results()\n to load the list into your R environment.
+              To access the created object, you need first to stop the App and run get_plimanshiny_results() to load the list into your R environment.
               Do you really want to close the app now?"),
         btn_labels = c("Nope", "Yep"),
         btn_colors = c("#FE642E", "#04B404")
