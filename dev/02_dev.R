@@ -63,6 +63,7 @@ golem::add_module(name = "phanalyze")
 golem::add_module(name = "utmzonesel")
 golem::add_module(name = "geometricmeasures")
 golem::add_module(name = "config")
+golem::add_module(name = "timeseriesdsm")
 
 ## Add packages
 usethis::use_package("shiny")

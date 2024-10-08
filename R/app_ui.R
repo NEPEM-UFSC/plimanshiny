@@ -132,9 +132,14 @@ app_ui <- function(request) {
               icon = shiny::icon("file-upload", verify_fa = FALSE)
             ),
             bs4SidebarMenuSubItem(
-              text = "Analyze",
+              text = "Vegetation index",
               tabName = "analyzeseries",
               icon = shiny::icon("chart-line")
+            ),
+            bs4SidebarMenuSubItem(
+              text = "Canopy Height Model",
+              tabName = "timeseriesdsm",
+              icon = shiny::icon("ruler-combined")
             )
           ),
           # "Drone traits",
@@ -308,6 +313,10 @@ app_ui <- function(request) {
           bs4TabItem(
             tabName = "analyzeseries",
             mod_timeseriesanalysis_ui("timeseriesanalysis_1")
+          ),
+          bs4TabItem(
+            tabName = "timeseriesdsm",
+            mod_timeseriesdsm_ui("timeseriesdsm_1")
           ),
           # Drone traits
           bs4TabItem(

@@ -170,7 +170,7 @@ mod_timeseriesinput_ui <- function(id){
                 inline = TRUE
               )
             ),
-            col_4(
+            col_8(
               conditionalPanel(
                 condition = "input.showmosaic == 'bands'", ns = ns,
                 selectInput(
@@ -178,23 +178,27 @@ mod_timeseriesinput_ui <- function(id){
                   label = "Band number",
                   choices = NULL
                 )
-              )
-            ),
-            col_4(
-              selectInput(
-                ns("stretch"),
-                label = "Stretch",
-                choices = c("none", "lin", "hist")
+              ),
+              conditionalPanel(
+                condition = "input.showmosaic != 'bands'", ns = ns,
+                selectInput(
+                  ns("stretch"),
+                  label = "Stretch",
+                  choices = c("none", "lin", "hist")
+                )
               )
             )
           ),
-          sliderInput(
-            ns("gammacorr"),
-            label = "Gamma correction",
-            min = -5,
-            max = 5,
-            value = 1,
-            step = 0.1
+          conditionalPanel(
+            condition = "input.showmosaic != 'bands'", ns = ns,
+            sliderInput(
+              ns("gammacorr"),
+              label = "Gamma correction",
+              min = -5,
+              max = 5,
+              value = 1,
+              step = 0.1
+            )
           ),
           hl(),
           h3("Shapefile"),
@@ -447,6 +451,10 @@ mod_timeseriesinput_server <- function(id, shapefile, mosaiclist, r, g, b, re, n
         # check for correct layer configuration
         if(inherits(mosaiclist$mosaics$data[[1]], "SpatRaster")){
           nl <- terra::nlyr(mosaiclist$mosaics$data[[1]])
+          if(nl == 1){
+            updateAwesomeRadio(session, "showmosaic",
+                               selected = "bands")
+          }
           updateSelectInput(session, "r_band",
                             choices = 1:nl,
                             selected = "1")

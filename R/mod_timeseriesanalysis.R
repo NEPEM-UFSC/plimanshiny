@@ -360,10 +360,26 @@ mod_timeseriesanalysis_ui <- function(id){
           height = "780px",
           status = "success",
           title = "Results",
-          selected = "Overview",
+          selected = "Home",
           solidHeader = FALSE,
           maximizable = TRUE,
           type = "tabs",
+          tabPanel(
+            title = "Home",
+            fluidRow(
+              col_9(
+                img(src = "www/logoindex.png", width = "100%", height = "100%")
+              ),
+              col_3(
+                h2("About"),
+                "This module enables users to compute and analyze a time series of vegetation indices, providing valuable insights into crop health and environmental conditions over time.", br(), br(),
+                h2("Disclaimer"),
+                "We value your feedback and suggestions to improve the functionality and effectiveness of this application. Please share your thoughts with us.", br(), br(),
+                h2("Image Reference"),
+                "The image used for representation in this module was generated using advanced AI technologies."
+              )
+            )
+          ),
           tabPanel(
             title = "Overview",
             plotlyOutput(ns("timeserieoverview"), height = "720px") |> add_spinner()

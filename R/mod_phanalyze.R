@@ -516,6 +516,8 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
 
         }
       }
+
+
       req(shapefile[[input$shapefile]]$data)
       req(chmreact$rast)
       req(input$basemapplot)

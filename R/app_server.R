@@ -88,6 +88,7 @@ app_server <- function(input, output, session) {
   observeEvent(input[["config_1-plantmeas"]], {
     if (input[["config_1-plantmeas"]]) {
       mod_phanalyze_server("phanalyze_1", mosaic_data, shapefile, basemap, dfs, settings)
+      mod_timeseriesdsm_server("timeseriesdsm_1", shapefile, mosaiclist, basemap, dfs, settings)
     }
   })
   # Spatial interpolation
