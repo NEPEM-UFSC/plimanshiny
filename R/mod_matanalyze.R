@@ -129,7 +129,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
       title = "Home",
       fluidRow(
         col_9(
-          img(src = "www/logomat.png", width = "100%", height = "90%")
+          img(src = "www/logomat.jpg", width = "100%", height = "90%")
         ),
         col_3(
           h2("About"),
