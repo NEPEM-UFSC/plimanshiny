@@ -175,7 +175,7 @@ mod_timeseriesdsm_ui <- function(id){
             title = "Home",
             fluidRow(
               col_9(
-                img(src = "www/logodsm.png", width = "100%", height = "100%")
+                img(src = "www/logodsm.jpg", width = "100%", height = "100%")
               ),
               col_3(
                 h2("About"),
