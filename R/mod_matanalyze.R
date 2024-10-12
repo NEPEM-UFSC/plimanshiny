@@ -554,9 +554,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
                 dplyr::tibble(flights = seq(dfpars$parms[[1]][[1]]$xmin, dfpars$parms[[1]][[1]]$xmax, length.out = 1000),
                               class = ifelse(flights < dfpars$heading, "Vegetative", "Reproductive")) |>
                 as.data.frame()
-              # print(df_int)
               ypred <- predict(dfpars$parms[[1]][[1]]$modeladj, newdata = df_int)
-              # print(ypred)
               df_int <- dplyr::bind_cols(df_int, data.frame(y = ypred))
 
 
