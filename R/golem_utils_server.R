@@ -558,14 +558,17 @@ check_and_install_dependencies <- function(pkg_list, ns, input, inputId_check) {
     observe({
       if (!is.null(input$myconfirmation)) {
         if (input$myconfirmation) {
-          showNotification("Installing packages, please wait...", type = "message", duration = NULL) # duration = NULL keeps it until dismissed
+          showNotification("Installing packages, please wait...",
+                           type = "message",
+                           duration = NULL,
+                           id = "installpkg")
           pak::pkg_install(missing_pkgs)
           suppressMessages(
             suppressWarnings(
               sapply(missing_pkgs, library, character.only = TRUE, quietly = TRUE, warn.conflicts = FALSE)
             )
           )
-          removeNotification()
+          removeNotification("installpkg")
           showNotification("Packages installed successfully!", type = "message")
         } else {
           showNotification("Package installation canceled.", type = "warning")
@@ -609,3 +612,19 @@ observe_dependency <- function(input_id, packages, ns, input) {
     }
   }, ignoreInit = TRUE)
 }
+
+histoslider <- function(id){
+  ns <- NS(id) # Define ns com o namespace do módulo
+  pars <- read_pars()
+  if(pars$histoslider){
+    histoslider::input_histoslider(
+      id = ns("truncslider"),
+      label = "Truncate to...",
+      values = runif(50),
+      height = 350,
+    )
+  } else{
+    NULL
+  }
+}
+

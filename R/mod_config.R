@@ -150,7 +150,8 @@ mod_config_server <- function(id, settings){
     # load all
     observeEvent(input$enableall, {
       if (input$enableall) {
-        pkgs <- c("fields", "drc", "segmented", "magick", "shinycssloaders", "leafsync", "histoslider", "tidyterra", "rintrojs",
+        pkgs <- c("fields", "drc", "segmented", "magick", "shinycssloaders",
+                  "leafsync", "histoslider", "tidyterra", "rintrojs",
                   "sparkline", "leaflet.extras2")
         check_and_install_dependencies(pkgs, ns, input, "enableall")
         settings(lapply(default_settings, \(x){x = TRUE}))

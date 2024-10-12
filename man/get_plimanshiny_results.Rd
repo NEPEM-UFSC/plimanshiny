@@ -8,7 +8,7 @@ get_plimanshiny_results()
 }
 \value{
 The contents of the loaded file, typically a list or other object
-  created by {plimanshiny}
+  created by `plimanshiny`.
 }
 \description{
 This function searches for and loads the PlimanShiny output saved in a
@@ -17,18 +17,19 @@ pattern `"plimanshiny_output"`, loads the first match found, and makes the
 resulting object available in the R environment.
 }
 \details{
-The function assumes that a file containing {plimanshiny} results was
+The function assumes that a file containing `plimanshiny` results was
   saved with a filename matching the pattern `"plimanshiny_output"`. It
   searches for such files in the temporary directory (`tempdir()`), loads the
   first match, and returns the results.
 }
 \note{
-This function is intended to be used after running the {plimanshiny}
+This function is intended to be used after running the `plimanshiny`
   app, which saves results to a temporary file. You should call this function
   after stopping the app to retrieve the saved results.
 }
 \examples{
-# Assuming you have run the {plimanshiny} app and results are saved in a temporary file
+# Assuming you have run the plimanshiny app and results are saved in a temporary file
+library(plimanshiny)
 results <- get_plimanshiny_results()
 
 }

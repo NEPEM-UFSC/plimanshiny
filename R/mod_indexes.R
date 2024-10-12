@@ -167,6 +167,11 @@ mod_indexes_ui <- function(id){
                     label = "Truncate index?",
                     value = FALSE,
                     status = "success"
+                  ),
+                  conditionalPanel(
+                    condition = "input.truncateindex == true", ns = ns,
+                    # histoslider(id)
+
                   )
                 )
               ),
@@ -188,25 +193,17 @@ mod_indexes_ui <- function(id){
               condition = "input.truncateindex == true", ns = ns,
               fluidRow(
                 col_5(
-                  conditionalPanel(
-                    condition = "input['config_1-histoslider'] === true",
-                    histoslider::input_histoslider(
-                      id = ns("truncslider"),
-                      label = "Truncate to...",
-                      values = runif(50),
-                      height = 350,
-                    )
-                  ),
                   actionBttn(
                     inputId = ns("truncindex"),
                     label = "Truncate!",
                     style = "pill",
                     color = "success",
                     icon = icon("down-left-and-up-right-to-center")
-                  )
+                  ),
+                  histoslider(id)
                 ),
                 col_7(
-                  plotOutput(ns("plotindextrunc"), height = "600px")
+                  plotOutput(ns("plotindextrunc"), height = "600px"),
                 )
               )
             ),
@@ -325,7 +322,6 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
         mosaictmp$mosaic <- mosaic_data[[input$rastertocompute]]$data
       }
     })
-
 
     observeEvent(input$mosaicinfoindex, {
       req(mosaictmp$mosaic)
@@ -460,14 +456,16 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
     truncated <- reactiveValues(trunc = NULL)
     wastrunc <- reactiveValues(was = 0)
     tt <- reactiveValues(tt = NULL)
+
     # Render plot based on the selected index to sync
     # Update histoslider when indextosync changes
     observeEvent(input$indextosync, {
       req(magg$agg)
       req(input$indextosync %in% names(magg$agg))
       tt$tt <- magg$agg[[input$indextosync]]
+
       if(settings()$histoslider){
-        histoslider::update_histoslider("truncslider", values = terra::values(tt$tt), breaks = 100)
+        update_histoslider("truncslider", values = terra::values(tt$tt), breaks = 100)
       }
     })
 
@@ -490,6 +488,7 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
       if(input$truncateindex){
         req(input$indextosync %in% names(magg$agg), "Selected index not found in data.")
         tt <- magg$agg[[input$indextosync]]
+        req(input$truncslider)
         maskk <- tt > input$truncslider[[1]] & tt < input$truncslider[[2]]
         truncated$trunc <- terra::mask(tt, maskk, maskvalues = FALSE)
         output$plotindextrunc <- renderPlot({

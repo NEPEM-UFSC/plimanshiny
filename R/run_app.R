@@ -42,44 +42,43 @@ run_app <- function(upload_size = 10000,
 #' resulting object available in the R environment.
 #'
 #' @return The contents of the loaded file, typically a list or other object
-#'   created by {plimanshiny}
+#'   created by `plimanshiny`.
 #'
-#' @details The function assumes that a file containing {plimanshiny} results was
+#' @details The function assumes that a file containing `plimanshiny` results was
 #'   saved with a filename matching the pattern `"plimanshiny_output"`. It
 #'   searches for such files in the temporary directory (`tempdir()`), loads the
 #'   first match, and returns the results.
 #'
-#' @note This function is intended to be used after running the {plimanshiny}
+#' @note This function is intended to be used after running the `plimanshiny`
 #'   app, which saves results to a temporary file. You should call this function
 #'   after stopping the app to retrieve the saved results.
 #'
 #' @seealso [tempdir()], [load()]
 #'
 #' @examples
-#' # Assuming you have run the {plimanshiny} app and results are saved in a temporary file
+#' # Assuming you have run the plimanshiny app and results are saved in a temporary file
+#' library(plimanshiny)
 #' results <- get_plimanshiny_results()
 #'
 #' @export
 get_plimanshiny_results <- function() {
   files <- list.files(pattern = "plimanshiny_output", path = tempdir())
-
   if (length(files) == 0) {
     warning("No 'plimanshiny_output' file found in the temporary directory.")
     return(NULL)
+  } else{
+    file_path <- paste0(tempdir(), "/", files[[1]])
+
+    # Capture the name(s) of the object(s) loaded
+    loaded_objects <- load(file_path)
+
+    # If there's only one object loaded, return it directly
+    if (length(loaded_objects) == 1) {
+      return(get(loaded_objects))
+    }
+    # If there are multiple objects, return a list of all of them
+    result_list <- lapply(loaded_objects, get)
+    names(result_list) <- loaded_objects
+    return(result_list)
   }
-
-  file_path <- paste0(tempdir(), "/", files[[1]])
-
-  # Capture the name(s) of the object(s) loaded
-  loaded_objects <- load(file_path)
-
-  # If there's only one object loaded, return it directly
-  if (length(loaded_objects) == 1) {
-    return(get(loaded_objects))
-  }
-
-  # If there are multiple objects, return a list of all of them
-  result_list <- lapply(loaded_objects, get)
-  names(result_list) <- loaded_objects
-  return(result_list)
 }
