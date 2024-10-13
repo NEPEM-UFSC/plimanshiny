@@ -128,126 +128,138 @@ mod_timeseriesinput_ui <- function(id){
                          value = 1e6)
           ),
           hl(),
-          h3("Raster files"),
-          fluidRow(
-            col_6(
-              shinyFilesButton(id=ns("filemosaic"),
-                               label="Raster files",
-                               title="Raster file(s)",
-                               buttonType = "primary",
-                               multiple = TRUE,
-                               class = NULL,
-                               icon = icon("magnifying-glass"),
-                               style = NULL)
-            ),
-            col_6(
-              actionButton(
-                inputId = ns("importrasters"),
-                label = "Import",
-                icon = icon("share-from-square"),
-                status = "success",
-                gradient = TRUE,
-                width = "130px"
-              )
-            )
-          ),
-          selectizeInput(
-            inputId = ns("mosaics"),
-            label = "Selected raster files",
-            choices = NULL,
-            multiple=TRUE,
-            options = list('plugins' = list('remove_button'),
-                           'create' = TRUE,
-                           'persist'= FALSE)
-          ),
-          fluidRow(
-            col_4(
-              awesomeRadio(
-                inputId = ns("showmosaic"),
-                label = "Show",
-                choices = c("rgb", "bands"),
-                selected = "rgb",
-                inline = TRUE
-              )
-            ),
-            col_8(
-              conditionalPanel(
-                condition = "input.showmosaic == 'bands'", ns = ns,
-                selectInput(
-                  ns("bandnumber"),
-                  label = "Band number",
-                  choices = NULL
+          bs4TabCard(
+            id = "tabsindex",
+            width = 12,
+            status = "success",
+            title = "",
+            selected = "Raster files",
+            solidHeader = FALSE,
+            type = "tabs",
+            tabPanel(
+              "Raster files",
+              fluidRow(
+                col_6(
+                  shinyFilesButton(id=ns("filemosaic"),
+                                   label="Raster files",
+                                   title="Raster file(s)",
+                                   buttonType = "primary",
+                                   multiple = TRUE,
+                                   class = NULL,
+                                   icon = icon("magnifying-glass"),
+                                   style = NULL)
+                ),
+                col_6(
+                  actionButton(
+                    inputId = ns("importrasters"),
+                    label = "Import",
+                    icon = icon("share-from-square"),
+                    status = "success",
+                    gradient = TRUE,
+                    width = "130px"
+                  )
+                )
+              ),
+              selectizeInput(
+                inputId = ns("mosaics"),
+                label = "Selected raster files",
+                choices = NULL,
+                multiple=TRUE,
+                options = list('plugins' = list('remove_button'),
+                               'create' = TRUE,
+                               'persist'= FALSE)
+              ),
+              fluidRow(
+                col_4(
+                  awesomeRadio(
+                    inputId = ns("showmosaic"),
+                    label = "Show",
+                    choices = c("rgb", "bands"),
+                    selected = "rgb",
+                    inline = TRUE
+                  )
+                ),
+                col_8(
+                  conditionalPanel(
+                    condition = "input.showmosaic == 'bands'", ns = ns,
+                    selectInput(
+                      ns("bandnumber"),
+                      label = "Band number",
+                      choices = NULL
+                    )
+                  ),
+                  conditionalPanel(
+                    condition = "input.showmosaic != 'bands'", ns = ns,
+                    selectInput(
+                      ns("stretch"),
+                      label = "Stretch",
+                      choices = c("none", "lin", "hist")
+                    )
+                  )
                 )
               ),
               conditionalPanel(
                 condition = "input.showmosaic != 'bands'", ns = ns,
-                selectInput(
-                  ns("stretch"),
-                  label = "Stretch",
-                  choices = c("none", "lin", "hist")
+                sliderInput(
+                  ns("gammacorr"),
+                  label = "Gamma correction",
+                  min = -5,
+                  max = 5,
+                  value = 1,
+                  step = 0.1
                 )
               )
-            )
-          ),
-          conditionalPanel(
-            condition = "input.showmosaic != 'bands'", ns = ns,
-            sliderInput(
-              ns("gammacorr"),
-              label = "Gamma correction",
-              min = -5,
-              max = 5,
-              value = 1,
-              step = 0.1
-            )
-          ),
-          hl(),
-          h3("Shapefile"),
-          fluidRow(
-            col_6(
-              shinyFilesButton(id=ns("shapefileinput"),
-                               label="Shapefile",
-                               title="Shapefile",
-                               buttonType = "primary",
-                               multiple = TRUE,
-                               class = NULL,
-                               icon = icon("magnifying-glass"),
-                               style = NULL)
             ),
-            col_6(
-              actionButton(
-                inputId = ns("importshapefile"),
-                label = "Import",
-                icon = icon("share-from-square"),
+            tabPanel(
+              "Shapefile",
+              fluidRow(
+                col_6(
+                  shinyFilesButton(id=ns("shapefileinput"),
+                                   label="Shapefile",
+                                   title="Shapefile",
+                                   buttonType = "primary",
+                                   multiple = TRUE,
+                                   class = NULL,
+                                   icon = icon("magnifying-glass"),
+                                   style = NULL)
+                ),
+                col_6(
+                  actionButton(
+                    inputId = ns("importshapefile"),
+                    label = "Import",
+                    icon = icon("share-from-square"),
+                    status = "success",
+                    gradient = TRUE,
+                    width = "130px"
+                  )
+                )
+              ),
+              selectizeInput(
+                inputId = ns("shapefileimported"),
+                label = "Selected shapefile",
+                choices = NULL,
+                multiple=FALSE,
+                options = list('plugins' = list('remove_button'),
+                               'create' = TRUE,
+                               'persist'= FALSE)
+              ),
+              prettyCheckbox(
+                inputId = ns("croptoshape"),
+                label = "Crop rasters to shapefile extend",
+                value = FALSE,
+                icon = icon("check"),
                 status = "success",
-                gradient = TRUE,
-                width = "130px"
+                animation = "rotate"
+              ),
+              prettyCheckbox(
+                inputId = ns("plotshape"),
+                label = "Plot the shapefile",
+                value = TRUE,
+                icon = icon("check"),
+                status = "success",
+                animation = "rotate"
               )
             )
-          ),
-          selectizeInput(
-            inputId = ns("shapefileimported"),
-            label = "Selected shapefile",
-            choices = NULL,
-            multiple=FALSE,
-            options = list('plugins' = list('remove_button'),
-                           'create' = TRUE,
-                           'persist'= FALSE)
-          ),
-          prettyCheckbox(
-            inputId = ns("croptoshape"),
-            label = "Crop rasters to shapefile extend",
-            value = FALSE,
-            icon = icon("check"),
-            status = "success",
-            animation = "rotate"
-          ),
-          prettyCheckbox(
-            inputId = ns("plotshape"),
-            label = "Plot the shapefile",
-            value = TRUE,
-            icon = icon("check"),
-            status = "success",
-            animation = "rotate"
           )
         )
       ),

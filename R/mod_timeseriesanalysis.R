@@ -785,6 +785,17 @@ mod_timeseriesanalysis_server <- function(id, shapefile, mosaiclist, r, g, b, re
         bind[[names(mosaiclist$mosaics$data[i])]] <- res
       }
 
+      closeSweetAlert(session = session)
+
+      sendSweetAlert(
+        session = session,
+        title = "Almost done!",
+        text = paste("{plimanshiny} is processing the results. Please wait while we finalize everything..."),
+        type = "info",
+        btn_labels = NA
+      )
+
+
 
       if(is.null(bind[[1]]$result_individ_map)){
         result_individ_map <- NULL
@@ -1515,6 +1526,13 @@ mod_timeseriesanalysis_server <- function(id, shapefile, mosaiclist, r, g, b, re
       mod_download_shapefile_server("downresplot", terra::vect(result_plot), name = "time_series_output")
 
       closeSweetAlert(session = session)
+
+      sendSweetAlert(
+        session = session,
+        title = "Mosaic successfully analyzed!!",
+        text = "The mosaic has been analyzed and the results can now be seen in the tabs",
+        type = "success"
+      )
 
       # save to global env
       # send the results to the global environment
