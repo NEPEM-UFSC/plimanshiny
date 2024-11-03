@@ -70,6 +70,7 @@ app_server <- function(input, output, session) {
   mod_dfedit_server("dfedit_1", dfs, shapefile, settings)
   mod_dfupdate_server("dfupdate_1", dfs, shapefile, settings)
   mod_dfjoin_server("dfjoin_1", dfs, shapefile, settings)
+  mod_summarize_server("summarize_1", dfs, shapefile)
 
   # Conditional modules
   # slider
@@ -105,6 +106,8 @@ app_server <- function(input, output, session) {
   # Settings
   settings <- reactiveVal()
   mod_config_server("config_1", settings)
+
+
 }
 
 

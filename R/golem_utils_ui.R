@@ -521,39 +521,207 @@ make_action_button <- function(tag, inputId = NULL) {
 }
 
 
-# UNCOMMENT AND USE
-#
-# attachment::att_amend_desc()
-#
-# To use this part of the UI
-#
-#' #' Include Content From a File
-#' #'
-#' #' Load rendered RMarkdown from a file and turn into HTML.
-#' #'
-#' #' @rdname includeRMarkdown
-#' #' @export
-#' #'
-#' #' @importFrom rmarkdown render
-#' #' @importFrom markdown markdownToHTML
-#' #' @importFrom shiny HTML
-#' includeRMarkdown <- function(path){
-#'
-#'   md <- tempfile(fileext = '.md')
-#'
-#'   on.exit(unlink(md),add = TRUE)
-#'
-#'   rmarkdown::render(
-#'     path,
-#'     output_format = 'md_document',
-#'     output_dir = tempdir(),
-#'     output_file = md,quiet = TRUE
-#'     )
-#'
-#'   html <- markdown::markdownToHTML(md, fragment.only = TRUE)
-#'
-#'   Encoding(html) <- "UTF-8"
-#'
-#'   return(HTML(html))
-#' }
 
+
+
+# Define the drag_ui function with customizable colors for numeric and character variables
+drag_ui <- function(id,
+                    label = "Drag-and-Drop Area",
+                    numeric_color = "#b2f2b2",
+                    character_color = "#b2d9f2",
+                    animation_time = 0.3,
+                    animation_time_drag = 1.5,
+                    explosion_time = 0.5,
+                    scale_factor = 1.3,  # Scale factor for bounce effect
+                    dropzone_bg = "#f9f9f9",
+                    dropzone_shadow = "0px 4px 6px rgba(0, 0, 0, 0.15)",
+                    draggable_bg = "#e1e1e1",
+                    draggable_shadow = "0px 4px 6px rgba(0, 0, 0, 0.15)",
+                    dropzone_width = "600px",
+                    dropzone_height = "100px") {
+
+  ns <- NS(id)
+
+  tagList(
+    tags$style(HTML(sprintf("
+      .drag-container {
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        margin-bottom: 10px;
+        align-items: flex-start;
+      }
+      .dropzone {
+        padding: 10px;
+        text-align: center;
+        background-color: %1$s !important;
+        border-radius: 15px;
+        width: %12$s;
+        height: %13$s;
+        margin-bottom: 10px;
+        box-shadow: %2$s;
+      }
+      .draggable {
+        cursor: move;
+        padding: 5px;
+        margin: 1px;
+        background-color: %3$s;
+        border: 1px solid #aaa;
+        display: inline-block;
+        border-radius: 15px;
+        box-shadow: %4$s;
+      }
+      /* Add transition to dropped elements */
+      .draggable.dropped {
+        transition: transform %5$ss ease, opacity %5$ss ease;
+        transform: scale(%6$s);
+        opacity: 1;
+      }
+      .numeric-var {
+        background-color: %7$s;
+        box-shadow: %8$s;
+      }
+      .character-var {
+        background-color: %9$s;
+        box-shadow: %10$s;
+      }
+      .remove-btn {
+        cursor: pointer;
+        color: red;
+        margin-left: 10px;
+        font-weight: bold;
+      }
+      /* Flex container for draggable items */
+      .flex-draggable-container {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 5px;
+        margin-bottom: 5px;
+        align-items: center;
+      }
+      /* Bounce Effect with Scale for dragging */
+      @keyframes bounce-scale {
+        0%% {
+          transform: scale(%6$s) translateY(0);
+        }
+        25%% {
+          transform: scale(%6$s) translateY(-5px);
+        }
+        50%% {
+          transform: scale(%6$s) translateY(0);
+        }
+        75%% {
+          transform: scale(%6$s) translateY(-5px);
+        }
+        100%% {
+          transform: scale(%6$s) translateY(0);
+        }
+      }
+      .dragging {
+        animation: bounce-scale %14$ss infinite;
+      }
+      /* Zoom Effect for removal */
+      @keyframes zoom-out {
+        0%% {
+          transform: scale(1);
+          opacity: 1;
+        }
+        25%% {
+          transform: scale(1.5);
+          opacity: 0.75;
+        }
+        37%% {
+          transform: scale(1.75);
+          opacity: 0.60;
+        }
+        50%% {
+          transform: scale(2);
+          opacity: 0.5;
+        }
+        75%% {
+          transform: scale(1.5);
+          opacity: 0.4;
+        }
+        85%% {
+          transform: scale(1);
+          opacity: 0.2;
+        }
+        95%% {
+          transform: scale(0.5);
+          opacity: 0.25;
+        }
+        100%% {
+          transform: scale(0);
+          opacity: 0;
+        }
+      }
+      .exploding {
+        animation: zoom-out %11$ss forwards;
+      }
+    ", dropzone_bg, dropzone_shadow, draggable_bg, draggable_shadow, animation_time,
+                            scale_factor, numeric_color, draggable_shadow,
+                            character_color, draggable_shadow, explosion_time,
+                            dropzone_width, dropzone_height, animation_time_drag))),
+
+    fluidRow(
+      div(class = "flex-draggable-container", # Flex container to arrange items side by side
+          uiOutput(ns("draggables_ui"))  # Render draggables dynamically
+      )
+    ),
+
+    fluidRow(
+      div(class = "drag-container",
+          div(id = ns("dropzone"), class = "dropzone", label, style = "text-align: left;")
+      )
+    ),
+
+    # JavaScript to handle drag-and-drop with bounce-scale and zoom-out effects
+    tags$script(HTML(sprintf("
+      var dragged;
+      document.addEventListener('dragstart', function(event) {
+        dragged = event.target;
+        dragged.classList.add('dragging');  // Add bounce-scale effect when dragging
+      });
+
+      document.addEventListener('dragend', function(event) {
+        dragged.classList.remove('dragging');  // Remove bounce-scale effect when dragging stops
+      });
+
+      // Prevent default behavior (Prevent file from being opened)
+      document.addEventListener('dragover', function(event) {
+        event.preventDefault();
+      });
+
+      // Handle the drop event
+      document.addEventListener('drop', function(event) {
+        event.preventDefault();
+        var zoneId = event.target.id;
+
+        if (zoneId === '%s' && dragged.classList.contains('draggable')) {
+          var newItem = document.createElement('div');
+          newItem.className = 'draggable';
+          newItem.innerHTML = dragged.innerHTML + '<span class=\"remove-btn\">&#10005;</span>';
+          newItem.setAttribute('draggable', 'false');  // Disable dragging after adding
+          event.target.appendChild(newItem);
+
+          // Notify Shiny server about dropped item
+          Shiny.setInputValue('%s', dragged.innerText.trim(), {priority: 'event'});
+
+          // Add event listener to remove the dropped item
+          newItem.querySelector('.remove-btn').addEventListener('click', function() {
+            var parent = this.parentElement;
+            parent.classList.add('exploding');  // Trigger zoom-out animation on removal
+            setTimeout(function() {
+              parent.remove();  // Remove item after zoom-out animation
+              // Notify Shiny server about removed item
+              Shiny.setInputValue('%s', newItem.innerText.replace('✕', '').trim(), {priority: 'event'});
+            }, %d);
+          });
+
+          dragged.remove();  // Remove the original dragged item
+        }
+      });
+    ", ns("dropzone"), ns("dropped_item"), ns("removed_item"), explosion_time * 1000)))
+  )
+}

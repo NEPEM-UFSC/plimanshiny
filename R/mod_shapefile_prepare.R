@@ -16,11 +16,11 @@ mod_shapefile_prepare_ui <- function(id){
         width = 12,
         status = "success",
         title = "Settings",
-        selected = "Build",
+        selected = "Input",
         solidHeader = FALSE,
         type = "tabs",
         tabPanel(
-          title = "Build",
+          title = "Input",
           fluidRow(
             col_6(
               divclass("shape1",
@@ -123,9 +123,6 @@ mod_shapefile_prepare_ui <- function(id){
               )
             )
           ),
-          selectInput(ns("shapefiletoanalyze"),
-                      label = "Active Shapefile",
-                      choices = NULL),
           conditionalPanel(
             condition = "input.shapetype == 'Build'", ns = ns,
             divclass("shape3",
@@ -197,12 +194,15 @@ mod_shapefile_prepare_ui <- function(id){
                          )
                        ),
                        col_5(
-                         actionBttn(
-                           ns("plotinfo"),
-                           label = "Plot info",
-                           icon = icon("info"),
-                           color = "success",
-                           style = "jelly"
+                         conditionalPanel(
+                           condition = "input['config_1-plotinfo'] === true",
+                           actionBttn(
+                             ns("plotinfo"),
+                             label = "Plot info",
+                             icon = icon("info"),
+                             color = "success",
+                             style = "jelly"
+                           )
                          )
                        )
                      ),
@@ -297,11 +297,48 @@ mod_shapefile_prepare_ui <- function(id){
           conditionalPanel(
             condition = "input.shapetype == 'Import'", ns = ns,
             tags$hr(),
-            divclass("shapeimp1",
-                     fileInput(ns("import_shapefile"),
-                               "Import a shapefile (.shp, .rds)",
-                               accept=c(".rds",  ".shp",  ".json", ".kml",  ".gml",  ".dbf",  ".sbn",  ".sbx",  ".shx",  ".prj", ".cpg"), multiple=TRUE)
+            fluidRow(
+              col_6(
+                shinyFilesButton(id=ns("shapefileinput"),
+                                 label="Shapefile",
+                                 title="Shapefile",
+                                 buttonType = "primary",
+                                 multiple = TRUE,
+                                 class = NULL,
+                                 icon = icon("magnifying-glass"),
+                                 style = NULL)
+              ),
+              col_6(
+                prettyCheckbox(
+                  inputId = ns("multiline"),
+                  label = "Multilinestring",
+                  value = FALSE,
+                  icon = icon("check"),
+                  status = "success",
+                  animation = "rotate"
+                )
+              )
             ),
+            textInput(
+              ns("filemosaicpath"),
+              label = "Choosen file(s)",
+              value = "",
+              width = "100%"
+            ),
+            conditionalPanel(
+              condition = "input.filemosaicpath != ''", ns = ns,
+              fluidRow(
+                actionBttn(ns("importshapefile"),
+                           label = "Import the choosen file(s)",
+                           no_outline = FALSE,
+                           icon = icon("file-import"),
+                           style = "material-flat",
+                           color = "primary")
+              )
+            ),
+            # fileInput(ns("import_shapefile"),
+            #           "Import a shapefile (.shp, .rds)",
+            #           accept=c(".rds",  ".shp",  ".json", ".kml",  ".gml",  ".dbf",  ".sbn",  ".sbx",  ".shx",  ".prj", ".cpg"), multiple=TRUE),
             tags$hr(),
             divclass("shapeimp2",
                      selectInput(ns("colorshapeimport"),
@@ -318,12 +355,15 @@ mod_shapefile_prepare_ui <- function(id){
                 )
               ),
               col_6(
-                actionBttn(
-                  ns("plotinfo2"),
-                  label = "Plot info",
-                  icon = icon("info"),
-                  color = "success",
-                  style = "jelly"
+                conditionalPanel(
+                  condition = "input['config_1-plotinfo'] === true",
+                  actionBttn(
+                    ns("plotinfo2"),
+                    label = "Plot info",
+                    icon = icon("info"),
+                    color = "success",
+                    style = "jelly"
+                  )
                 )
               )
             ),
@@ -342,7 +382,10 @@ mod_shapefile_prepare_ui <- function(id){
                        ), br()
               )
             )
-          )
+          ),
+          selectInput(ns("shapefiletoanalyze"),
+                      label = "Active Shapefile",
+                      choices = NULL)
         ),
         tabPanel(
           title = "Download",
@@ -720,228 +763,238 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
     # Import a shapefile
     observeEvent(input$shapetype, {
       if (input$shapetype == "Import") {
-        observeEvent(input$import_shapefile, {
-          newshpname <- input$import_shapefile$name
-          # Check if the mosaic already exists in shapefile
-          if (any(newshpname %in% names(shapefile))) {
-            # If it exists, update the existing reactiveValues
-            moname <- newshpname[newshpname %in% names(shapefile)]
-            ask_confirmation(
-              inputId = "confirmashpname",
-              type = "warning",
-              title = "Shapefile already imported",
-              text = paste0("The object '", paste0(moname, collapse = ", "), "' is already available in the list of imported shapefiles. Do you really want to overwrite it?"),
-              btn_labels = c("Nope", "Yep"),
-              btn_colors = c("#FE642E", "#04B404")
-            )
-            observe({
-              if (!is.null(input$confirmashpname)) {
-                if (input$confirmashpname) {
-                  if("shp" %in% file_extension(input$import_shapefile$datapath)){
-                    shpimp <- import_shp_mod(input$import_shapefile$datapath,
-                                             input$import_shapefile,
-                                             session) |>
-                      convert_numeric_cols() |>
-                      check_cols_shpinp()
-                    shapefile[[paste0(file_name(newshpname[[1]]), ".shp")]] <- create_reactval(paste0(file_name(newshpname[[1]]), ".shp"), shpimp)
-                  } else{
-                    for (i in 1:length(newshpname)) {
-                      shpimp <- import_shp_mod(input$import_shapefile$datapath[[i]],
-                                               input$import_shapefile[[i]],
-                                               session) |>
-                        convert_numeric_cols() |>
-                        check_cols_shpinp()
-                      shapefile[[newshpname[[i]]]] <- create_reactval(newshpname[[i]], shpimp)
-                    }
-                  }
-                } else {
-                  return()
-                }
-              }
-            })
-          } else {
-            # If it doesn't exist, create a new reactiveValues and add it to mosaic_data
-            if("shp" %in% file_extension(input$import_shapefile$datapath)){
-              shpimp <- import_shp_mod(input$import_shapefile$datapath,
-                                       input$import_shapefile,
-                                       session) |>
-                convert_numeric_cols() |>
-                check_cols_shpinp()
+        # observeEvent(input$import_shapefile, {
 
-              shapefile[[paste0(file_name(newshpname[[1]]), ".shp")]] <- create_reactval(paste0(file_name(newshpname[[1]]), ".shp"), shpimp)
-            } else{
-              for (i in 1:length(newshpname)) {
-                shpimp <- import_shp_mod(input$import_shapefile$datapath[[i]],
-                                         input$import_shapefile[[i]],
-                                         session) |>
-                  convert_numeric_cols() |>
-                  check_cols_shpinp()
-                shapefile[[newshpname[[i]]]] <- create_reactval(newshpname[[i]], shpimp)
-              }
+
+        # shapefile
+        pathshape <- reactiveValues(file = NULL)
+        observe({
+          shinyFileChoose(input, "shapefileinput",
+                          root = getVolumes()(),
+                          filetypes = c("rds",  "shp",  "json", "kml",  "gml",  "dbf",  "sbn",  "sbx",  "shx",  "prj", "cpg"),
+                          session = session)
+          if(!is.null(input$shapefileinput)){
+            pathshape$file <- parseFilePaths(getVolumes()(), input$shapefileinput)
+            if(length(pathshape$file$datapath) != 0){
+              updateTextInput(session, "filemosaicpath", value = paste0(pathshape$file$datapath, collapse = ", "))
             }
           }
-
-          observe({
-            shapefilenames <- setdiff(c("none", names(shapefile)), c("shapefile", "shapefileplot"))
-            # Update selectInput choices
-            updateSelectInput(session, "shapefiletoanalyze",
-                              choices = shapefilenames,
-                              selected = shapefilenames[[length(shapefilenames)]])
-          })
+        })
 
 
-          observe({
-            req(input$shapefiletoanalyze)  # Ensure mosaic_data$mosaic is not NULL
-
-            updateSelectInput(session, "colorshapeimport", choices = c("none", names(shapefile[[input$shapefiletoanalyze]]$data)))
-            updateSelectInput(session, "fillid", choices = c("none", names(shapefile[[input$shapefiletoanalyze]]$data)))
-
-            if(!is.null(mosaic_data$mosaic) & input$shapefiletoanalyze != "none"){
-              if(sf::st_crs(shapefile[[input$shapefiletoanalyze]]$data) != sf::st_crs(mosaic_data$mosaic)){
-                sendSweetAlert(
-                  session = session,
-                  title = "Invalid CRS",
-                  text = "The Coordinate Reference System (CRS) of the shapefile does
-            not match the input mosaic. Trying to set the shapefile's CRS to match the mosaic one.",
-                  type = "warning"
-                )
-                shp <- shapefile[[input$shapefiletoanalyze]]$data |> sf::st_transform(crs = sf::st_crs(mosaic_data$mosaic))
-                shapefile[[input$shapefiletoanalyze]] <- create_reactval(input$shapefiletoanalyze, shp)
+        observeEvent(input$importshapefile, {
+          showNotification(
+            ui = "Importing the shapefile(s)... Please, wait!",
+            type = "message",
+            duration = NULL,   # Infinite duration until manually removed
+            id = "importshp"
+          )
+          if(length(pathshape$file$datapath) != 0){
+            new_mosaic_name <- sapply(pathshape$file$datapath, file_name)
+            # Check if the mosaic already exists in mosaic_data
+            if (any(new_mosaic_name %in% names(shapefile))) {
+              # If it exists, update the existing reactiveValues
+              moname <- new_mosaic_name[new_mosaic_name %in% names(shapefile)]
+              ask_confirmation(
+                inputId = "confirmmosaicname",
+                type = "warning",
+                title = "Mosaic already imported",
+                text = paste0("The object '", paste0(moname, collapse = ", "), "' is already available in the list of imported mosaics. Do you really want to overwrite it?"),
+                btn_labels = c("Nope", "Yep"),
+                btn_colors = c("#FE642E", "#04B404")
+              )
+              observe({
+                if (!is.null(input$confirmmosaicname)) {
+                  if (input$confirmmosaicname) {
+                    for (i in 1:length(new_mosaic_name)) {
+                      shapefile[[new_mosaic_name[[i]]]] <- create_reactval(new_mosaic_name[[i]], shapefile_input(pathshape$file$datapath[[i]], info = FALSE, multilinestring = input$multiline))
+                    }
+                  } else {
+                    return()
+                  }
+                }
+              })
+            } else {
+              # If it doesn't exist, create a new reactiveValues and add it to mosaic_data
+              for (i in 1:length(new_mosaic_name)) {
+                shapefile[[new_mosaic_name[[i]]]] <- create_reactval(new_mosaic_name[[i]], shapefile_input(pathshape$file$datapath[[i]], info = FALSE, multilinestring = input$multiline))
               }
             }
-            output$shapefile_mapview <- renderLeaflet({
-              req(input$colorshapeimport)
+
+            observe({
+              mosaicnames <-  setdiff(names(shapefile), c("mosaic", "shapefileplot"))
+              updateSelectInput(session, "shapefiletoanalyze",
+                                choices = mosaicnames,
+                                selected = mosaicnames[[1]])
+              removeNotification(id = "importshp")
+              #
+
+            })
+          }
+        })
+
+
+        observe({
+          shapefilenames <- setdiff(c("none", names(shapefile)), c("shapefile", "shapefileplot"))
+          # Update selectInput choices
+          updateSelectInput(session, "shapefiletoanalyze",
+                            choices = shapefilenames,
+                            selected = shapefilenames[[length(shapefilenames)]])
+        })
+
+
+        observe({
+          req(input$shapefiletoanalyze)  # Ensure mosaic_data$mosaic is not NULL
+
+          updateSelectInput(session, "colorshapeimport", choices = c("none", names(shapefile[[input$shapefiletoanalyze]]$data)))
+          updateSelectInput(session, "fillid", choices = c("none", names(shapefile[[input$shapefiletoanalyze]]$data)))
+
+          if(!is.null(mosaic_data$mosaic) & input$shapefiletoanalyze != "none"){
+            if(sf::st_crs(shapefile[[input$shapefiletoanalyze]]$data) != sf::st_crs(mosaic_data$mosaic)){
+              sendSweetAlert(
+                session = session,
+                title = "Invalid CRS",
+                text = "The Coordinate Reference System (CRS) of the shapefile does
+            not match the input mosaic. Trying to set the shapefile's CRS to match the mosaic one.",
+                type = "warning"
+              )
+              shp <- shapefile[[input$shapefiletoanalyze]]$data |> sf::st_transform(crs = sf::st_crs(mosaic_data$mosaic))
+              shapefile[[input$shapefiletoanalyze]] <- create_reactval(input$shapefiletoanalyze, shp)
+            }
+          }
+          output$shapefile_mapview <- renderLeaflet({
+            req(input$colorshapeimport)
+            if(is.null(basemap$map)){
+              if(input$colorshapeimport == "none"){
+                mapp <- mapview::mapview(shapefile[[input$shapefiletoanalyze]]$data,
+                                         color = input$colorstroke,
+                                         col.regions = input$colorshapeimport,
+                                         alpha.regions = input$alphacolorfill,
+                                         legend = FALSE,
+                                         lwd = input$lwdt,
+                                         layer.name = "shapes")
+              } else {
+                nlv <- length(unique(shapefile[[input$shapefiletoanalyze]]$data |> sf::st_drop_geometry() |> dplyr::pull(input$colorshapeimport)))
+                if(nlv > 8){
+                  shptemp <- shapefile[[input$shapefiletoanalyze]]$data |> extract_number(block, plot_id)
+                } else{
+                  shptemp <- shapefile[[input$shapefiletoanalyze]]$data
+                }
+                mapp <-
+                  mapview::mapview(shptemp,
+                                   zcol = input$colorshapeimport,
+                                   col.regions = return_colors(input$palplot, n = input$ncolors),
+                                   alpha.regions = input$alphacolorfill,
+                                   lwd = input$lwdt,
+                                   layer.name = "shapes")
+              }
+            } else{
+              if(input$colorshapeimport == "none"){
+                mapp <-
+                  basemap$map +
+                  mapview::mapview(shapefile[[input$shapefiletoanalyze]]$data,
+                                   color = input$colorstroke,
+                                   col.regions = input$colorfill,
+                                   alpha.regions = input$alphacolorfill,
+                                   legend = FALSE,
+                                   lwd = input$lwdt,
+                                   layer.name = "shapes")
+              } else {
+                nlv <- length(unique(shapefile[[input$shapefiletoanalyze]]$data |> sf::st_drop_geometry() |> dplyr::pull(input$colorshapeimport)))
+                if(nlv > 8){
+                  shptemp <- shapefile[[input$shapefiletoanalyze]]$data |> extract_number(block, plot_id)
+                } else{
+                  shptemp <- shapefile[[input$shapefiletoanalyze]]$data
+                }
+                mapp <-
+                  basemap$map +
+                  mapview::mapview(shptemp,
+                                   zcol = input$colorshapeimport,
+                                   col.regions = return_colors(input$palplot, n = input$ncolors),
+                                   alpha.regions = input$alphacolorfill,
+                                   lwd = input$lwdt,
+                                   layer.name = "shapes")
+              }
+            }
+            mapp@map
+          })
+
+          observeEvent(c(input$editplotsimpo, !input$editdoneimpo),{
+            if(input$editplotsimpo == TRUE){
+              shapes <-
+                shapefile[[input$shapefiletoanalyze]]$data |>
+                dplyr::mutate(`_leaflet_id` = 1:nrow(shapefile[[input$shapefiletoanalyze]]$data),
+                              feature_type = "polygon") |>
+                dplyr::relocate(geometry, .after = 2) |>
+                sf::st_transform(crs = 4326)
+
+
               if(is.null(basemap$map)){
-                if(input$colorshapeimport == "none"){
-                  mapp <- mapview::mapview(shapefile[[input$shapefiletoanalyze]]$data,
+                mapp <-
+                  leaflet::leaflet() |>
+                  addTiles(options = tileOptions(minZoom = 1, maxZoom = 30)) |>
+                  leaflet::addPolygons(
+                    data = shapes,
+                    color = input$colorstroke,
+                    fillColor = input$colorfill,
+                    opacity = 1,
+                    fillOpacity = input$alphacolorfill,
+                    group = "editable"
+                  )
+              } else{
+                mapp <-
+                  basemap$map@map |>
+                  leaflet::addPolygons(
+                    data = shapes,
+                    color = input$colorstroke,
+                    fillColor = input$colorfill,
+                    opacity = 1,
+                    fillOpacity = input$alphacolorfill,
+                    group = "editable"
+                  )
+              }
+
+              editedpoints <- callModule(editMod, "ploteditimpo",
+                                         leafmap = mapp,
+                                         targetLayerId = "editable")
+
+              observeEvent(input$editdoneimpo,{
+                if(input$editdoneimpo == TRUE){
+                  if(!is.null(editedpoints()$all)){
+
+                    shapefile[[input$shapefiletoanalyze]]$data <-
+                      editedpoints()$all |>
+                      sf::st_transform(crs = sf::st_crs(mosaic_data$mosaic)) |>
+                      dplyr::select(geometry)
+                    output$plotshapedone <- renderLeaflet({
+                      if(is.null(basemap$map)){
+                        mapp <-
+                          basemap$map +
+                          mapview::mapview(shapefile[[input$shapefiletoanalyze]]$data,
                                            color = input$colorstroke,
-                                           col.regions = input$colorshapeimport,
+                                           col.regions = input$colorfill,
                                            alpha.regions = input$alphacolorfill,
-                                           legend = FALSE,
                                            lwd = input$lwdt,
                                            layer.name = "shapes")
-                } else {
-                  nlv <- length(unique(shapefile[[input$shapefiletoanalyze]]$data |> sf::st_drop_geometry() |> dplyr::pull(input$colorshapeimport)))
-                  if(nlv > 8){
-                    shptemp <- shapefile[[input$shapefiletoanalyze]]$data |> extract_number(block, plot_id)
-                  } else{
-                    shptemp <- shapefile[[input$shapefiletoanalyze]]$data
+                      } else{
+                        mapp <-
+                          mapview::mapview(shapefile[[input$shapefiletoanalyze]]$data,
+                                           color = input$colorstroke,
+                                           col.regions = input$colorfill,
+                                           alpha.regions = input$alphacolorfill,
+                                           lwd = input$lwdt,
+                                           layer.name = "shapes")
+                      }
+                      mapp@map
+                    })
                   }
-                  mapp <-
-                    mapview::mapview(shptemp,
-                                     zcol = input$colorshapeimport,
-                                     col.regions = return_colors(input$palplot, n = input$ncolors),
-                                     alpha.regions = input$alphacolorfill,
-                                     lwd = input$lwdt,
-                                     layer.name = "shapes")
+                  updateMaterialSwitch(session, "editplotsimpo", value = FALSE)
                 }
-              } else{
-                if(input$colorshapeimport == "none"){
-                  mapp <-
-                    basemap$map +
-                    mapview::mapview(shapefile[[input$shapefiletoanalyze]]$data,
-                                     color = input$colorstroke,
-                                     col.regions = input$colorfill,
-                                     alpha.regions = input$alphacolorfill,
-                                     legend = FALSE,
-                                     lwd = input$lwdt,
-                                     layer.name = "shapes")
-                } else {
-                  nlv <- length(unique(shapefile[[input$shapefiletoanalyze]]$data |> sf::st_drop_geometry() |> dplyr::pull(input$colorshapeimport)))
-                  if(nlv > 8){
-                    shptemp <- shapefile[[input$shapefiletoanalyze]]$data |> extract_number(block, plot_id)
-                  } else{
-                    shptemp <- shapefile[[input$shapefiletoanalyze]]$data
-                  }
-                  mapp <-
-                    basemap$map +
-                    mapview::mapview(shptemp,
-                                     zcol = input$colorshapeimport,
-                                     col.regions = return_colors(input$palplot, n = input$ncolors),
-                                     alpha.regions = input$alphacolorfill,
-                                     lwd = input$lwdt,
-                                     layer.name = "shapes")
-                }
-              }
-              mapp@map
-            })
-
-            observeEvent(c(input$editplotsimpo, !input$editdoneimpo),{
-              if(input$editplotsimpo == TRUE){
-                shapes <-
-                  shapefile[[input$shapefiletoanalyze]]$data |>
-                  dplyr::mutate(`_leaflet_id` = 1:nrow(shapefile[[input$shapefiletoanalyze]]$data),
-                                feature_type = "polygon") |>
-                  dplyr::relocate(geometry, .after = 2) |>
-                  sf::st_transform(crs = 4326)
-
-
-                if(is.null(basemap$map)){
-                  mapp <-
-                    leaflet::leaflet() |>
-                    addTiles(options = tileOptions(minZoom = 1, maxZoom = 30)) |>
-                    leaflet::addPolygons(
-                      data = shapes,
-                      color = input$colorstroke,
-                      fillColor = input$colorfill,
-                      opacity = 1,
-                      fillOpacity = input$alphacolorfill,
-                      group = "editable"
-                    )
-                } else{
-                  mapp <-
-                    basemap$map@map |>
-                    leaflet::addPolygons(
-                      data = shapes,
-                      color = input$colorstroke,
-                      fillColor = input$colorfill,
-                      opacity = 1,
-                      fillOpacity = input$alphacolorfill,
-                      group = "editable"
-                    )
-                }
-
-                editedpoints <- callModule(editMod, "ploteditimpo",
-                                           leafmap = mapp,
-                                           targetLayerId = "editable")
-
-                observeEvent(input$editdoneimpo,{
-                  if(input$editdoneimpo == TRUE){
-                    if(!is.null(editedpoints()$all)){
-
-                      shapefile[[input$shapefiletoanalyze]]$data <-
-                        editedpoints()$all |>
-                        sf::st_transform(crs = sf::st_crs(mosaic_data$mosaic)) |>
-                        dplyr::select(geometry)
-                      output$plotshapedone <- renderLeaflet({
-                        if(is.null(basemap$map)){
-                          mapp <-
-                            basemap$map +
-                            mapview::mapview(shapefile[[input$shapefiletoanalyze]]$data,
-                                             color = input$colorstroke,
-                                             col.regions = input$colorfill,
-                                             alpha.regions = input$alphacolorfill,
-                                             lwd = input$lwdt,
-                                             layer.name = "shapes")
-                        } else{
-                          mapp <-
-                            mapview::mapview(shapefile[[input$shapefiletoanalyze]]$data,
-                                             color = input$colorstroke,
-                                             col.regions = input$colorfill,
-                                             alpha.regions = input$alphacolorfill,
-                                             lwd = input$lwdt,
-                                             layer.name = "shapes")
-                        }
-                        mapp@map
-                      })
-                    }
-                    updateMaterialSwitch(session, "editplotsimpo", value = FALSE)
-                  }
-                })
-              }
-            })
+              })
+            }
           })
         })
+        # })
       }
     })
 

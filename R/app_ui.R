@@ -89,6 +89,11 @@ app_ui <- function(request) {
               text = "Join",
               tabName = "join",
               icon = shiny::icon("code-merge", verify_fa = FALSE)
+            ),
+            bs4SidebarMenuSubItem(
+              text = "Summarize",
+              tabName = "summary",
+              icon = shiny::icon("list-ol", verify_fa = FALSE)
             )
           ),
           bs4SidebarMenuItem(
@@ -282,6 +287,10 @@ app_ui <- function(request) {
           bs4TabItem(
             tabName = "join",
             mod_dfjoin_ui("dfjoin_1")
+          ),
+          bs4TabItem(
+            tabName = "summary",
+            mod_summarize_ui("summarize_1")
           ),
           # Mosaics
           bs4TabItem(

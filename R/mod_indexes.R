@@ -236,6 +236,10 @@ mod_indexes_ui <- function(id){
             leafletOutput(ns("indexshp"), height = "680px")|> add_spinner()
           ),
           tabPanel(
+            title = "Syncked maps",
+            uiOutput(ns("indexsync"))|> add_spinner()
+          ),
+          tabPanel(
             "Index profile",
             fluidRow(
               col_6(
@@ -272,19 +276,10 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
   moduleServer( id, function(input, output, session){
 
     ns <- session$ns
+    # Insert or remove Time Series tab based on settings()$animatets
     observe({
-      if(settings()$synckmaps){
-        insertTab(
-          inputId = "tabsindex",
-          tabPanel(
-            title = "Syncked maps",
-            uiOutput(ns("indexsync"))|> add_spinner()
-          ),
-          target = "Index profile",
-          position = "before"
-        )
-      } else {
-        removeTab(inputId = "tabsindex", target = "Syncked maps")
+      if(!settings()$synckmaps){
+        hideTab(inputId = "tabsindex", target = "Syncked maps")
       }
     })
 

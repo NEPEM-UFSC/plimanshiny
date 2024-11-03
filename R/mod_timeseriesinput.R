@@ -285,27 +285,6 @@ mod_timeseriesinput_ui <- function(id){
             )
           ),
           tabPanel(
-            title = "Interactive visualization",
-            leafletOutput(ns("leafletmap"), height = "720px")  |> add_spinner()
-          )
-        )
-      )
-    )
-  )
-}
-
-#' timeseriesinput Server Functions
-#'
-#' @noRd
-mod_timeseriesinput_server <- function(id, shapefile, mosaiclist, r, g, b, re, nir,  swir, tir,  basemap, quantiles, settings){
-  moduleServer( id, function(input, output, session){
-    ns <- session$ns
-    # Insert or remove Time Series tab based on settings()$animatets
-    observe({
-      if(settings()$animatets){
-        insertTab(
-          inputId = "tabs",
-          tabPanel(
             title = "Animation",
             fluidRow(
               col_2(
@@ -359,11 +338,26 @@ mod_timeseriesinput_server <- function(id, shapefile, mosaiclist, r, g, b, re, n
             ),
             imageOutput(ns("animation"), height = "720px") |> add_spinner()
           ),
-          target = "Time series",
-          position = "after"
+          tabPanel(
+            title = "Interactive visualization",
+            leafletOutput(ns("leafletmap"), height = "720px")  |> add_spinner()
+          )
         )
-      } else {
-        removeTab(inputId = "tabs", target = "Animation")
+      )
+    )
+  )
+}
+
+#' timeseriesinput Server Functions
+#'
+#' @noRd
+mod_timeseriesinput_server <- function(id, shapefile, mosaiclist, r, g, b, re, nir,  swir, tir,  basemap, quantiles, settings){
+  moduleServer( id, function(input, output, session){
+    ns <- session$ns
+    # Insert or remove Time Series tab based on settings()$animatets
+    observe({
+      if(!settings()$animatets){
+        hideTab(inputId = "tabs", target = "Animation")
       }
     })
 

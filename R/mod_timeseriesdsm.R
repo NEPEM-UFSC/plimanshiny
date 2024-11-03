@@ -162,7 +162,7 @@ mod_timeseriesdsm_ui <- function(id){
       ),
       col_8(
         bs4TabCard(
-          id = "tabs",
+          id = ns("tabs"),
           width = 12,
           height = "780px",
           status = "success",
@@ -347,6 +347,11 @@ mod_timeseriesdsm_server <- function(id, shapefile, mosaiclist, basemap, dfs, se
   moduleServer( id, function(input, output, session){
     ns <- session$ns
 
+    observe({
+      if(!settings()$tidyterra){
+        hideTab(inputId = "tabs", target = "Evolution plot")
+      }
+    })
 
     # update selec input
     observe({

@@ -105,7 +105,6 @@ mod_geometricmeasures_server <- function(id, shapefile, settings){
 
       shapefile[[newfile]] <- create_reactval(newfile, resultss$shp)
 
-
       sendSweetAlert(
         session = session,
         title = "Geometric measurements computed",

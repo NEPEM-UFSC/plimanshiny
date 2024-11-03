@@ -628,3 +628,69 @@ histoslider <- function(id){
   }
 }
 
+# Corresponding statistical functions
+custom_stats <- function(data, stats) {
+  stat_fns <- list(
+    mean = ~ mean(., na.rm = TRUE),
+    median = ~ median(., na.rm = TRUE),
+    min = ~ min(., na.rm = TRUE),
+    max = ~ max(., na.rm = TRUE),
+    sum = ~ sum(., na.rm = TRUE),
+    sd = ~ sd(., na.rm = TRUE),
+    cv = ~ sd(., na.rm = TRUE) / mean(., na.rm = TRUE) * 100,
+    n = ~ length(na.omit(.))
+  )
+
+  selected_fns <- stat_fns[stats]
+
+  return(selected_fns)
+}
+
+# Define the drag_server function
+drag_server <- function(id, data = NULL, labels = NULL) {
+  moduleServer(id, function(input, output, session) {
+    ns <- session$ns
+
+    available_items <- reactiveVal(if (!is.null(data)) names(data) else labels)
+
+    dropped_items <- reactiveVal(c())  # Stores the items dropped into the dropzone
+
+    # Render available draggable items
+    output$draggables_ui <- renderUI({
+      items <- available_items()
+      div(id = ns("draggables"), class = "flex-draggable-container",
+          lapply(items, function(item) {
+            var_class <- if (is.null(data)) "character" else switch(class(data[[item]])[1],
+                                                                    "numeric" = "numeric",
+                                                                    "factor" = "character",
+                                                                    "character" = "character",
+                                                                    "unknown")
+
+            color_class <- switch(var_class,
+                                  "numeric" = "numeric-var",
+                                  "character" = "character-var",
+                                  NULL)
+
+            div(class = paste("draggable", color_class), item, draggable = "true")
+          })
+      )
+    })
+
+    # Handle dropped items
+    observeEvent(input$dropped_item, {
+      item <- input$dropped_item
+      available_items(setdiff(available_items(), item))  # Remove from available list
+      dropped_items(c(dropped_items(), item))  # Add to dropped list
+    })
+
+    # Handle removed items and return them to the available list
+    observeEvent(input$removed_item, {
+      item <- input$removed_item
+      available_items(c(available_items(), item))  # Return item to available list
+      dropped_items(setdiff(dropped_items(), item))  # Remove from dropped list
+    })
+
+    # Return dropped items for access in the main server
+    return(list(dropped_items = dropped_items))
+  })
+}

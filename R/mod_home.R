@@ -58,6 +58,12 @@ mod_home_ui <- function(id){
           color = "success",
           icon = icon("code-compare")
         ),
+        actionBttn(
+          inputId = ns("reload"),  # Ensure proper namespacing
+          label = "Reload",
+          color = "warning",
+          icon = icon("rotate-right")
+        ),
 
         tags$head(
           # Include Font Awesome for icons and additional CSS for shadow effects
@@ -240,6 +246,10 @@ mod_home_server <- function(id, settings){
     json_file_path <- system.file("app/www/version.json", package = "plimanshiny", mustWork = TRUE)
     addResourcePath('myjson', dirname(json_file_path))
 
+    # Reload app when reload button is clicked
+    observeEvent(input$reload, {
+      session$reload()
+    })
 
     observeEvent(input$about, {
       showModal(

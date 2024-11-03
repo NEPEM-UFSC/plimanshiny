@@ -78,16 +78,7 @@ mod_phanalyze_ui <- function(id){
               value = FALSE,
             )
           ),
-          textInput(
-            ns("savedfas"),
-            label = "Save Results as...",
-            value = "canopy_height_model",
-          ),
-          actionBttn(
-            ns("computeph"),
-            label = "Compute Canopy Height Model!",
-            icon = icon("check")
-          )
+          uiOutput(ns("computearea"))
         )
       ),
       col_9(
@@ -111,9 +102,25 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
           width = 12,
           height = "790px",
           title = "Results",
-          selected = "Explore the field",
+          selected = "Home",
           solidHeader = FALSE,
           type = "tabs",
+          tabPanel(
+            title = "Home",
+            fluidRow(
+              col_9(
+                img(src = "www/logodsm.jpg", width = "100%", height = "90%")
+              ),
+              col_3(
+                h2("About"),
+                "This module offers strategies for computing Canopy Height Models (CHM), providing valuable tools for computing canopy-related measures, such as height and volume.", br(), br(),
+                h2("Disclaimer"),
+                "We welcome your feedback and suggestions on the application's usefulness. Please note that we do not guarantee the correctness, reliability, or utility of the results, especially if incorrect settings are applied during the CHM estimation process.", br(), br(),
+                h2("Image Reference"),
+                "The image used in this module was generated using advanced AI tools to represent the digital surface model (DSM)."
+              )
+            )
+          ),
           tabPanel(
             title = "Explore the field",
             fluidRow(
@@ -191,9 +198,25 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
           width = 12,
           height = "790px",
           title = "Results",
-          selected = "Explore the field",
+          selected = "Home",
           solidHeader = FALSE,
           type = "tabs",
+          tabPanel(
+            title = "Home",
+            fluidRow(
+              col_9(
+                img(src = "www/logodsm.jpg", width = "100%", height = "90%")
+              ),
+              col_3(
+                h2("About"),
+                "This module offers strategies for computing Canopy Height Models (CHM), providing valuable tools for computing canopy-related measures, such as height and volume.", br(), br(),
+                h2("Disclaimer"),
+                "We welcome your feedback and suggestions on the application's usefulness. Please note that we do not guarantee the correctness, reliability, or utility of the results, especially if incorrect settings are applied during the CHM estimation process.", br(), br(),
+                h2("Image Reference"),
+                "The image used in this module was generated using advanced AI tools to represent the digital surface model (DSM)."
+              )
+            )
+          ),
           tabPanel(
             title = "Explore the field",
             fluidRow(
@@ -278,9 +301,25 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
           width = 12,
           height = "790px",
           title = "Results",
-          selected = "Interpolation",
+          selected = "Home",
           solidHeader = FALSE,
           type = "tabs",
+          tabPanel(
+            title = "Home",
+            fluidRow(
+              col_9(
+                img(src = "www/logodsm.jpg", width = "100%", height = "90%")
+              ),
+              col_3(
+                h2("About"),
+                "This module offers strategies for computing Canopy Height Models (CHM), providing valuable tools for computing canopy-related measures, such as height and volume.", br(), br(),
+                h2("Disclaimer"),
+                "We welcome your feedback and suggestions on the application's usefulness. Please note that we do not guarantee the correctness, reliability, or utility of the results, especially if incorrect settings are applied during the CHM estimation process.", br(), br(),
+                h2("Image Reference"),
+                "The image used in this module was generated using advanced AI tools to represent the digital surface model (DSM)."
+              )
+            )
+          ),
           tabPanel(
             title = "Interpolation",
             actionBttn(
@@ -385,6 +424,28 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
     chmreact <- reactiveValues(rast = NULL)
     dfres <- reactiveValues(df = NULL)
     sampledpoints <- reactiveValues(sf = NULL)
+
+    output$computearea <- renderUI({
+      req(input$shapefile)
+      if (!is.null(shapefile[[input$shapefile]]$data) & !is.null(mosaic_data[[input$dsm]]$data)) {
+        tagList(
+          textInput(
+            ns("savedfas"),
+            label = "Save Results as...",
+            value = "canopy_height_model",
+          ),
+          actionBttn(
+            ns("computeph"),
+            label = "Compute Canopy Height Model!",
+            icon = icon("check")
+          )
+        )
+
+      }
+
+    })
+
+
 
     observeEvent(input$computeph, {
       if(input$strategy == "I have DSM and DTM"){
@@ -517,8 +578,6 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
         }
       }
 
-
-      req(shapefile[[input$shapefile]]$data)
       req(chmreact$rast)
       req(input$basemapplot)
 
@@ -531,6 +590,22 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
       # store the results in dataset module
       dfs[[input$savedfas]] <- create_reactval(input$savedfas, dftmp |> sf::st_drop_geometry())
       shapefile[[input$savedfas]] <- create_reactval(input$savedfas, dftmp)
+      mosaic_data[[input$savedfas]] <- create_reactval(input$savedfas, chmreact$rast)
+
+      output$resultplottab <- renderReactable({
+        dftmp |>
+          sf::st_drop_geometry() |>
+          roundcols(digits = 3) |>
+          render_reactable()
+
+      })
+      waiter_hide()
+      sendSweetAlert(
+        session = session,
+        title = "Canopy Height Model computed.",
+        text = "The Canopy Height Model computed has been computed and the results are now available for download in the 'Datasets > Input' menu.",
+        type = "success"
+      )
 
     })
 
@@ -558,13 +633,6 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
                                  alpha = 1,
                                  show = "index")
       }
-      waiter_hide()
-      sendSweetAlert(
-        session = session,
-        title = "Canopy Height Model computed.",
-        text = "The Canopy Height Model computed has been computed and the results are now available for download in the 'Datasets > Input' menu.",
-        type = "success"
-      )
 
     })
 
@@ -604,14 +672,6 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
       plotly::ggplotly(p)
     })
 
-    output$resultplottab <- renderReactable({
-      req(dfres$df)
-      dfres$df |>
-        sf::st_drop_geometry() |>
-        roundcols(digits = 3) |>
-        render_reactable()
-
-    })
     # send to dataset module
 
 

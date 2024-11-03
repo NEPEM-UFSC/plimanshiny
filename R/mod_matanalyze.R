@@ -430,6 +430,19 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
         }
       })
 
+      observe({
+        req(modl())
+        dfs[[input$saveto]] <- create_reactval(input$saveto, modl() |> dplyr::select(-parms))
+      })
+      observe({
+        sendSweetAlert(
+          session = session,
+          title = "Prediction done",
+          text = "The predictions have been made and are now available for further analysis in the 'Datasets' module.",
+          type = "success"
+        )
+      })
+
 
 
       observe({
@@ -444,18 +457,14 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
                           selected = NA)
       })
 
-      observe({
+
+      # Plot the results
+      output$tabresult <- reactable::renderReactable({
         req(modl())
-        dfs[[input$saveto]] <- create_reactval(input$saveto, modl() |> dplyr::select(-parms))
-        # Plot the results
-        output$tabresult <- reactable::renderReactable({
-          modl() |>
-            dplyr::select(-parms) |>
-            roundcols(digits = 3) |>
-            render_reactable()
-
-        })
-
+        modl() |>
+          dplyr::select(-parms) |>
+          roundcols(digits = 3) |>
+          render_reactable()
       })
 
 
@@ -530,7 +539,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
                     legend.position = "bottom")
 
           })
-
+          waiter_hide()
         } else if(!input$usethresh){
           req(input$fittedmodel)
 
@@ -615,19 +624,14 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
             })
 
           })
+          waiter_hide()
         }
 
 
-        waiter_hide()
 
       })
 
-      sendSweetAlert(
-        session = session,
-        title = "Prediction done",
-        text = "The predictions have been made and are now available for further analysis in the 'Datasets' module.",
-        type = "success"
-      )
+
 
 
 

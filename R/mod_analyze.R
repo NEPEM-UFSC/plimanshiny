@@ -471,6 +471,11 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
             tabPanel(
               title = "Map plot",
               fluidRow(
+                col_8(
+                  downloadBttn(ns("downloadplotmap"),
+                               label = "Take a shot",
+                               style = "pill")
+                ),
                 col_4(
                   conditionalPanel(
                     condition = "input['config_1-slider'] === true",
@@ -481,11 +486,6 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
                       status = "success"
                     )
                   )
-                ),
-                col_8(
-                  downloadBttn(ns("downloadplotmap"),
-                               label = "Take a shot",
-                               style = "pill")
                 )
               ),
               leafletOutput(ns("resultsplotmap"), height = "680px")  |> add_spinner()
@@ -497,6 +497,11 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
             tabPanel(
               title = "Map individuals",
               fluidRow(
+                col_8(
+                  downloadBttn(ns("downloadindividmap"),
+                               label = "Take a shot",
+                               style = "pill")
+                ),
                 col_4(
                   conditionalPanel(
                     condition = "input['config_1-slider'] === true",
@@ -507,11 +512,6 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
                       status = "success"
                     )
                   )
-                ),
-                col_8(
-                  downloadBttn(ns("downloadindividmap"),
-                               label = "Take a shot",
-                               style = "pill")
                 )
               ),
               leafletOutput(ns("resultsindivmap"), height = "720px")  |> add_spinner()
@@ -578,6 +578,11 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
             tabPanel(
               title = "Map plot",
               fluidRow(
+                col_8(
+                  downloadBttn(ns("downloadplotmap"),
+                               label = "Take a shot",
+                               style = "pill")
+                ),
                 col_4(
                   conditionalPanel(
                     condition = "input['config_1-slider'] === true",
@@ -588,11 +593,6 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
                       status = "success"
                     )
                   )
-                ),
-                col_8(
-                  downloadBttn(ns("downloadplotmap"),
-                               label = "Take a shot",
-                               style = "pill")
                 )
               ),
               leafletOutput(ns("resultsplotmap"), height = "680px")  |> add_spinner()
@@ -604,6 +604,11 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
             tabPanel(
               title = "Map individuals",
               fluidRow(
+                col_8(
+                  downloadBttn(ns("downloadindividmap"),
+                               label = "Take a shot",
+                               style = "pill")
+                ),
                 col_4(
                   conditionalPanel(
                     condition = "input['config_1-slider'] === true",
@@ -614,11 +619,6 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
                       status = "success"
                     )
                   )
-                ),
-                col_8(
-                  downloadBttn(ns("downloadindividmap"),
-                               label = "Take a shot",
-                               style = "pill")
                 )
               ),
               leafletOutput(ns("resultsindivmap"), height = "720px")  |> add_spinner()
@@ -668,6 +668,11 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
           tabPanel(
             title = "Map plot",
             fluidRow(
+              col_8(
+                downloadBttn(ns("downloadplotmap"),
+                             label = "Take a shot",
+                             style = "pill")
+              ),
               col_4(
                 conditionalPanel(
                   condition = "input['config_1-slider'] === true",
@@ -678,11 +683,6 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
                     status = "success"
                   )
                 )
-              ),
-              col_8(
-                downloadBttn(ns("downloadplotmap"),
-                             label = "Take a shot",
-                             style = "pill")
               )
             ),
             leafletOutput(ns("resultsplotmap"), height = "680px")  |> add_spinner()
@@ -714,6 +714,11 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
           tabPanel(
             title = "Map plot",
             fluidRow(
+              col_8(
+                downloadBttn(ns("downloadplotmap"),
+                             label = "Take a shot",
+                             style = "pill")
+              ),
               col_4(
                 conditionalPanel(
                   condition = "input['config_1-slider'] === true",
@@ -724,11 +729,6 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
                     status = "success"
                   )
                 )
-              ),
-              col_8(
-                downloadBttn(ns("downloadplotmap"),
-                             label = "Take a shot",
-                             style = "pill")
               )
             ),
             leafletOutput(ns("resultsplotmap"), height = "680px")  |> add_spinner()

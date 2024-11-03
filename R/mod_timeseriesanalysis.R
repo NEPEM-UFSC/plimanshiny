@@ -13,6 +13,7 @@ mod_timeseriesanalysis_ui <- function(id){
     fluidRow(
       col_4(
         bs4TabCard(
+          id = ns("tsindmenu"),
           width = 12,
           icon = icon("gears"),
           status  = "success",
@@ -355,7 +356,7 @@ mod_timeseriesanalysis_ui <- function(id){
       ),
       col_8(
         bs4TabCard(
-          id = "tabs",
+          id = ns("tabs"),
           width = 12,
           height = "780px",
           status = "success",
@@ -412,6 +413,8 @@ mod_timeseriesanalysis_ui <- function(id){
             ),
             plotlyOutput(ns("timeseriecompare"), height = "640px") |> add_spinner()
           ),
+          # conditionalPanel(
+          #   condition = "input['config_1-tidyterra'] === true",
           tabPanel(
             title = "Evolution plot",
             fluidRow(
@@ -483,6 +486,7 @@ mod_timeseriesanalysis_ui <- function(id){
 
             plotOutput(ns("evolutionplot"), height = "640px") |> add_spinner()
           ),
+          # ),
           tabPanel(
             title = "Compare plots",
             fluidRow(
@@ -583,7 +587,7 @@ mod_timeseriesanalysis_ui <- function(id){
                 )
               )
             ),
-            leafletOutput(ns("resultsplotmap"), height = "680px")  |> add_spinner()
+            leafletOutput(ns("resultsplotmap"), height = "650px")  |> add_spinner()
           ),
           tabPanel(
             title = "Raw results",
@@ -635,6 +639,14 @@ mod_timeseriesanalysis_server <- function(id, shapefile, mosaiclist, r, g, b, re
     })
 
 
+
+    observe({
+      if(!settings()$tidyterra){
+        hideTab(inputId = "tabs", target = "Evolution plot")
+      }
+    })
+
+
     finalindex <- reactive({
       mindex <- strsplit(input$myindex, split = ",")[[1]]
       finalindex <- c(mindex, input$plotindexes)
@@ -642,7 +654,7 @@ mod_timeseriesanalysis_server <- function(id, shapefile, mosaiclist, r, g, b, re
 
     observe({
       updateSelectInput(session, "segmentindex", choices = finalindex())
-      updateSelectInput(session, "activeshape", choices = setdiff(names(shapefile), "shape"))
+      updateSelectInput(session, "activeshape", choices = setdiff(names(shapefile), c("shape", "shapefileplot")))
     })
 
     report <- reactiveVal()
@@ -787,13 +799,13 @@ mod_timeseriesanalysis_server <- function(id, shapefile, mosaiclist, r, g, b, re
 
       closeSweetAlert(session = session)
 
-      sendSweetAlert(
-        session = session,
-        title = "Almost done!",
-        text = paste("{plimanshiny} is processing the results. Please wait while we finalize everything..."),
-        type = "info",
-        btn_labels = NA
-      )
+      # sendSweetAlert(
+      #   session = session,
+      #   title = "Almost done!",
+      #   text = paste("{plimanshiny} is processing the results. Please wait while we finalize everything..."),
+      #   type = "info",
+      #   btn_labels = NA
+      # )
 
 
 
@@ -1525,7 +1537,6 @@ mod_timeseriesanalysis_server <- function(id, shapefile, mosaiclist, r, g, b, re
 
       mod_download_shapefile_server("downresplot", terra::vect(result_plot), name = "time_series_output")
 
-      closeSweetAlert(session = session)
 
       sendSweetAlert(
         session = session,

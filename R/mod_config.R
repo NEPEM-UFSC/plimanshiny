@@ -99,6 +99,11 @@ mod_config_ui <- function(id){
                     description = "Allows using a comparision slider in the 'Map individuals' and 'Map plot' tabs of the 'Analyze' menu.",
                     deps = "leaflet.extras2",
                     ns = ns),
+      enable_module(mod_id = "plotinfo",
+                    mod_name = "Plot Information",
+                    description = "Allows obtaining plot information such as area, perimeter, lengh and width.",
+                    deps = "lwgeom",
+                    ns = ns),
 
       hl(),
       actionButton(ns("save_btn"), label = tagList(icon("save"), "Save Settings"), class = "btn btn-primary"),
@@ -127,7 +132,8 @@ mod_config_server <- function(id, settings){
                              tidyterra = FALSE,
                              introjs = FALSE,
                              sparkline = FALSE,
-                             slider = FALSE)
+                             slider = FALSE,
+                             plotinfo = FALSE)
     saveRDS(default_settings, settings_file_default)
 
 
@@ -152,7 +158,7 @@ mod_config_server <- function(id, settings){
       if (input$enableall) {
         pkgs <- c("fields", "drc", "segmented", "magick", "shinycssloaders",
                   "leafsync", "histoslider", "tidyterra", "rintrojs",
-                  "sparkline", "leaflet.extras2")
+                  "sparkline", "leaflet.extras2", "lwgeom")
         check_and_install_dependencies(pkgs, ns, input, "enableall")
         settings(lapply(default_settings, \(x){x = TRUE}))
       }
@@ -171,6 +177,7 @@ mod_config_server <- function(id, settings){
       updatePrettySwitch(session = session, inputId = "introjs", value = settings()$introjs)
       updatePrettySwitch(session = session, inputId = "sparkline", value = settings()$sparkline)
       updatePrettySwitch(session = session, inputId = "slider", value = settings()$slider)
+      updatePrettySwitch(session = session, inputId = "plotinfo", value = settings()$plotinfo)
     })
 
     # Reactively save the settings whenever the switch is changed
@@ -185,7 +192,8 @@ mod_config_server <- function(id, settings){
                                tidyterra = input$tidyterra,
                                introjs = input$introjs,
                                sparkline = input$sparkline,
-                               slider = input$slider)
+                               slider = input$slider,
+                               plotinfo = input$plotinfo)
       settings(current_settings)  # Update global reactive settings
       saveRDS(current_settings, settings_file_user)
       showNotification("Settings saved successfully! You may need to restart the app to apply changes.", type = "message")
@@ -225,6 +233,9 @@ mod_config_server <- function(id, settings){
 
     observe_dependency("slider", c("leaflet.extras2"), ns, input)
     observe_dependency("check_slider", c("leaflet.extras2"), ns, input)
+
+    observe_dependency("plotinfo", c("lwgeom"), ns, input)
+    observe_dependency("check_plotinfo", c("lwgeom"), ns, input)
 
     # Option to reset to default settings
     observeEvent(input$reset_btn, {
