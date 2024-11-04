@@ -390,11 +390,11 @@ mod_timeseriesinput_server <- function(id, shapefile, mosaiclist, r, g, b, re, n
           filedir$dir <- file_dir(input_file_selected$paths$datapath)
           date_match <- regmatches(filenames, regexpr("(\\d{8})|((\\d{2}-\\d{2}-\\d{4})|(\\d{4}-\\d{2}-\\d{2}))", filenames))
           dates <- try(as.Date(date_match, tryFormats =  date_format(date_match)[[1]]))
-          if(inherits(dates, "try-error")){
+          if(inherits(dates, "try-error") | length(dates) == 0){
             sendSweetAlert(
               session = session,
               title = "Ops, invalid file name",
-              text = "It was not possible to extract the data information for all files. Please, ensure that all the rasterfiles have one of the following pattern names: 1) 'mm-dd-yyyy'; 2) 'dd-mm-yyyy'; or 3) 'yyyy-dd-mm'",
+              text = "It was not possible to extract the data information for all files. Please, ensure that all the rasterfiles have one of the following pattern names: 1) 'mm-dd-yyyy'; 2) 'dd-mm-yyyy'; 3) 'yyyy-dd-mm', or 4) 'yyyyddmm'",
               type = "error"
             )
           } else{
