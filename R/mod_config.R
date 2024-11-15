@@ -57,6 +57,11 @@ mod_config_ui <- function(id){
                     description = "Tools for digital computing canopy height models",
                     deps = "fields",
                     ns = ns),
+      enable_module(mod_id = "growthmodels",
+                    mod_name = "Growth Models",
+                    description = "Nonlinear models for growth curves",
+                    deps = "drc",
+                    ns = ns),
       hl(),
       h5("Features"),
       enable_module(mod_id = "animatets",
@@ -133,7 +138,9 @@ mod_config_server <- function(id, settings){
                              introjs = FALSE,
                              sparkline = FALSE,
                              slider = FALSE,
-                             plotinfo = FALSE)
+                             plotinfo = FALSE,
+                             license = FALSE,
+                             growthmodels = FALSE)
     saveRDS(default_settings, settings_file_default)
 
 
@@ -178,6 +185,8 @@ mod_config_server <- function(id, settings){
       updatePrettySwitch(session = session, inputId = "sparkline", value = settings()$sparkline)
       updatePrettySwitch(session = session, inputId = "slider", value = settings()$slider)
       updatePrettySwitch(session = session, inputId = "plotinfo", value = settings()$plotinfo)
+      updatePrettySwitch(session = session, inputId = "plotinfo", value = settings()$plotinfo)
+      updatePrettySwitch(session = session, inputId = "growthmodels", value = settings()$growthmodels)
     })
 
     # Reactively save the settings whenever the switch is changed
@@ -193,7 +202,9 @@ mod_config_server <- function(id, settings){
                                introjs = input$introjs,
                                sparkline = input$sparkline,
                                slider = input$slider,
-                               plotinfo = input$plotinfo)
+                               plotinfo = input$plotinfo,
+                               growthmodels = input$growthmodels,
+                               license = TRUE)
       settings(current_settings)  # Update global reactive settings
       saveRDS(current_settings, settings_file_user)
       showNotification("Settings saved successfully! You may need to restart the app to apply changes.", type = "message")
@@ -236,6 +247,9 @@ mod_config_server <- function(id, settings){
 
     observe_dependency("plotinfo", c("lwgeom"), ns, input)
     observe_dependency("check_plotinfo", c("lwgeom"), ns, input)
+
+    observe_dependency("growthmodels", c("drc"), ns, input)
+    observe_dependency("check_growthmodels", c("drc"), ns, input)
 
     # Option to reset to default settings
     observeEvent(input$reset_btn, {

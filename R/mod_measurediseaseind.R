@@ -19,7 +19,7 @@ mod_measurediseaseind_ui <- function(id){
           status  = "success",
           type = "tabs",
           tabPanel(
-            title = "Configure the Analysis",
+            title = "Analysis",
             actionBttn(ns("analyzeimg"),
                        label = "Analyze!",
                        status = "success",

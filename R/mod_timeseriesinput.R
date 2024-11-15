@@ -342,6 +342,15 @@ mod_timeseriesinput_ui <- function(id){
             title = "Interactive visualization",
             leafletOutput(ns("leafletmap"), height = "720px")  |> add_spinner()
           )
+          # tabPanel(
+          #   title = "TSIMGR",
+          #   # Embed a local HTML file
+          #   tags$iframe(
+          #     src = "www/linhaca_ndvi_2.html",
+          #     height = "720px",
+          #     width = "100%"
+          #   )
+          # )
         )
       )
     )

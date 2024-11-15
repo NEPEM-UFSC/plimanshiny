@@ -160,7 +160,15 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
 
           tabPanel(
             title = "Overview",
-            plotlyOutput(ns("overview"), height = "700px")  |> add_spinner()
+            fluidRow(
+              valueBoxOutput(ns("vbnplots"), width = 2),
+              valueBoxOutput(ns("vbnmeanq90"), width = 2),
+              valueBoxOutput(ns("vbnmeanvol"), width = 2),
+              valueBoxOutput(ns("vbntotvol"), width = 2),
+              valueBoxOutput(ns("vbncovermed"), width = 2),
+              valueBoxOutput(ns("vbnentropy"), width = 2),
+            ),
+            plotlyOutput(ns("overview"), height = "520px")  |> add_spinner()
           ),
           tabPanel(
             title = "Raw results",
@@ -263,7 +271,15 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
           ),
           tabPanel(
             title = "Overview",
-            plotlyOutput(ns("overview"), height = "700px")  |> add_spinner()
+            fluidRow(
+              valueBoxOutput(ns("vbnplots"), width = 2),
+              valueBoxOutput(ns("vbnmeanq90"), width = 2),
+              valueBoxOutput(ns("vbnmeanvol"), width = 2),
+              valueBoxOutput(ns("vbntotvol"), width = 2),
+              valueBoxOutput(ns("vbncovermed"), width = 2),
+              valueBoxOutput(ns("vbnentropy"), width = 2),
+            ),
+            plotlyOutput(ns("overview"), height = "520px")  |> add_spinner()
           ),
           tabPanel(
             title = "Raw results",
@@ -370,7 +386,15 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
           ),
           tabPanel(
             title = "Overview",
-            plotlyOutput(ns("overview"), height = "700px")  |> add_spinner()
+            fluidRow(
+              valueBoxOutput(ns("vbnplots"), width = 2),
+              valueBoxOutput(ns("vbnmeanq90"), width = 2),
+              valueBoxOutput(ns("vbnmeanvol"), width = 2),
+              valueBoxOutput(ns("vbntotvol"), width = 2),
+              valueBoxOutput(ns("vbncovermed"), width = 2),
+              valueBoxOutput(ns("vbnentropy"), width = 2),
+            ),
+            plotlyOutput(ns("overview"), height = "520px")  |> add_spinner()
           ),
           tabPanel(
             title = "Raw results",
@@ -652,12 +676,71 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
                                   alpha.regions = input$alpharesplot))@map
     })
 
+
+    output$vbnplots <- renderValueBox({
+
+      req(dfres$df)
+      valueBox(
+        value = tags$p(nrow(dfres$df), style = "font-size: 300%;"),
+        subtitle = "Number of plots",
+        color = "success",
+        icon = icon("table-cells")
+      )
+    })
+    output$vbnmeanq90 <- renderValueBox({
+      req(dfres$df)
+      valueBox(
+        value = tags$p(round(mean(dfres$df$q90), 2), style = "font-size: 300%;"),
+        subtitle = "Mean height q90 ",
+        color = "success",
+        icon = icon("ruler-vertical")
+      )
+    })
+    output$vbnmeanvol <- renderValueBox({
+      req(dfres$df)
+      valueBox(
+        value = tags$p(round(mean(dfres$df$volume), 2), style = "font-size: 300%;"),
+        subtitle = "Mean volume",
+        color = "success",
+        icon = icon("box-open")
+      )
+    })
+    output$vbntotvol <- renderValueBox({
+      req(dfres$df)
+      valueBox(
+        value = tags$p(round(sum(dfres$df$volume), 2), style = "font-size: 300%;"),
+        subtitle = "Total volume",
+        color = "success",
+        icon = icon("box-open")
+      )
+    })
+    output$vbncovermed <- renderValueBox({
+      req(dfres$df)
+      valueBox(
+        value = tags$p(round(mean(dfres$df$coverage), 2), style = "font-size: 300%;"),
+        subtitle = "Average coverage",
+        color = "success",
+        icon = icon("percent")
+      )
+    })
+    output$vbnentropy <- renderValueBox({
+      req(dfres$df)
+      valueBox(
+        value = tags$p(round(mean(dfres$df$entropy), 2), style = "font-size: 300%;"),
+        subtitle = "Average entropy",
+        color = "success",
+        icon = icon("table-cells")
+      )
+    })
+
+
+
     output$overview <- renderPlotly({
       req(dfres$df)
       dfhist <-
         dfres$df |>
         sf::st_drop_geometry() |>
-        dplyr::select(q90, volume) |>
+        dplyr::select(q90, volume, coverage, entropy) |>
         tidyr::pivot_longer(dplyr::everything())
       p <-
         ggplot(dfhist, aes(x = value)) +
@@ -671,10 +754,6 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
               legend.position = "bottom")
       plotly::ggplotly(p)
     })
-
-    # send to dataset module
-
-
 
 
     # Plant Height Profile

@@ -126,6 +126,12 @@ app_ui <- function(request) {
               icon = shiny::icon("chart-simple")
             )
           ),
+          bs4SidebarMenuItem(
+            "Plant Measures",
+            tabName = "phanalyze",
+            icon = shiny::icon("ruler-combined"),
+            condition = "input['config_1-plantmeas'] === true"
+          ),
           # time series
           bs4SidebarMenuItem(
             "Time series",
@@ -155,15 +161,15 @@ app_ui <- function(request) {
             condition = "input['config_1-plantmat'] === true"
           ),
           bs4SidebarMenuItem(
-            "Plant Measures",
-            tabName = "phanalyze",
-            icon = shiny::icon("ruler-combined"),
-            condition = "input['config_1-plantmeas'] === true"
+            "Growth Models",
+            icon = shiny::icon("chart-line"),
+            tabName = "growthmodels",
+            condition = "input['config_1-growthmodels'] === true"
           ),
           bs4SidebarMenuItem(
             "Spatial interpolation",
             tabName = "spatinterpolate",
-            icon = shiny::icon("chart-line"),
+            icon = shiny::icon("layer-group"),
             condition = "input['config_1-geostats'] === true"
           ),
 
@@ -340,6 +346,10 @@ app_ui <- function(request) {
           bs4TabItem(
             tabName = "spatinterpolate",
             mod_spatinterp_ui("spatinterp_1")
+          ),
+          bs4TabItem(
+            tabName = "growthmodels",
+            mod_growthmodels_ui("growthmodels_1")
           ),
 
           # Phytopathometry

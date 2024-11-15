@@ -155,7 +155,25 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
           selected = "Home",
           solidHeader = FALSE,
           type = "tabs",
-          refs,
+          tabPanel(
+            title = "Home",
+            fluidRow(
+              col_9(
+                # img(src = "www/logomat.jpg", width = "100%", height = "90%")
+              ),
+              col_3(
+                h2("About"),
+                "This module provides the implementation of several methods for estimating plant heading/maturity.
+                Methods are grouped into those that uses or not a threshold value.", br(),br(),
+                shiny::actionButton(inputId= ns("details"),
+                                    label="Method details",
+                                    icon = icon("circle-info")),
+                h2("Disclaimer"),
+                "We welcome feedback and suggestions about the usefulness of the application and make no guarantee of the correctness,
+          reliability, or utility of the results if incorrect selections are made during the steps of DM estimation."
+              )
+            )
+          ),
           tabPanel(
             title = "Overview",
             plotlyOutput(ns("overview"), height = "700px") |> add_spinner()
@@ -258,8 +276,8 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
               width = 12,
               height = "600px",
               title = "Results for the fitted model",
+              type = "tabs",
               selected = "Fitted curve",
-              solidHeader = FALSE,
               tabPanel("Fitted curve",
                        plotOutput(ns("fittedplot"), height = "550px") |> add_spinner()
               ),
@@ -321,6 +339,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
         )
       }
     })
+
     observe({
       updatePickerInput(session, "dftoedit",
                         choices = c("none", names(dfs)))

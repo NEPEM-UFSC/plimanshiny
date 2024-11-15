@@ -367,8 +367,8 @@ boxtext <- function(x, y, labels = NA, col.text = NULL, col.bg = NA,
                  ybottom = yMid - rectHeight/2,
                  xright = xMid + rectWidth/2,
                  ytop = yMid + rectHeight/2,
-                 col = adjustcolor(col.bg, 0.9),
-                 border = adjustcolor(border.bg, 0.9))
+                 col = adjustcolor(col.bg, 0.7),
+                 border = adjustcolor(border.bg, 0.7))
 
   ## Place the text:
   graphics::text(xMid, yMid, labels, col = col.text, cex = theCex, font = font,
@@ -694,3 +694,85 @@ drag_server <- function(id, data = NULL, labels = NULL) {
     return(list(dropped_items = dropped_items))
   })
 }
+
+show_licence <- function(ns) {
+  showModal(
+    modalDialog(
+      title = "License Agreement and Terms of Use for the {plimanshiny} Application",
+      tags$div(
+        style = "max-height: 550px; overflow-y: auto; padding-right: 55px;",
+        h2("About"),
+        "{plimanshiny} provides an interactive Shiny-based graphical user interface for the pliman package,
+                facilitating user-friendly access to advanced plant image analysis tools without the need
+                for extensive programming knowledge. This package integrates a variety of functionalities
+                for high-throughput phenotyping, including but not limited to orthomosaic analysis from drone
+                and satellite imagery, shapefile creation and handling, time series analysis, image analysis,
+                and phytopathometry, into a cohesive and intuitive application.",
+        br(),
+        hl(),
+        h2("License Agreement"),
+        "This software is licensed under the Creative Commons Attribution-NonCommercial (CC BY-NC) license.
+          Under this license, you are free to use, share, and adapt the software for non-commercial purposes,
+          provided that you give appropriate credit to the developers. For more details on the license, see the ",
+        tags$a(href="https://creativecommons.org/licenses/by-nc/4.0/", "Creative Commons BY-NC 4.0 License"),
+        ".",
+        br(), br(),
+
+        strong("Non-Commercial Educational Use Only"),
+        "The use of this application is limited to non-commercial educational purposes only. This means
+          it is available for free use by individuals, academic institutions, and organizations solely for academic
+          research, or personal educational purposes. Commercial use of any kind, including by companies or
+          other entities with the intent of profit or business gain, is strictly prohibited unless explicit
+          permission is granted.",
+        br(), br(),
+
+        h3("Terms for Commercial Use"),
+        "If your company wishes to use {plimanshiny} for commercial purposes, please contact us at ",
+        tags$a(href="mailto:contato@nepemufsc.com", "contato@nepemufsc.com"),
+        " to discuss commercial terms and licensing fees.",
+        br(), br(),
+
+        h3("Penalty Clause"),
+        "Companies that use {plimanshiny} for commercial purposes without proper authorization will
+          incur a penalty of 0.1% of their gross revenue for each violation. This penalty
+          is intended to enforce compliance with the terms of use and to prevent unauthorized commercial
+          exploitation of this software.",
+        br(), br(),
+
+        "By using this application, you agree to the following terms:",
+        tags$ul(
+          tags$li("You may not use this software for commercial purposes or for financial gain unless authorized."),
+          tags$li("Any redistribution of this software must include the original GNU General Public License text, as well as attribution to the original authors and developers."),
+          tags$li("This software is provided 'as is' without any warranty. The developers assume no liability for any consequences resulting from its use."),
+          tags$li("Violations of these terms may result in legal action or termination of access to the software.")
+        ),
+        br(),
+        hl(),
+        h2("Copyright"),
+        "Copyright (C) 2024 - Núcleo de Estudos e Pesquisas em Experimentação e Melhoramento Vegetal - ",
+        tags$a(href="https://nepemufsc.com", "nepemufsc.com"),
+        br(),
+      ),
+
+      br(),
+
+      checkboxInput("agree_terms", "I agree with the terms and conditions", value = FALSE),
+      footer = tagList(
+        conditionalPanel(
+          condition = "input.agree_terms == true",
+          actionButton(ns("close_modal"), "Close")
+        )
+      ),
+      easyClose = FALSE,
+      size = "xl"
+    )
+  )
+}
+
+ggplot_color <- function(n){
+    # adapted from https://stackoverflow.com/a/8197703
+    hues = seq(15, 375, length = n + 1)
+    hcl(h = hues, l = 65, c = 100)[1:n]
+}
+
+

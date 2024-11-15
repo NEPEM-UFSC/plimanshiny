@@ -20,7 +20,7 @@ mod_dfjoin_ui <- function(id){
           prettyRadioButtons(
             inputId = ns("dforshape"),
             label = "Join",
-            choices = c("data.frames", "data.frames with a shapefile"),
+            choices = c("data.frames", "shapefiles", "data.frames with a shapefile"),
             icon = icon("check"),
             bigger = TRUE,
             status = "info",
@@ -32,6 +32,15 @@ mod_dfjoin_ui <- function(id){
             pickerInput(
               ns("dftojoin"),
               label = "Dataset(s) to join",
+              choices = NULL,
+              multiple = TRUE
+            )
+          ),
+          conditionalPanel(
+            condition = "input.dforshape == 'shapefiles'", ns = ns,
+            pickerInput(
+              ns("shapetojoin"),
+              label = "Shapefile",
               choices = NULL,
               multiple = TRUE
             )
@@ -119,20 +128,18 @@ mod_dfjoin_server <- function(id, dfs, shapefile, settings){
 
 
     result <- reactiveValues()
+    dfstojoin <- reactiveValues()
+    observe({
+      req(dfstojoin)
+      commvar <- Reduce(base::intersect, lapply(dfstojoin$vals, colnames))
+      updatePickerInput(session, "varstojoin",
+                        choices = commvar)
+    })
     observe({
       if(input$dforshape == "data.frames"){
-        dfstojoin <- reactiveValues()
-        observe({
-          req(input$dftojoin)
-          dfstojoin$vals <- lapply(input$dftojoin, function(x){
-            dfs[[x]]$data
-          })
-        })
-
-        observe({
-          commvar <- Reduce(base::intersect, lapply(dfstojoin$vals, colnames))
-          updatePickerInput(session, "varstojoin",
-                            choices = commvar)
+        req(input$dftojoin)
+        dfstojoin$vals <- lapply(input$dftojoin, function(x){
+          dfs[[x]]$data
         })
 
         # observeEvent(input$startjoining, {
@@ -163,16 +170,24 @@ mod_dfjoin_server <- function(id, dfs, shapefile, settings){
               dfstojoin$vals
             )
         }
-        output$joined <- reactable::renderReactable({
-          req(result$res)
-          reactable::reactable(
-            result$res |> roundcols(),
-            filterable = TRUE,
-            searchable = TRUE,
-            striped = TRUE,
-            pagination = TRUE,
-            defaultPageSize = 13
-          )
+
+      } else if(input$dforshape == "shapefiles"){
+        shpstojoin <- reactiveValues()
+        observe({
+          req(input$shapetojoin)
+          shpstojoin$vals <- lapply(input$shapetojoin, function(x){
+            shapefile[[x]]$data
+          })
+        })
+        observe({
+          req(input$shapetojoin)
+          result$res <-
+            Reduce(
+              function(x, y) {
+                sf::st_join(x, y)
+              },
+              shpstojoin$vals
+            )
         })
       } else{
         observe({
@@ -190,6 +205,8 @@ mod_dfjoin_server <- function(id, dfs, shapefile, settings){
           }
         })
       }
+
+
 
       output$joined <- reactable::renderReactable({
         req(result$res)

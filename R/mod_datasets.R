@@ -13,7 +13,7 @@ mod_datasets_ui <- function(id){
     fluidRow(
       col_3(
         bs4Card(
-          title = "Mask Settings",
+          title = "Datasets",
           collapsible = FALSE,
           width = 12,
           height = "760px",
@@ -27,9 +27,7 @@ mod_datasets_ui <- function(id){
             label = "Active dataset",
             choices = NULL
           ),
-          hl(),
-          h4("Send to global environment"),
-          "Coming soon..."
+          hl()
         )
       ),
       col_9(

@@ -18,7 +18,7 @@ mod_analyze_ui <- function(id){
           status  = "success",
           type = "tabs",
           tabPanel(
-            title = "Configure the analysis",
+            title = "Analysis",
             fluidRow(
               col_6(
                 actionButton(
@@ -312,7 +312,7 @@ mod_analyze_ui <- function(id){
             hl(),
           ),
           tabPanel(
-            title = "Configure the output",
+            title = "Output",
             actionButton(
               inputId = ns("guideoutput"),
               label = tagList(

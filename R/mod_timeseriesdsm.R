@@ -11,21 +11,30 @@ mod_timeseriesdsm_ui <- function(id){
   ns <- NS(id)
   tagList(
     fluidRow(
-      col_4(
+      col_3(
         bs4TabCard(
           width = 12,
           icon = icon("gears"),
           status  = "success",
           type = "tabs",
           tabPanel(
-            title = "Configure the analysis",
-            actionButton(
-              inputId = ns("guideanalyze"),
-              label = tagList(
-                icon = icon("question-circle", verify_fa = FALSE), "Guide"
+            title = "Analysis",
+            fluidRow(
+              col_4(
+                actionButton(
+                  inputId = ns("guideanalyze"),
+                  label = tagList(
+                    icon = icon("question-circle", verify_fa = FALSE), "Guide"
+                  ),
+                  style = "color: white ; background-color: #dd4b39",
+                  class = "btn-danger"
+                )
               ),
-              style = "color: white ; background-color: #dd4b39",
-              class = "btn-danger"
+              col_8(
+                actionBttn(ns("analyzemosaicts"),
+                           label = "Compute CHM!",
+                           status = "success")
+              )
             ),
             hl(),
             prettyRadioButtons(
@@ -108,13 +117,10 @@ mod_timeseriesdsm_ui <- function(id){
               icon = icon("check"),
               status = "success",
               animation = "rotate"
-            ),
-            actionBttn(ns("analyzemosaicts"),
-                       label = "Compute canopy height model!",
-                       status = "success")
+            )
           ),
           tabPanel(
-            title = "Configure the output",
+            title = "Output",
             actionButton(
               inputId = ns("guideoutput"),
               label = tagList(
@@ -160,13 +166,13 @@ mod_timeseriesdsm_ui <- function(id){
           )
         )
       ),
-      col_8(
+      col_9(
         bs4TabCard(
           id = ns("tabs"),
           width = 12,
           height = "780px",
           status = "success",
-          title = "Results",
+          # title = "Results",
           selected = "Home",
           solidHeader = FALSE,
           maximizable = TRUE,
@@ -175,7 +181,7 @@ mod_timeseriesdsm_ui <- function(id){
             title = "Home",
             fluidRow(
               col_9(
-                img(src = "www/logodsm.jpg", width = "100%", height = "100%")
+                img(src = "www/logodsm.jpg", width = "100%", height = "90%")
               ),
               col_3(
                 h2("About"),
@@ -301,7 +307,7 @@ mod_timeseriesdsm_ui <- function(id){
             )
           ),
           tabPanel(
-            title = "Map plot (single data)",
+            title = "Map plot",
             fluidRow(
               col_4(
                 pickerInput(
@@ -353,6 +359,8 @@ mod_timeseriesdsm_server <- function(id, shapefile, mosaiclist, basemap, dfs, se
       }
     })
 
+
+
     # update selec input
     observe({
       req(mosaiclist$mosaics$data)
@@ -361,8 +369,9 @@ mod_timeseriesdsm_server <- function(id, shapefile, mosaiclist, basemap, dfs, se
     observe({
       req(mosaiclist$mosaics$data)
       vals <- c(setdiff(names(mosaiclist$mosaics$data), c("mosaic", input$dtmfile)))
+      vals2 <- c(setdiff(names(mosaiclist$mosaics$data), "mosaic"))
       updateSelectizeInput(session, "dsmfiles", choices = vals, selected = vals)
-      updateSelectizeInput(session, "dsmfileswin", choices = vals, selected = vals)
+      updateSelectizeInput(session, "dsmfileswin", choices = vals, selected = vals2)
     })
     observe({
       req(mosaiclist$mosaics$data)
@@ -956,7 +965,14 @@ mod_timeseriesdsm_server <- function(id, shapefile, mosaiclist, basemap, dfs, se
 
 
 
-      closeSweetAlert(session = session)
+
+
+      # Sent do datasets
+      observe({
+        req(result_plot)
+        dfs[["result_timeseries_dsm"]] <- create_reactval("result_timeseries_dsm", result_plot |> sf::st_drop_geometry())
+        shapefile[["result_timeseries_dsm"]] <- create_reactval("result_timeseries_dsm", result_plot)
+      })
 
       sendSweetAlert(
         session = session,
@@ -965,52 +981,33 @@ mod_timeseriesdsm_server <- function(id, shapefile, mosaiclist, basemap, dfs, se
         type = "success"
       )
 
-      #   # Sent do datasets
-      #   observe({
-      #     req(result_plot)
-      #     dfs[["result_plot"]] <- create_reactval("result_plot", result_plot |> sf::st_drop_geometry())
-      #     shapefile[["result_plot"]] <- create_reactval("result_plot", result_plot)
-      #     if(!is.null(result_indiv)){
-      #       dfs[["result_indiv"]] <- create_reactval("result_indiv", result_indiv |> sf::st_drop_geometry())
-      #       shapefile[["result_indiv"]] <- create_reactval("result_indiv", result_indiv)
-      #     }
-      #   })
-      #
-      #   mod_download_shapefile_server("downresplot", terra::vect(result_plot), name = "time_series_output")
-      #
-      #   closeSweetAlert(session = session)
-      #
-      #   # save to global env
-      #   # send the results to the global environment
-      #   observeEvent(input$savetoglobalenv, {
-      #     req(result_plot)
-      #     tf <- tempfile(pattern = "plimanshiny_output", fileext = ".RData")
-      #     plimanshiny_timeseries <- list(result_plot = result_plot,
-      #                                    result_indiv = result_indiv)
-      #     save(plimanshiny_timeseries, file = tf)
-      #     ask_confirmation(
-      #       inputId = "myconfirmation",
-      #       type = "warning",
-      #       title = "Close the App?",
-      #       text = glue::glue("The results were saved in a temporary file ({basename(tf)}).
-      #           To access the created object, you need first to stop the App and run
-      #           get_plimanshiny_results()
-      #           to load the list into your R environment.
-      #           Do you really want to close the app now?"),
-      #       btn_labels = c("Nope", "Yep"),
-      #       btn_colors = c("#FE642E", "#04B404")
-      #     )
-      #   })
-      #
-      #   observe({
-      #     if (!is.null(input$myconfirmation)) {
-      #       if (input$myconfirmation) {
-      #         stopApp()
-      #       } else {
-      #         return()
-      #       }
-      #     }
-      #   })
+      # send the results to the global environment
+      observeEvent(input$savetoglobalenv, {
+        req(result_plot)
+        tf <- tempfile(pattern = "plimanshiny_output", fileext = ".RData")
+        report_result <- result_plot
+        save(report_result, file = tf)
+        ask_confirmation(
+          inputId = "myconfirmation",
+          type = "warning",
+          title = "Close the App?",
+          text = glue::glue("The results were saved in a temporary file ({basename(tf)}).
+              To access the created object, you need first to stop the App and run get_plimanshiny_results() to load the list into your R environment.
+              Do you really want to close the app now?"),
+          btn_labels = c("Nope", "Yep"),
+          btn_colors = c("#FE642E", "#04B404")
+        )
+      })
+
+      observe({
+        if (!is.null(input$myconfirmation)) {
+          if (input$myconfirmation) {
+            stopApp()
+          } else {
+            return()
+          }
+        }
+      })
 
 
     })

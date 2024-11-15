@@ -552,254 +552,274 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
             drawn$finished <- cpoints()$edited |> dplyr::slice_tail(n = 1)
           }
         }
-        observeEvent(input$createprofile, {
 
+
+        vals <- reactiveVal(NULL)
+        polygons_spv <- reactiveVal(NULL)
+        nlyrs <- reactiveVal(NULL)
+        mosaiccr <- reactiveVal(NULL)
+        indexccr <- reactiveVal(NULL)
+        polygons_ext <- reactiveVal(NULL)
+        coords <- reactiveVal(NULL)
+
+        observeEvent(input$createprofile, {
           on.exit(layout(1))
           if(!is.null(drawn$finished)){
-            output$plotinfop <- renderPlot({
+            nlyrs(terra::nlyr(mosaictmp$mosaic))
+            polygons <- drawn$finished$geometry
+            polygons_spv(sf::st_transform(polygons, crs = sf::st_crs(mosaictmp$mosaic)))
 
-              nlyrs <- terra::nlyr(mosaictmp$mosaic)
-              polygons <- drawn$finished$geometry
-              polygons_spv <-
-                sf::st_transform(polygons, crs = sf::st_crs(mosaictmp$mosaic))
+            if(inherits(polygons, "sfc_LINESTRING")){
+              coords(polygons_spv() |> sf::st_coordinates())
 
-
-              if(inherits(polygons, "sfc_LINESTRING")){
-                coords <-
-                  polygons_spv |>
-                  sf::st_coordinates()
-                coordsext <- terra::vect(coords[, 1:2], "lines")
-                exts <-
-                  terra::vect(sf::st_transform(polygons, crs = sf::st_crs(mosaictmp$mosaic))) |>
-                  terra::buffer(input$buffer) |>
-                  terra::ext()
-                mosaiccr <- terra::crop(mosaictmp$mosaic, exts)
-                indexccr <- terra::crop(index[[input$activeindex]]$data, exts)
-                polygons_ext <-  terra::vect(polygons_spv)
-                vals <- terra::extractAlong(indexccr, coordsext, xy = TRUE)
-
-                observe({
-                  updatePickerInput(session, "indextoprofile",
-                                    choices = names(vals)[4:ncol(vals)],
-                                    selected = names(vals)[4:ncol(vals)][1])
-                })
-
-                coordsdist <- as.matrix(polygons_spv |> sf::st_coordinates())
-                n <- nrow(coordsdist)
-                distances <- NULL
-                for (j in 1:(n - 1)) {
-                  x1 <- coordsdist[j, 1]
-                  y1 <- coordsdist[j, 2]
-                  x2 <- coordsdist[j + 1, 1]
-                  y2 <- coordsdist[j + 1, 2]
-                  distance <- sqrt((x2 - x1)^2 + (y2 - y1)^2)
-                  distances[j] <- distance
-                }
-                # distances
-                dists <- cumsum(distances)
-                dist <- max(dists)
-                if(nlyrs > 2){
-                  layout(
-                    matrix(c(1, 2, 3, 3), nrow = 2, byrow = TRUE),
-                    heights = c(3, 3)
-                  )
-                  if(input$stretch == "none"){
-                    terra::plotRGB(
-                      mosaiccr,
-                      r = suppressWarnings(as.numeric(r$r)),
-                      g = suppressWarnings(as.numeric(g$g)),
-                      b = suppressWarnings(as.numeric(b$b)),
-                      maxcell = 1e6,
-                      colNA = "#00000000",
-                      mar = c(2, 2, 2, 2),
-                      axes = FALSE
-                    )
-
-                  } else{
-                    terra::plotRGB(
-                      mosaiccr,
-                      r = suppressWarnings(as.numeric(r$r)),
-                      g = suppressWarnings(as.numeric(g$g)),
-                      b = suppressWarnings(as.numeric(b$b)),
-                      stretch = input$stretch,
-                      maxcell = 1e6,
-                      colNA = "#00000000",
-                      mar = c(2, 2, 2, 2),
-                      axes = FALSE
-                    )
-                  }
-                  terra::plot(polygons_ext, add = TRUE, col = "red")
-                  text(coords[1, 1], coords[1, 2], "Start", cex = 1.5, col = "white")
-                  text(coords[n, 1], coords[n, 2], "End", cex = 1.5, col = "white")
-
-                  terra::plot(indexccr[[input$indextosync]],
-                              axes = FALSE,
-                              maxcell=5000000,
-                              mar = c(2, 2, 2, 2),
-                              col = return_colors(input$plaindex, reverse = input$revindex, n = 100),
-                              smooth=TRUE)
-                  terra::plot(polygons_ext, add = TRUE, col = "red")
-                  text(coords[1, 1], coords[1, 2], 0, cex = 1.5)
-                  text(coords[n, 1], coords[n, 2], round(max(dist), 2), cex = 1.5)
-
-                  # Transform the data to long format
-                  req(input$indextoprofile)
-                  data_long <-
-                    data.frame(x = seq(0, dist, length.out = nrow(vals))) |>
-                    dplyr::bind_cols(vals |> dplyr::select(dplyr::all_of(input$indextoprofile)))
-
-                  if(input$smooth){
-                    data_long <-
-                      data_long |>
-                      dplyr::mutate(dplyr::across(2:length(input$indextoprofile), ~ {
-                        fit <- smooth.spline(data_long$x, .x)
-                        predict(fit, data_long$x)$y
-                      }))
-                  }
-
-
-                  colorslin <- random_color(length(input$indextoprofile))
-                  matplot(data_long[, 1],
-                          data_long[, -1],
-                          type = "l",
-                          lty = 1,
-                          col = colorslin,
-                          ylab = "Vegetation indexes",
-                          xlab = "Distance",
-                          cex = 3,
-                          lwd = 1.5,
-                          xlim = c(0, dist))
-                  legend("topright",
-                         legend = input$indextoprofile,
-                         col = colorslin,
-                         lty = 1)
-
-                } else{
-                  layout(
-                    matrix(c(1, 2), nrow = 2, byrow = TRUE),
-                    heights = c(3, 3)
-                  )
-                  terra::plot(indexccr[[input$indextosync]],
-                              axes = FALSE,
-                              maxcell=5000000,
-                              mar = c(2, 2, 2, 2),
-                              col = return_colors(input$plaindex, reverse = input$revindex, n = 100),
-                              smooth=TRUE)
-                  lines(coords,
-                        col = "red",
-                        lwd = 3)
-
-                  req(input$indextoprofile)
-                  data_long <-
-                    data.frame(x = seq(0, dist, length.out = nrow(vals))) |>
-                    dplyr::bind_cols(vals |> dplyr::select(dplyr::all_of(input$indextoprofile)))
-
-                  if(input$smooth){
-                    data_long <-
-                      data_long |>
-                      dplyr::mutate(dplyr::across(2:length(input$indextoprofile), ~ {
-                        fit <- smooth.spline(data_long$x, .x)
-                        predict(fit, data_long$x)$y
-                      }))
-                  }
-
-                  colorslin <- random_color(length(input$indextoprofile))
-                  matplot(data_long[, 1],
-                          data_long[, -1],
-                          type = "l",
-                          lty = 1,
-                          col = colorslin,
-                          ylab = "Vegetation indexes",
-                          xlab = "Distance",
-                          cex = 1.5,
-                          lwd = 1.5,
-                          xlim = c(0, dist))
-                  legend("topright",
-                         legend = input$indextoprofile,
-                         col = colorslin,
-                         lty = 1)
-
-                }
-
-                # Download handler to generate the CSV file
-                output$downloadData <- downloadHandler(
-                  filename = function() {
-                    paste("data-", Sys.Date(), ".csv", sep="")
-                  },
-                  content = function(file) {
-                    # Generate a sample data frame
-                    data <- data_long
-                    # Write the data frame to a CSV file
-                    write.csv(data, file, row.names = FALSE)
-                  }
-                )
-
-              }
-
-            })
-            showModal(
-              modalDialog(
-                title = "Index Profile",
-                fluidRow(
-                  col_2(
-                    pickerInput(
-                      inputId = ns("indextoprofile"),
-                      label = "Vegetation index(es)",
-                      choices = NULL,
-                      options = list(
-                        `actions-box` = TRUE
-                      ),
-                      multiple = TRUE
-                    )
-                  ),
-                  col_2(
-                    selectInput(
-                      ns("stretch"),
-                      label = "Stretch",
-                      choices = c("none", "lin", "hist"),
-                      selected = "lin"
-                    )
-                  ),
-                  col_4(
-                    pickerpalette(id, "plaindex", selected = "RdYlGn"),
-                  ),
-                  col_1(
-                    prettyCheckbox(
-                      inputId = ns("revindex"),
-                      label = "Reverse",
-                      value = FALSE,
-                      icon = icon("check"),
-                      status = "success",
-                      animation = "rotate"
-                    )
-                  ),
-                  col_1(
-                    prettyCheckbox(
-                      inputId = ns("smooth"),
-                      label = "Smooth",
-                      value = TRUE,
-                      icon = icon("check"),
-                      status = "success",
-                      animation = "rotate"
-                    )
-                  ),
-                  col_2(
-                    numericInput(ns("buffer"),
-                                 label = "Buffer (area)",
-                                 value = 2)
-                  )
-                ),
-                fluidRow(
-                  plotOutput(ns("plotinfop"), height = "600px")
-                ),
-                downloadButton(ns("downloadData"), "Download profile"),
-                footer = NULL,
-                easyClose = TRUE,
-                size = "xl"
-              )
-            )
+              coordsext <- terra::vect(coords()[, 1:2], "lines")
+              sfvec <- sf::st_transform(polygons, crs = sf::st_crs(mosaictmp$mosaic))
+              exts <-
+                terra::vect(sfvec) |>
+                terra::buffer(2) |>
+                terra::ext()
+              mosaiccr(terra::crop(mosaictmp$mosaic, exts))
+              indexccr(terra::crop(index[[input$activeindex]]$data, exts))
+              polygons_ext(terra::vect(polygons_spv()))
+              # vals <- terra::extractAlong(indexccr, coordsext, xy = TRUE)
+              vals(terra::extractAlong(indexccr(), coordsext, xy = TRUE))
+            }
           }
         })
+
+        observeEvent(vals(), {
+          req(vals())
+          valsopts <- names(vals())[4:ncol(vals())]
+          isolate({
+            updatePickerInput(
+              session,
+              "indextoprofile",
+              choices = valsopts,
+              selected = valsopts[[1]]
+            )
+          })
+        })
+
+        output$plotinfop <- renderPlot({
+          req(input$indextoprofile)
+          coordsdist <- as.matrix(polygons_spv() |> sf::st_coordinates())
+          n <- nrow(coordsdist)
+          distances <- NULL
+          for (j in 1:(n - 1)) {
+            x1 <- coordsdist[j, 1]
+            y1 <- coordsdist[j, 2]
+            x2 <- coordsdist[j + 1, 1]
+            y2 <- coordsdist[j + 1, 2]
+            distance <- sqrt((x2 - x1)^2 + (y2 - y1)^2)
+            distances[j] <- distance
+          }
+          # distances
+          dists <- cumsum(distances)
+          dist <- max(dists)
+          if(nlyrs() > 2){
+            layout(
+              matrix(c(1, 2, 3, 3), nrow = 2, byrow = TRUE),
+              heights = c(3, 3)
+            )
+            if(input$stretch == "none"){
+              terra::plotRGB(
+                mosaiccr(),
+                r = suppressWarnings(as.numeric(r$r)),
+                g = suppressWarnings(as.numeric(g$g)),
+                b = suppressWarnings(as.numeric(b$b)),
+                maxcell = 1e6,
+                colNA = "#00000000",
+                mar = c(2, 2, 2, 2),
+                axes = FALSE
+              )
+
+            } else{
+              terra::plotRGB(
+                mosaiccr(),
+                r = suppressWarnings(as.numeric(r$r)),
+                g = suppressWarnings(as.numeric(g$g)),
+                b = suppressWarnings(as.numeric(b$b)),
+                stretch = input$stretch,
+                maxcell = 1e6,
+                colNA = "#00000000",
+                mar = c(2, 2, 2, 2),
+                axes = FALSE
+              )
+            }
+            terra::plot(polygons_ext(), add = TRUE, col = "red")
+            text(coords()[1, 1], coords()[1, 2], "Start", cex = 1.5, col = "white")
+            text(coords()[n, 1], coords()[n, 2], "End", cex = 1.5, col = "white")
+
+            terra::plot(indexccr()[[input$indextosync]],
+                        axes = FALSE,
+                        maxcell=5000000,
+                        mar = c(2, 2, 2, 2),
+                        col = return_colors(input$plaindex, reverse = input$revindex, n = 100),
+                        smooth=TRUE)
+            terra::plot(polygons_ext(), add = TRUE, col = "red")
+            text(coords()[1, 1], coords()[1, 2], 0, cex = 1.5)
+            text(coords()[n, 1], coords()[n, 2], round(max(dist), 2), cex = 1.5)
+
+            # Transform the data to long format
+            req(input$indextoprofile)
+            data_long <-
+              data.frame(x = seq(0, dist, length.out = nrow(vals()))) |>
+              dplyr::bind_cols(vals() |> dplyr::select(dplyr::all_of(input$indextoprofile)))
+
+            if(input$smooth){
+              data_long <-
+                data_long |>
+                dplyr::mutate(dplyr::across(2:length(input$indextoprofile), ~ {
+                  fit <- smooth.spline(data_long$x, .x)
+                  predict(fit, data_long$x)$y
+                }))
+            }
+
+
+            if(length(input$indextoprofile) > 5){
+              colorslin <- random_color(length(input$indextoprofile))
+            } else{
+              colorslin <- ggplot_color(length(input$indextoprofile))
+            }
+            matplot(data_long[, 1],
+                    data_long[, -1],
+                    type = "l",
+                    lty = 1,
+                    col = colorslin,
+                    ylab = "Vegetation indexes",
+                    xlab = "Distance",
+                    cex = 3,
+                    lwd = 1.5,
+                    xlim = c(0, dist))
+            legend("topright",
+                   legend = input$indextoprofile,
+                   col = colorslin,
+                   lty = 1)
+
+          } else{
+            layout(
+              matrix(c(1, 2), nrow = 2, byrow = TRUE),
+              heights = c(3, 3)
+            )
+            terra::plot(indexccr()[[input$indextosync]],
+                        axes = FALSE,
+                        maxcell=5000000,
+                        mar = c(2, 2, 2, 2),
+                        col = return_colors(input$plaindex, reverse = input$revindex, n = 100),
+                        smooth=TRUE)
+            lines(coords(),
+                  col = "red",
+                  lwd = 3)
+
+            req(input$indextoprofile)
+            data_long <-
+              data.frame(x = seq(0, dist, length.out = nrow(vals()))) |>
+              dplyr::bind_cols(vals() |> dplyr::select(dplyr::all_of(input$indextoprofile)))
+
+            if(input$smooth){
+              data_long <-
+                data_long |>
+                dplyr::mutate(dplyr::across(2:length(input$indextoprofile), ~ {
+                  fit <- smooth.spline(data_long$x, .x)
+                  predict(fit, data_long$x)$y
+                }))
+            }
+
+            if(length(input$indextoprofile) > 5){
+              colorslin <- random_color(length(input$indextoprofile))
+            } else{
+              colorslin <- ggplot_color(length(input$indextoprofile))
+            }
+            matplot(data_long[, 1],
+                    data_long[, -1],
+                    type = "l",
+                    lty = 1,
+                    col = colorslin,
+                    ylab = "Vegetation indexes",
+                    xlab = "Distance",
+                    cex = 1.5,
+                    lwd = 1.5,
+                    xlim = c(0, dist))
+            legend("topright",
+                   legend = input$indextoprofile,
+                   col = colorslin,
+                   lty = 1)
+          }
+
+          # Download handler to generate the CSV file
+          output$downloadData <- downloadHandler(
+            filename = function() {
+              paste("data-", Sys.Date(), ".csv", sep="")
+            },
+            content = function(file) {
+              # Generate a sample data frame
+              data <- data_long
+              # Write the data frame to a CSV file
+              write.csv(data, file, row.names = FALSE)
+            }
+          )
+        })
+
+        observe({
+          req(vals())
+          showModal(
+            modalDialog(
+              title = "Index Profile",
+              fluidRow(
+                col_4(
+                  pickerInput(
+                    inputId = ns("indextoprofile"),
+                    label = "Vegetation index(es)",
+                    choices = NULL,
+                    options = list(
+                      `actions-box` = TRUE
+                    ),
+                    multiple = TRUE
+                  )
+                ),
+                col_2(
+                  selectInput(
+                    ns("stretch"),
+                    label = "Stretch",
+                    choices = c("none", "lin", "hist"),
+                    selected = "lin"
+                  )
+                ),
+                col_4(
+                  pickerpalette(id, "plaindex", selected = "RdYlGn"),
+                ),
+                col_1(
+                  prettyCheckbox(
+                    inputId = ns("revindex"),
+                    label = "Reverse",
+                    value = FALSE,
+                    icon = icon("check"),
+                    status = "success",
+                    animation = "rotate"
+                  )
+                ),
+                col_1(
+                  prettyCheckbox(
+                    inputId = ns("smooth"),
+                    label = "Smooth",
+                    value = TRUE,
+                    icon = icon("check"),
+                    status = "success",
+                    animation = "rotate"
+                  )
+                )
+              ),
+              fluidRow(
+                plotOutput(ns("plotinfop"), height = "600px")
+              ),
+              downloadButton(ns("downloadData"), "Download profile"),
+              footer = NULL,
+              easyClose = TRUE,
+              size = "xl"
+            )
+          )
+        })
+
       })
     })
 

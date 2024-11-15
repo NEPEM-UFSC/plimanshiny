@@ -840,6 +840,16 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
           updateSelectInput(session, "shapefiletoanalyze",
                             choices = shapefilenames,
                             selected = shapefilenames[[length(shapefilenames)]])
+          print(names(shapefile))
+          if ("shapefile" %in% names(shapefile)) {
+            sendSweetAlert(
+              session = session,
+              title = "Reserved name used",
+              text = "'shapefile' is a reserved name and is strongly suggested to not use this name for files. It may be omitted in some dropdown menus.",
+              type = "warning"
+            )
+          }
+
         })
 
 
@@ -864,6 +874,7 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
           }
           output$shapefile_mapview <- renderLeaflet({
             req(input$colorshapeimport)
+            req(shapefile[[input$shapefiletoanalyze]]$data)
             if(is.null(basemap$map)){
               if(input$colorshapeimport == "none"){
                 mapp <- mapview::mapview(shapefile[[input$shapefiletoanalyze]]$data,
@@ -1066,9 +1077,9 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
                           smooth = TRUE,
                           maxcell = 2e6)
             }
-            shapefile_plot(shpinfo, add = TRUE, col = adjustcolor("salmon", 0.9))
+            shapefile_plot(shpinfo, add = TRUE, col = adjustcolor("salmon", 0.7))
           } else{
-            shapefile_plot(shpinfo, col = adjustcolor("salmon", 0.9))
+            shapefile_plot(shpinfo, col = adjustcolor("salmon", 0.7))
           }
           wid$val <- ifelse(npoints > 5, "-", paste0(round(seq_dists[2], 3), " m"))
           hei$val <- ifelse(npoints > 5, "-", paste0(round(seq_dists[1], 3), " m"))
@@ -1214,7 +1225,7 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
       }
     })
 
-    mod_download_shapefile_server("downloadshapefile", terra::vect(shapefile$shapefileplot))
+    mod_download_shapefile_server("downloadshapefile", terra::vect(shapefile$shapefileplot), name = "created_shp")
 
 
 

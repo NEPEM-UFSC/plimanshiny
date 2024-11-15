@@ -437,7 +437,7 @@ mod_summarize_server <- function(id, dfs, shapefile){
     })
 
     observeEvent(input$doneupdating, {
-      newfile <- paste0(file_name(input$dftosummary), input$suffix, ".", file_extension(input$dftosummary))
+      newfile <- paste0(file_name(input$dftosummary), input$suffix)
       if(input$dforshape == "data.frame"){
         dfs[[newfile]] <- create_reactval(newfile, summary_data())
       } else{

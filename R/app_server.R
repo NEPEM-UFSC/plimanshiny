@@ -7,7 +7,11 @@
 app_server <- function(input, output, session) {
   # Home
 
-  mod_home_server("home_1")
+  # Settings
+  settings <- reactiveVal()
+  mod_config_server("config_1", settings)
+  mod_home_server("home_1", settings)
+
   # Mosaic analysis
   mosaic_data <- reactiveValues()
   r <- reactiveValues(r = 1)
@@ -85,6 +89,11 @@ app_server <- function(input, output, session) {
       mod_matanalyze_server("matanalyze_1", dfs, shapefile, basemap, settings)
     }
   })
+  observeEvent(input[["config_1-growthmodels"]], {
+    if (input[["config_1-growthmodels"]]) {
+      mod_growthmodels_server("growthmodels_1", dfs)
+    }
+  })
 
   observeEvent(input[["config_1-plantmeas"]], {
     if (input[["config_1-plantmeas"]]) {
@@ -103,9 +112,6 @@ app_server <- function(input, output, session) {
   mod_utmzonesel_server("utmzonesel_1", settings)
   mod_geometricmeasures_server("geometricmeasures_1", shapefile, settings)
 
-  # Settings
-  settings <- reactiveVal()
-  mod_config_server("config_1", settings)
 
 
 }

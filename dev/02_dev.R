@@ -65,6 +65,7 @@ golem::add_module(name = "geometricmeasures")
 golem::add_module(name = "config")
 golem::add_module(name = "timeseriesdsm")
 golem::add_module(name = "summarize")
+golem::add_module(name = "growthmodels")
 
 ## Add packages
 usethis::use_package("shiny")

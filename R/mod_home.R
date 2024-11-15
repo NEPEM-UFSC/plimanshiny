@@ -40,29 +40,45 @@ mod_home_ui <- function(id){
           href = "https://link.springer.com/article/10.1007/s40858-021-00487-5",
           icon = shiny::icon("braille")
         ),
-        actionBttn(
-          inputId = ns("about"),
-          label = "About",
-          color = "success",
-          icon = icon("circle-info")
+        fluidRow(
+          actionBttn(
+            inputId = ns("about"),
+            label = "About",
+            color = "success",
+            icon = icon("circle-info")
+          )
         ),
-        actionBttn(
-          inputId = ns("similartools"),
-          label = "Similar tools",
-          color = "success",
-          icon = icon("screwdriver-wrench")
+        fluidRow(
+          actionBttn(
+            inputId = ns("similartools"),
+            label = "Similar tools",
+            color = "success",
+            icon = icon("screwdriver-wrench")
+          )
         ),
-        actionBttn(
-          inputId = NS("example", "checkupdate"),  # Ensure proper namespacing
-          label = "Check for updates",
-          color = "success",
-          icon = icon("code-compare")
+        fluidRow(
+          actionBttn(
+            inputId = NS("example", "checkupdate"),  # Ensure proper namespacing
+            label = "Check for updates",
+            color = "success",
+            icon = icon("code-compare")
+          )
         ),
-        actionBttn(
-          inputId = ns("reload"),  # Ensure proper namespacing
-          label = "Reload",
-          color = "warning",
-          icon = icon("rotate-right")
+        fluidRow(
+          actionBttn(
+            inputId = ns("license"),
+            label = "Licence",
+            color = "royal",
+            icon = icon("rectangle-list")
+          )
+        ),
+        fluidRow(
+          actionBttn(
+            inputId = ns("reload"),  # Ensure proper namespacing
+            label = "Reload",
+            color = "warning",
+            icon = icon("rotate-right")
+          )
         ),
 
         tags$head(
@@ -251,6 +267,24 @@ mod_home_server <- function(id, settings){
       session$reload()
     })
 
+    observe({
+      inst_dir <- file.path(system.file(package = "plimanshiny"), "app/www")
+      licenseread <- file.path(inst_dir, "license.rds")
+      if (!file.exists(licenseread)) {
+        show_licence(ns)
+      }
+    })
+    observeEvent(input$close_modal, {
+      inst_dir <- file.path(system.file(package = "plimanshiny"), "app/www")
+      licenseread <- file.path(inst_dir, "license.rds")
+      saveRDS(list(licenseread = TRUE), licenseread)
+      removeModal()
+    })
+
+    observeEvent(input$license, {
+      show_licence(ns)
+    })
+
     observeEvent(input$about, {
       showModal(
         modalDialog(
@@ -299,7 +333,7 @@ mod_home_server <- function(id, settings){
 
 
           footer = NULL,
-          easyClose = TRUE,
+          easyClose = FALSE,
           size = "xl"
         )
       )
