@@ -36,7 +36,7 @@ Imports:
     mapview (>= 2.11.2),
     pak,
     parallel,
-    pliman,
+    pliman (>= 3.0.0),
     plotly,
     purrr,
     reactable,
