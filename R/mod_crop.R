@@ -71,26 +71,29 @@ mod_crop_ui <- function(id){
         )
       ),
       col_9(
-        bs4Card(
-          title = "Crop Results",
-          collapsible = FALSE,
+        bs4TabCard(
+          id = "tabs",
+          status = "success",
           width = 12,
-          height = "710px",
-          fluidRow(
-            col_6(
-              conditionalPanel("input.shapemanipula != true",  ns = ns,
-                               h3("Original mosaic"),
-                               editModUI(ns("mosaic_crop"), height = "640px") |> add_spinner()
-              ),
-              conditionalPanel("input.shapemanipula == true",  ns = ns,
-                               h3("Original mosaic and shapefile"),
-                               leafletOutput(ns("mosaic_cropshp"), height = "640px") |> add_spinner()
-              )
+          height = "720px",
+          title = "Cropping a mosaic",
+          selected = "Original mosaic",
+          solidHeader = FALSE,
+          type = "tabs",
+          tabPanel(
+            title = "Original mosaic",
+            conditionalPanel("input.shapemanipula != true",  ns = ns,
+                             h3("Original mosaic"),
+                             editModUI(ns("mosaic_crop"), height = "640px") |> add_spinner()
             ),
-            col_6(
-              h3("Cropped mosaic"),
-              plotOutput(ns("mosaiccropped"), height = "640px") |> add_spinner()
+            conditionalPanel("input.shapemanipula == true",  ns = ns,
+                             h3("Original mosaic and shapefile"),
+                             leafletOutput(ns("mosaic_cropshp"), height = "640px") |> add_spinner()
             )
+          ),
+          tabPanel(
+            title = "Cropped mosaic",
+            plotOutput(ns("mosaiccropped"), height = "640px") |> add_spinner()
           )
         )
       )
