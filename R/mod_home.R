@@ -333,7 +333,7 @@ mod_home_server <- function(id, settings){
 
 
           footer = NULL,
-          easyClose = FALSE,
+          easyClose = TRUE,
           size = "xl"
         )
       )
