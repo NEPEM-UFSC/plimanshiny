@@ -840,7 +840,6 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
           updateSelectInput(session, "shapefiletoanalyze",
                             choices = shapefilenames,
                             selected = shapefilenames[[length(shapefilenames)]])
-          print(names(shapefile))
           if ("shapefile" %in% names(shapefile)) {
             sendSweetAlert(
               session = session,
