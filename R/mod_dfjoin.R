@@ -54,7 +54,7 @@ mod_dfjoin_ui <- function(id){
               multiple = FALSE
             ),
             pickerInput(
-              ns("shapetojoin"),
+              ns("shapetojoin2"),
               label = "Shapefile",
               choices = NULL,
               multiple = FALSE
@@ -125,6 +125,11 @@ mod_dfjoin_server <- function(id, dfs, shapefile, settings){
                         choices = setdiff(names(shapefile), c("shapefile", "shapefileplot")),
                         selected = NA)
     })
+    observe({
+      updatePickerInput(session, "shapetojoin2",
+                        choices = setdiff(names(shapefile), c("shapefile", "shapefileplot")),
+                        selected = NA)
+    })
 
 
     result <- reactiveValues()
@@ -192,15 +197,15 @@ mod_dfjoin_server <- function(id, dfs, shapefile, settings){
       } else{
         observe({
           req(input$dftojoinshp)
-          req(input$shapetojoin)
+          req(input$shapetojoin2)
           if(input$type == "left"){
-            result$res <- dplyr::left_join(shapefile[[input$shapetojoin]]$data |> convert_numeric_cols(),
+            result$res <- dplyr::left_join(shapefile[[input$shapetojoin2]]$data |> convert_numeric_cols(),
                                            dfs[[input$dftojoinshp]]$data |> convert_numeric_cols())
           } else if(input$type == "right"){
-            result$res <- dplyr::right_join(shapefile[[input$shapetojoin]]$data |> convert_numeric_cols(),
+            result$res <- dplyr::right_join(shapefile[[input$shapetojoin2]]$data |> convert_numeric_cols(),
                                             dfs[[input$dftojoinshp]]$data |> convert_numeric_cols())
           } else{
-            result$res <- dplyr::full_join(shapefile[[input$shapetojoin]]$data |> convert_numeric_cols(),
+            result$res <- dplyr::full_join(shapefile[[input$shapetojoin2]]$data |> convert_numeric_cols(),
                                            dfs[[input$dftojoinshp]]$data |> convert_numeric_cols())
           }
         })

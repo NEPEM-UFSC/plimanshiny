@@ -690,7 +690,7 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
     output$vbnmeanq90 <- renderValueBox({
       req(dfres$df)
       valueBox(
-        value = tags$p(round(mean(dfres$df$q90), 2), style = "font-size: 300%;"),
+        value = tags$p(round(mean(dfres$df$q90, na.rm = TRUE), 2), style = "font-size: 300%;"),
         subtitle = "Mean height q90 ",
         color = "success",
         icon = icon("ruler-vertical")
@@ -699,7 +699,7 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
     output$vbnmeanvol <- renderValueBox({
       req(dfres$df)
       valueBox(
-        value = tags$p(round(mean(dfres$df$volume), 2), style = "font-size: 300%;"),
+        value = tags$p(round(mean(dfres$df$volume, na.rm = TRUE), 2), style = "font-size: 300%;"),
         subtitle = "Mean volume",
         color = "success",
         icon = icon("box-open")
