@@ -233,7 +233,7 @@ mod_indexes_ui <- function(id){
                 )
               )
             ),
-            leafletOutput(ns("indexshp"), height = "680px")|> add_spinner()
+            leafletOutput(ns("indexshp"), height = "660px")|> add_spinner()
           ),
           tabPanel(
             title = "Syncked maps",
@@ -272,7 +272,7 @@ mod_indexes_ui <- function(id){
 #' indexes Server Functions
 #'
 #' @noRd
-mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, basemap, index, shapefile, settings){
+mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, basemap, index, shapefile, settings, quantiles){
   moduleServer( id, function(input, output, session){
 
     ns <- session$ns
@@ -280,6 +280,15 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
     observe({
       if(!settings()$synckmaps){
         hideTab(inputId = "tabsindex", target = "Syncked maps")
+      } else{
+        showTab(inputId = "tabsindex", target = "Syncked maps")
+      }
+    })
+    observe({
+      if(!settings()$overlayindex){
+        hideTab(inputId = "tabsindex", target = "Plot Index (shapefile)")
+      } else{
+        showTab(inputId = "tabsindex", target = "Plot Index (shapefile)")
       }
     })
 
@@ -826,15 +835,54 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
 
 
     output$indexshp <- renderLeaflet({
-      if (input$indextosync  %in% names(magg$agg)) {
+      if (input$indextosync  %in% names(magg$agg) & settings()$overlayindex) {
         if(input$shapefiletoplot != "none"){
           indp <-  terra::mask(magg$agg[[input$indextosync]],
                                shapefile[[input$shapefiletoplot]]$data |> shapefile_input(as_sf = FALSE, info = FALSE))
-          (basemap$map + mosaic_view(indp,
-                                     max_pixels = 3000000,
-                                     downsample_fun = "average",
-                                     show = "index",
-                                     color_regions = return_colors(input$palplotindex, reverse = input$palplotindexrev)))@map
+          aggr <- find_aggrfact(mosaic_data[[input$rastertocompute]]$data)
+          if(aggr > 0){
+            rgbrast <- mosaic_aggregate(mosaic_data[[input$rastertocompute]]$data, round(100 / aggr))
+          } else{
+            rgbrast <- mosaic_data[[input$rastertocompute]]$data
+          }
+
+          cols <- return_colors(input$palplotindex, reverse = input$palplotindexrev)
+          vals <- terra::values(indp)
+
+          # Create a continuous color palette
+          band_palette <- leaflet::colorNumeric(
+            palette = cols,  # Choose a color palette (e.g., "viridis", "plasma", "terrain.colors")
+            domain = vals,  # Domain based on the raster values
+            na.color = "transparent"  # Transparent for NA values
+          )
+
+          leaflet::leaflet()  |>
+            leaflet::addTiles(group = "OpenStreetMap",
+                              options = tileOptions(minZoom = 1, maxZoom = 30))  |>
+            leafem::addRasterRGB(as(rgbrast, "Raster"),
+                                 r = suppressWarnings(as.numeric(r$r)),
+                                 g = suppressWarnings(as.numeric(g$g)),
+                                 b = suppressWarnings(as.numeric(b$b)),
+                                 group = "True colours",
+                                 quantiles = quantiles$q,
+                                 maxBytes = 16 * 1024 * 1024) |>
+            leafem::addGeoRaster(as(indp, "Raster"),
+                                 group = "Index",
+                                 resolution = 150,
+                                 opacity = 1,
+                                 colorOptions = leafem::colorOptions(cols,
+                                                                     na.color = "transparent")) |>
+            leaflet::addLayersControl(
+              overlayGroups = c("True colours", "Index"),
+            ) |>
+            addLegend(
+              pal = band_palette,  # Palette for the legend
+              values = vals,  # Values from the raster
+              title = input$indextosync,  # Legend title
+              labFormat = labelFormat(transform = function(x) round(x, 2)),  # Format legend labels
+              opacity = 1
+            )
+
         }
       }
     })

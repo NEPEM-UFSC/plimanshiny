@@ -38,6 +38,14 @@ mod_matanalyze_ui <- function(id){
             choices = NULL
           ),
           prettyCheckbox(
+            inputId = ns("parallel"),
+            label = "Parallel Processing",
+            value = FALSE,
+            icon = icon("check"),
+            status = "success",
+            animation = "rotate"
+          ),
+          prettyCheckbox(
             inputId = ns("usethresh"),
             label = "Threshold-based methods",
             value = FALSE,
@@ -415,26 +423,30 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
           dfactive$df |>
             mod_L3(predictor = input$vegetindex,
                    flight_date = input$flightdate,
-                   sowing_date = input$sowing)
+                   sowing_date = input$sowing,
+                   parallel = input$parallel)
         } else if(input$method == "Logistic Model L4"){
           # modl <-
           dfactive$df |>
             mod_L4(predictor = input$vegetindex,
                    flight_date = input$flightdate,
-                   sowing_date = input$sowing)
+                   sowing_date = input$sowing,
+                   parallel = input$parallel)
         } else if(input$method == "Logistic Model L5"){
           # modl <-
           dfactive$df |>
             mod_L5(predictor = input$vegetindex,
                    flight_date = input$flightdate,
-                   sowing_date = input$sowing)
+                   sowing_date = input$sowing,
+                   parallel = input$parallel)
         } else if(input$method == "LOESS (Volpato et al., 2021)"){
           # modl <-
           dfactive$df |>
             mod_loess(predictor = input$vegetindex,
                       flight_date = input$flightdate,
                       sowing_date = input$sowing,
-                      threshold = input$thresh)
+                      threshold = input$thresh,
+                      parallel = input$parallel)
 
         } else if(input$method == "Logistic Ensamble"){
           # modl <- predict_mat_ensamble
@@ -445,7 +457,8 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
             mod_segmented(predictor = input$vegetindex,
                           flight_date = input$flightdate,
                           sowing_date = input$sowing,
-                          threshold = input$thresh)
+                          threshold = input$thresh,
+                          parallel = input$parallel)
         }
       })
 

@@ -770,9 +770,102 @@ show_licence <- function(ns) {
 }
 
 ggplot_color <- function(n){
-    # adapted from https://stackoverflow.com/a/8197703
-    hues = seq(15, 375, length = n + 1)
-    hcl(h = hues, l = 65, c = 100)[1:n]
+  # adapted from https://stackoverflow.com/a/8197703
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
 }
 
+point_to_polygon <- function(sf_object, n_sides = 200) {
+  # Extract CRS of the input sf object
+  crsobj <- sf::st_crs(sf_object)
+  # Create a new geometry list
+  new_geometries <- lapply(seq_len(nrow(sf_object)), function(i) {
+    geom_type <- sf::st_geometry_type(sf_object[i, ])
+    if (geom_type == "POINT") {
+      # Get the point coordinates
+      point <- sf::st_coordinates(sf_object[i, ])
+      radius <- sf_object[["radius"]][i]
 
+      if (is.na(radius)) {
+        stop("Radius is missing for a POINT geometry!")
+      }
+      angles <- seq(0, 2 * pi, length.out = n_sides + 1)
+      circle_coords <- cbind(
+        point[1] + radius * cos(angles),  # X coordinates
+        point[2] + radius * sin(angles)   # Y coordinates
+      )
+      sf::st_polygon(list(circle_coords))
+    } else {
+      sf::st_geometry(sf_object[i, ])
+    }
+  })
+  # Function to ensure all geometries in a list are valid sfg objects
+  validate_geometries <- function(geometry_list) {
+    lapply(geometry_list, function(geom) {
+      if (inherits(geom, "sfg")) {
+        return(geom)  # Valid sfg object, return as is
+      } else if (inherits(geom, "sfc")) {
+        return(geom[[1]])  # Unnest if it's an sfc object
+      } else if (is.list(geom) && inherits(geom[[1]], "sfg")) {
+        return(geom[[1]])  # Handle nested lists containing sfg objects
+      } else {
+        stop("Invalid geometry found in the list")
+      }
+    })
+  }
+  sf_object <-
+    sf::st_set_geometry(sf_object, sf::st_sfc(validate_geometries(new_geometries))) |>
+    sf::st_set_crs(crsobj)
+  return(sf_object)
+}
+convert_to_metric <- function(sf_object) {
+  if (sf::st_is_longlat(sf_object)) {
+    # Get the centroid longitude to determine the UTM zone
+    centroid <- sf::st_centroid(sf::st_union(sf_object))
+    lon <- sf::st_coordinates(centroid)[1]
+    lat <- sf::st_coordinates(centroid)[2]
+    utm_zone <- floor((lon + 180) / 6) + 1
+    hemisphere <- ifelse(lat >= 0, "", "+south")
+    utm_crs <- paste0("+proj=utm +zone=", utm_zone, " ", hemisphere, " +datum=WGS84 +units=m +no_defs")
+    sf_object <- sf::st_transform(sf_object, crs = utm_crs)
+  }
+  return(sf_object)
+}
+
+check_mosaic_layers <- function(mosaic, finalindex, r, g, b, re, nir, tir, swir) {
+  # Safely attempt to extract mosaic layers
+  layers <- list(
+    R = try(mosaic[[suppressWarnings(as.numeric(r))]], silent = TRUE),
+    G = try(mosaic[[suppressWarnings(as.numeric(g))]], silent = TRUE),
+    B = try(mosaic[[suppressWarnings(as.numeric(b))]], silent = TRUE),
+    NIR = try(mosaic[[suppressWarnings(as.numeric(nir))]], silent = TRUE),
+    RE = try(mosaic[[suppressWarnings(as.numeric(re))]], silent = TRUE),
+    SWIR = try(mosaic[[suppressWarnings(as.numeric(swir))]], silent = TRUE),
+    TIR = try(mosaic[[suppressWarnings(as.numeric(tir))]], silent = TRUE)
+  )
+
+  # Retrieve the used layers and indexes
+  usedlayers <- pliman_indexes_eq()
+  me <- pliman_indexes_me()
+
+  # Identify indexes for specific bands
+  band_indexes <- list(
+    NIR = usedlayers[grep("NIR", usedlayers$Equation), 1],
+    RE = usedlayers[grep("RE", usedlayers$Equation), 1],
+    SWIR = usedlayers[grep("SWIR", usedlayers$Equation), 1],
+    TIR = usedlayers[grep("TIR", usedlayers$Equation), 1]
+  )
+
+  # Check for missing required bands
+  missing_bands <-
+    any(finalindex %in% band_indexes$NIR & inherits(layers$NIR, "try-error")) |
+    any(finalindex %in% band_indexes$RE & inherits(layers$RE, "try-error")) |
+    any(finalindex %in% band_indexes$SWIR & inherits(layers$SWIR, "try-error")) |
+    any(finalindex %in% band_indexes$TIR & inherits(layers$TIR, "try-error"))
+  print(layers$NIR)
+  if (missing_bands) {
+    show_alert("Ops, an error occured.",
+               text = "Multispectral indexes cannot be computed since needed bands are not available.",
+               type = "error")
+  }
+}

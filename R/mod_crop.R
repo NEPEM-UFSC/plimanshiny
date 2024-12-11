@@ -16,11 +16,9 @@ mod_crop_ui <- function(id){
           title = "Crop Settings",
           collapsible = FALSE,
           width = 12,
-          height = "620px",
           footer = "To start cropping a mosaic, click on 'Start!' and use the
           'Draw Polygon, or 'Draw Rectangle' tools. To crop the mosaic,
           click on 'Crop'",
-          hl(),
           h3("Input"),
           selectInput(ns("mosaic_to_crop"),
                       label = "Mosaic to be cropped",

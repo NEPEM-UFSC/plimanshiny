@@ -33,7 +33,7 @@ app_server <- function(input, output, session) {
   # shapefile
   shapefile <- reactiveValues()
   mod_shapefile_prepare_server("shapefile_prepare_1", mosaic_data, basemap, shapefile, activemosaic,  r, g, b, settings)
-  mod_indexes_server("indexes_1", mosaic_data, r, g, b, re, nir, swir, tir, basemap, index, shapefile, settings)
+  mod_indexes_server("indexes_1", mosaic_data, r, g, b, re, nir, swir, tir, basemap, index, shapefile, settings, quantiles)
   mod_analyze_server("analyze_1", mosaic_data, basemap, shapefile, index, pathmosaic, dfs, settings)
   mosaiclist <- reactiveValues()
   mod_cropbatch_server("cropbatch_1", shapefile, mosaiclist, settings)
@@ -49,9 +49,10 @@ app_server <- function(input, output, session) {
   mod_interpolate_server("interpolate_1", mosaic_data, r, g, b, basemap, settings)
   mod_aggregate_server("aggregate_1", mosaic_data, r, g, b, basemap, settings)
   mod_resample_server("resample_1", mosaic_data, settings)
-  mod_segment_server("segment_1", mosaic_data, r, g, b, re, nir, settings)
+  mod_segment_server("segment_1", mosaic_data, r, g, b, re, nir, swir, tir, settings, basemap)
   mod_sentinel_server("sentinel_1", mosaic_data, settings)
   mod_spatjoin_server("spatjoin_1", shapefile, settings)
+  mod_vectorize_server("vectorize_1", mosaic_data, shapefile, basemap)
 
   # Image analysis
   imgdata <- reactiveValues()

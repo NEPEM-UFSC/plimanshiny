@@ -14,8 +14,7 @@ mod_manipula_ui <- function(id){
       id = "tabs",
       status = "success",
       width = 12,
-      height = "790px",
-      title = "Manipulation",
+      title = "",
       selected = "Crop",
       solidHeader = FALSE,
       type = "tabs",
@@ -69,6 +68,11 @@ mod_manipula_ui <- function(id){
         title = "Geometry operations",
         icon = icon("map"),
         mod_spatjoin_ui("spatjoin_1")
+      ),
+      tabPanel(
+        title = "Vectorize",
+        icon = icon("vector-square"),
+        mod_vectorize_ui("vectorize_1")
       )
     )
   )

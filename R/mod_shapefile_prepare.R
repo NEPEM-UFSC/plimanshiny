@@ -534,16 +534,47 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
       observeEvent(c(basemap$map, mosaic_data$mosaic), {
         req(basemap$map)
         if (input$shapetype == "Build") {
-          cpoints <- callModule(editMod, "shapefile_build", basemap$map@map, editor = "leafpm")
+          cpoints <- callModule(editMod, "shapefile_build",
+                                basemap$map@map,
+                                editor = "leafpm",
+                                editorOptions = list(toolbarOptions = list(
+                                  drawMarker = TRUE,
+                                  drawPolygon = TRUE,
+                                  drawPolyline = TRUE,
+                                  drawCircle = TRUE,
+                                  drawRectangle = TRUE,
+                                  editMode = TRUE,
+                                  cutPolygon = TRUE,
+                                  removalMode = TRUE,
+                                  position = "topleft"
+                                )))
           observeEvent(c(cpoints()$finished, cpoints()$edited), {
             if(!is.null(cpoints()$finished)){
-              drawn$finished <- cpoints()$finished |> dplyr::slice_tail(n = 1)
+              drawn$finished <-
+                cpoints()$finished |>
+                convert_to_metric() |>
+                point_to_polygon() |>
+                dplyr::slice_tail(n = 1)
             }
             if(!is.null(cpoints()$edited) & !is.null(cpoints()$finished)){
-              idedit <- cpoints()$edited |> dplyr::slice_tail(n = 1) |> dplyr::pull(edit_id)
-              drawnedit <- cpoints()$finished |> dplyr::slice_tail(n = 1) |> dplyr::pull(edit_id)
+              idedit <-
+                cpoints()$edited |>
+                convert_to_metric() |>
+                point_to_polygon() |>
+                dplyr::slice_tail(n = 1) |>
+                dplyr::pull(edit_id)
+              drawnedit <-
+                cpoints()$finished |>
+                convert_to_metric() |>
+                point_to_polygon() |>
+                dplyr::slice_tail(n = 1) |>
+                dplyr::pull(edit_id)
               if(idedit == drawnedit){
-                drawn$finished <- cpoints()$edited |> dplyr::slice_tail(n = 1)
+                drawn$finished <-
+                  cpoints()$edited |>
+                  convert_to_metric() |>
+                  point_to_polygon() |>
+                  dplyr::slice_tail(n = 1)
               }
             }
           })
@@ -1032,14 +1063,14 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
           npoints <- sf::st_coordinates(shpinfo) |> nrow()
           coords <- sf::st_coordinates(shpinfo)[, 1:2]
           buff <- diff(range(coords[, 1])) * 0.15
+          measures <- shapefile_measures(shpinfo)
           dists <-  suppressWarnings(as.matrix(sf::st_distance(sf::st_cast(shpinfo, "POINT")$geometry)))
           seq_dists <- c()
           for (i in 1:(ncol(dists) - 1)) {
             seq_dists <- c(seq_dists, dists[i, i + 1])
           }
-          # distsss$val <- dists
-          perim$val <- sf::st_perimeter(shpinfo)
-          area$val <- sf::st_area(shpinfo)
+          perim$val <- measures$perimeter
+          area$val <- measures$area
           ncoors <-
             do.call(
               rbind,
@@ -1080,8 +1111,8 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
           } else{
             shapefile_plot(shpinfo, col = adjustcolor("salmon", 0.7))
           }
-          wid$val <- ifelse(npoints > 5, "-", paste0(round(seq_dists[2], 3), " m"))
-          hei$val <- ifelse(npoints > 5, "-", paste0(round(seq_dists[1], 3), " m"))
+          wid$val <- ifelse(npoints > 5, "-", paste0(round(measures$width, 3), " m"))
+          hei$val <- ifelse(npoints > 5, "-", paste0(round(measures$height, 3), " m"))
           if(npoints < 15){
             boxtext(x =  ncoors[, 1],
                     y =  ncoors[, 2],

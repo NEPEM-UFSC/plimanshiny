@@ -302,7 +302,7 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
     observe({
       shinyFileChoose(input, "filemosaic",
                       root = getVolumes()(),
-                      filetypes = c('tif', 'jp2', 'tiff', 'jpeg', "dat"),
+                      filetypes = c('tif', 'jp2', 'tiff', 'jpeg', "dat", "jpg"),
                       session = session)
       if(!is.null(input$filemosaic)){
         input_file_selected$paths <- parseFilePaths(getVolumes()(), input$filemosaic)

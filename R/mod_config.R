@@ -109,6 +109,11 @@ mod_config_ui <- function(id){
                     description = "Allows obtaining plot information such as area, perimeter, lengh and width.",
                     deps = "lwgeom",
                     ns = ns),
+      enable_module(mod_id = "overlayindex",
+                    mod_name = "Overlay Index and RGB",
+                    description = "Allows to overlay vegetation indexes above a true color (RGB) map in the 'Index' module.",
+                    deps = "leafem",
+                    ns = ns),
 
       hl(),
       actionButton(ns("save_btn"), label = tagList(icon("save"), "Save Settings"), class = "btn btn-primary"),
@@ -140,7 +145,8 @@ mod_config_server <- function(id, settings){
                              slider = FALSE,
                              plotinfo = FALSE,
                              license = FALSE,
-                             growthmodels = FALSE)
+                             growthmodels = FALSE,
+                             overlayindex = FALSE)
     saveRDS(default_settings, settings_file_default)
 
 
@@ -165,7 +171,7 @@ mod_config_server <- function(id, settings){
       if (input$enableall) {
         pkgs <- c("fields", "drc", "segmented", "magick", "shinycssloaders",
                   "leafsync", "histoslider", "tidyterra", "rintrojs",
-                  "sparkline", "leaflet.extras2", "lwgeom")
+                  "sparkline", "leaflet.extras2", "lwgeom", "leafem")
         check_and_install_dependencies(pkgs, ns, input, "enableall")
         settings(lapply(default_settings, \(x){x = TRUE}))
       }
@@ -187,6 +193,7 @@ mod_config_server <- function(id, settings){
       updatePrettySwitch(session = session, inputId = "plotinfo", value = settings()$plotinfo)
       updatePrettySwitch(session = session, inputId = "plotinfo", value = settings()$plotinfo)
       updatePrettySwitch(session = session, inputId = "growthmodels", value = settings()$growthmodels)
+      updatePrettySwitch(session = session, inputId = "overlayindex", value = settings()$overlayindex)
     })
 
     # Reactively save the settings whenever the switch is changed
@@ -204,6 +211,7 @@ mod_config_server <- function(id, settings){
                                slider = input$slider,
                                plotinfo = input$plotinfo,
                                growthmodels = input$growthmodels,
+                               overlayindex = input$overlayindex,
                                license = TRUE)
       settings(current_settings)  # Update global reactive settings
       saveRDS(current_settings, settings_file_user)
@@ -250,6 +258,9 @@ mod_config_server <- function(id, settings){
 
     observe_dependency("growthmodels", c("drc"), ns, input)
     observe_dependency("check_growthmodels", c("drc"), ns, input)
+
+    observe_dependency("overlayindex", c("leafem"), ns, input)
+    observe_dependency("check_overlayindex", c("leafem"), ns, input)
 
     # Option to reset to default settings
     observeEvent(input$reset_btn, {

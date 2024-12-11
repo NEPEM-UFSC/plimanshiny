@@ -920,7 +920,6 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
         topn_lower <- input$topn_lower
       }
 
-      # For topn_upper (assuming you've already adapted it)
       if (is.na(input$topn_upper)) {
         topn_upper <- NULL
       } else {

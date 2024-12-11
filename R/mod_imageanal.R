@@ -443,7 +443,7 @@ mod_imageanal_ui <- function(id){
       ),
       col_8(
         bs4TabCard(
-          id = "tabs",
+          id = ns("tabsresults"),
           status = "success",
           width = 12,
           height = "790px",
@@ -466,10 +466,10 @@ mod_imageanal_ui <- function(id){
           tabPanel(
             title = "Summary",
             fluidRow(
-              valueBoxOutput(ns("vbnindiv")),
-              valueBoxOutput(ns("vbnaveragearea")),
-              valueBoxOutput(ns("largerindiv")),
-              valueBoxOutput(ns("smallerindiv"))
+              valueBoxOutput(ns("vbnindiv"), width = 3),
+              valueBoxOutput(ns("vbnaveragearea"), width = 3),
+              valueBoxOutput(ns("largerindiv"), width = 3),
+              valueBoxOutput(ns("smallerindiv"), width = 3)
             ),
             fluidRow(
               col_4(
@@ -515,6 +515,19 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
 
+    observe({
+      if(input$singleorbatch == 'Batch processing'){
+        hideTab(inputId = "tabsresults", target = "Index")
+        hideTab(inputId = "tabsresults", target = "Density")
+        hideTab(inputId = "tabsresults", target = "Segmentation")
+        hideTab(inputId = "tabsresults", target = "Results (plot)")
+      } else{
+        showTab(inputId = "tabsresults", target = "Index")
+        showTab(inputId = "tabsresults", target = "Density")
+        showTab(inputId = "tabsresults", target = "Segmentation")
+        showTab(inputId = "tabsresults", target = "Results (plot)")
+      }
+    })
     observe({
       updatePickerInput(session, "plotindexes",
                         choices = pliman_indexes_rgb(),
@@ -772,7 +785,8 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
             value = res$statistics$value[[1]],
             subtitle = "Number objects",
             color = "success",
-            icon = icon("table-cells")
+            icon = icon("table-cells"),
+            width = 3
           )
         })
         output$vbnaveragearea <- renderValueBox({
@@ -780,7 +794,8 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
             value = round(res$statistics$value[[3]], 3),
             subtitle = "Average area",
             color = "success",
-            icon = icon("seedling")
+            icon = icon("seedling"),
+            width = 3
           )
         })
         output$largerindiv <- renderValueBox({
@@ -788,7 +803,8 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
             value = round(res$statistics$value[[4]], 3),
             subtitle = "Larger individual (area)",
             color = "success",
-            icon = icon("up-right-and-down-left-from-center")
+            icon = icon("up-right-and-down-left-from-center"),
+            width = 3
           )
         })
         output$smallerindiv <- renderValueBox({
@@ -796,7 +812,8 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
             value = round(res$statistics$value[[2]], 3),
             subtitle = "Smaller individual (area)",
             color = "success",
-            icon = icon("up-right-and-down-left-from-center")
+            icon = icon("up-right-and-down-left-from-center"),
+            width = 3
           )
         })
 
@@ -851,6 +868,15 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
           marker <- input$marker
         }
         imglist <- list.files(path = input$indir, pattern = input$pattern)
+        if(length(imglist) == 0){
+          sendSweetAlert(
+            session = session,
+            title = "Pattern not found",
+            text = "The name pattern was not found in the folder. Try again.",
+            type = "error"
+          )
+          return()
+        }
         # imglist <- list.files(path = "D:/Downloads/batch", pattern = "INDIV")
         results <- list()
         progressSweetAlert(
@@ -925,14 +951,13 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
         )
 
 
-
-
+        # browser()
         # bind the results
         stats <-
           do.call(rbind,
                   lapply(seq_along(results), function(i){
                     transform(results[[i]][["statistics"]],
-                              id =  names(results[i]))[,c(3, 1, 2)]
+                              img =  names(results[i]))[,c(3, 1, 2)]
                   })
           )
 
@@ -983,7 +1008,7 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
                     })
             )
           efourier_norm <- efourier_norm[, c(ncol(efourier_norm), 1:ncol(efourier_norm)-1)]
-          names(efourier_norm)[2] <- "id"
+          names(efourier_norm)[2] <- "img"
 
 
           efourier_error <-
@@ -994,7 +1019,7 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
                     })
             )
           efourier_error <- efourier_error[, c(ncol(efourier_error), 1:ncol(efourier_error)-1)]
-          names(efourier_error)[2] <- "id"
+          names(efourier_error)[2] <- "img"
 
           efourier_power <-
             do.call(rbind,
@@ -1004,7 +1029,7 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
                     })
             )
           efourier_power <- efourier_power[, c(ncol(efourier_power), 1:ncol(efourier_power)-1)]
-          names(efourier_power)[2] <- "id"
+          names(efourier_power)[2] <- "img"
 
           efourier_minharm <-
             do.call(rbind,
@@ -1014,7 +1039,7 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
                     })
             )
           efourier_minharm <- efourier_minharm[, c(ncol(efourier_minharm), 1:ncol(efourier_minharm)-1)]
-          names(efourier_minharm)[2] <- "id"
+          names(efourier_minharm)[2] <- "img"
 
         } else{
           efourier <- NULL
@@ -1103,15 +1128,15 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
         # summary
         output$vbnindiv <- renderValueBox({
           valueBox(
-            value = nrow(rescor$results),
-            subtitle = "Number objects",
+            value = tags$p(nrow(rescor$results), style = "font-size: 200%;"),
+            subtitle = "Number of objects",
             color = "success",
             icon = icon("table-cells")
           )
         })
         output$vbnaveragearea <- renderValueBox({
           valueBox(
-            value = round(mean(rescor$results$area), 3),
+            value = tags$p(round(mean(rescor$results$area), 3), style = "font-size: 200%;"),
             subtitle = "Average area",
             color = "success",
             icon = icon("seedling")
@@ -1119,16 +1144,16 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
         })
         output$largerindiv <- renderValueBox({
           valueBox(
-            value = round(max(rescor$results$area), 3),
-            subtitle = "Larger individual (area)",
+            value = tags$p(round(max(rescor$results$area), 3), style = "font-size: 200%;"),
+            subtitle = "Larger object (area)",
             color = "success",
             icon = icon("up-right-and-down-left-from-center")
           )
         })
         output$smallerindiv <- renderValueBox({
           valueBox(
-            value = round(min(rescor$results$area), 3),
-            subtitle = "Smaller individual (area)",
+            value = tags$p(round(min(rescor$results$area), 3), style = "font-size: 200%;"),
+            subtitle = "Smaller object (area)",
             color = "success",
             icon = icon("up-right-and-down-left-from-center")
           )
@@ -1137,7 +1162,7 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
         output$boxarea <- renderPlotly({
 
           p <-
-            ggplot(res$results, aes(y = area)) +
+            ggplot(rescor$results, aes(y = area)) +
             geom_boxplot(fill = "#28a745") +
             theme_bw() +
             theme(axis.text.x = element_blank(),
@@ -1148,7 +1173,7 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
 
         output$boxlength <- renderPlotly({
           p <-
-            ggplot(res$results, aes(y = length)) +
+            ggplot(rescor$results, aes(y = length)) +
             geom_boxplot(fill = "#28a745") +
             theme_bw() +
             theme(axis.text.x = element_blank(),
@@ -1159,7 +1184,7 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
 
         output$boxwidth <- renderPlotly({
           p <-
-            ggplot(res$results, aes(y = width)) +
+            ggplot(rescor$results, aes(y = width)) +
             geom_boxplot(fill = "#28a745") +
             theme_bw() +
             theme(axis.text.x = element_blank(),
@@ -1174,10 +1199,11 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
             render_reactable()
         })
 
-        dfs[["result_image_analysis"]] <- create_reactval("result_image_analysis", rescor$results)
 
         ressumm <- rescor$summary
         ressumm$img <- gsub("img", "", ressumm$img)
+        dfs[["raw_results_image_analysis"]] <- create_reactval("raw_results_image_analysis", rescor$results)
+        dfs[["summary_results_image_analysis"]] <- create_reactval("summary_results_image_analysis", ressumm)
 
         output$resultssummary <- reactable::renderReactable({
           ressumm |>
@@ -1185,8 +1211,6 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
         })
 
       }
-
-
     })
 
 

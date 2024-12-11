@@ -16,8 +16,6 @@ mod_segment_ui <- function(id){
           title = "Segmentation Settings",
           collapsible = FALSE,
           width = 12,
-          height = "620px",
-          hl(),
           h3("Input"),
           selectInput(ns("mosaic_to_segment"),
                       label = "Mosaic to be segmented",
@@ -39,7 +37,10 @@ mod_segment_ui <- function(id){
                                  options = list(
                                    `actions-box` = TRUE,
                                    `live-search` = TRUE
-                                 ))
+                                 )),
+                     textInput(ns("myindex"),
+                               label = "My index",
+                               value = "")
             ),
             divclass("anal6",
                      selectInput(ns("threshold"),
@@ -97,26 +98,7 @@ mod_segment_ui <- function(id){
         )
       ),
       col_9(
-        bs4Card(
-          title = "Crop Results",
-          collapsible = FALSE,
-          width = 12,
-          height = "710px",
-          conditionalPanel("input.usemaskorind == true",  ns = ns,
-                           fluidRow(
-                             col_6(
-                               h3("Original mosaic"),
-                               plotOutput(ns("orimosaic"), height = "640px") |> add_spinner()
-                             ),
-                             col_6(
-                               h3("Segmented mosaic"),
-                               plotOutput(ns("mosaicsegmentedind"), height = "640px") |> add_spinner()
-                             )
-                           )
-          ),
-          uiOutput(ns("uipick")),
-          editModUI(ns("samplepoints"), height = "640px") |> add_spinner()
-        )
+        uiOutput(ns("uiseg"))
       )
     )
   )
@@ -125,9 +107,38 @@ mod_segment_ui <- function(id){
 #' segment Server Functions
 #'
 #' @noRd
-mod_segment_server <- function(id, mosaic_data, r, g, b, re, nir, settings){
+mod_segment_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, settings, basemap){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
+    output$uiseg <- renderUI({
+      if (input$usemaskorind) {
+        bs4TabCard(
+          id = ns("tabs"),
+          status = "success",
+          width = 12,
+          height = "720px",
+          type = "tabs",
+          tabPanel(
+            title = "Original mosaic",
+            plotOutput(ns("orimosaic"), height = "640px") |> add_spinner()
+          ),
+          tabPanel(
+            title = "Index",
+            plotOutput(ns("mosaicindex"), height = "640px") |> add_spinner()
+          ),
+          tabPanel(
+            title = "Mask",
+            plotOutput(ns("mosaicsegmentedind"), height = "640px") |> add_spinner()
+          )
+        )
+      } else {
+        tagList(
+          uiOutput(ns("uipick")),
+          editModUI(ns("samplepoints"), height = "640px") |> add_spinner()
+        )
+      }
+    })
+
     observe({
       req(mosaic_data)
       updateSelectInput(session, "mosaic_to_segment", choices = c("Active mosaic", setdiff(names(mosaic_data), "mosaic")), selected = NULL)
@@ -144,8 +155,16 @@ mod_segment_server <- function(id, mosaic_data, r, g, b, re, nir, settings){
       segmented_mosaic <- reactiveVal(NULL)
       if(input$mosaic_to_segment == "Active mosaic"){
         mtemp <- mosaic_data$mosaic
+        basemap <- basemap$map
       } else{
         mtemp <- mosaic_data[[input$mosaic_to_segment]]$data
+        basemap <-
+          mosaic_view(
+            mtemp,
+            r = suppressWarnings(as.numeric(r$r)),
+            g = suppressWarnings(as.numeric(g$g)),
+            b = suppressWarnings(as.numeric(b$b))
+          )
       }
       req(mtemp)
       if(input$usemaskorind){
@@ -162,51 +181,64 @@ mod_segment_server <- function(id, mosaic_data, r, g, b, re, nir, settings){
             terra::plot(mtemp)
           }
         })
-        observe({
-          if(input$threshold == "Otsu"){
-            thresh <- "Otsu"
-          } else{
-            req(input$threshvalue)
-            thresh <- input$threshvalue
-          }
+        segmented_mosaic <- reactiveVal(NULL)
+        finalmask <- reactiveVal(NULL)
+        finalind <- c(strsplit(input$myindex, split = ",")[[1]], input$segmentindex)[[1]]
 
-          typeseg <- ifelse(input$maskorseg == "Mask", "mask", "mosaic")
-          seg <- mosaic_segment(mtemp,
-                                index = input$segmentindex,
-                                r = suppressWarnings(as.numeric(r$r)),
-                                g = suppressWarnings(as.numeric(g$g)),
-                                b = suppressWarnings(as.numeric(b$b)),
-                                re = suppressWarnings(as.numeric(re$re)),
-                                nir = suppressWarnings(as.numeric(nir$nir)),
-                                threshold = thresh,
-                                invert = input$invertmask,
-                                return = typeseg)
-          req(seg)
-          output$mosaicsegmentedind <- renderPlot({
-            if(terra::nlyr(seg) > 2){
-              terra::plotRGB(
-                seg,
-                r = suppressWarnings(as.numeric(r$r)),
-                g = suppressWarnings(as.numeric(g$g)),
-                b = suppressWarnings(as.numeric(b$b)),
-                stretch = "hist"
-              )
-            } else{
-              terra::plot(seg)
-            }
-          })
-          segmented_mosaic(seg)
-        })
-
-      } else{
-        basemap <-
-          mosaic_view(
+        segmented_mosaic(
+          mosaic_index(
             mtemp,
+            index = finalind,
             r = suppressWarnings(as.numeric(r$r)),
             g = suppressWarnings(as.numeric(g$g)),
             b = suppressWarnings(as.numeric(b$b)),
-            max_pixels = 2500000
+            re = suppressWarnings(as.numeric(re$re)),
+            nir = suppressWarnings(as.numeric(nir$nir)),
+            tir = suppressWarnings(as.numeric(tir$tir)),
+            swir = suppressWarnings(as.numeric(swir$swir)),
+            plot = FALSE
           )
+        )
+
+        output$mosaicindex <- renderPlot({
+          req(segmented_mosaic())
+          mosaic_plot(segmented_mosaic())
+        })
+
+       observe({
+         if(input$threshold == "Otsu"){
+           thresh <- otsu(na.omit(terra::values(segmented_mosaic())))
+         } else{
+           req(input$threshvalue)
+           thresh <- input$threshvalue
+         }
+         if(input$invertmask){
+           mask <- segmented_mosaic() > thresh
+         } else{
+           mask <- segmented_mosaic() < thresh
+         }
+         if(input$maskorseg != "Mask"){
+           seg <- terra::mask(mtemp, mask, maskvalue = TRUE, inverse = TRUE)
+         } else{
+           seg <- mask
+         }
+         req(seg)
+         output$mosaicsegmentedind <- renderPlot({
+           if(terra::nlyr(seg) > 2){
+             mosaic_plot_rgb(
+               seg,
+               r = suppressWarnings(as.numeric(r$r)),
+               g = suppressWarnings(as.numeric(g$g)),
+               b = suppressWarnings(as.numeric(b$b))
+             )
+           } else{
+             terra::plot(seg)
+           }
+         })
+         finalmask(seg)
+       })
+
+      } else{
         req(basemap)
         backpoints <- reactiveValues(back = NULL)
         forepoints <- reactiveValues(fore = NULL)
@@ -278,9 +310,9 @@ mod_segment_server <- function(id, mosaic_data, r, g, b, re, nir, settings){
               mask[mask < 0.5] <- 0
               mask[mask > 0.5] <- 1
               if(input$maskorseg == 'Mask'){
-                segmented_mosaic(mask)
+                finalmask(mask)
               } else{
-                segmented_mosaic(terra::mask(mtemp, mask, maskvalue = TRUE, inverse = TRUE))
+                finalmask(terra::mask(mtemp, mask, maskvalue = TRUE, inverse = TRUE))
               }
 
               sendSweetAlert(
@@ -299,7 +331,7 @@ mod_segment_server <- function(id, mosaic_data, r, g, b, re, nir, settings){
       # Observe event for mosaic crop action
       observeEvent(input$segmentmosaic, {
         # Update mosaic_data$mosaic when input$cropmosaic is clicked
-        mosaic_data[[input$new_segment]] <- create_reactval(name = input$new_segment, data = segmented_mosaic())
+        mosaic_data[[input$new_segment]] <- create_reactval(name = input$new_segment, data = finalmask())
         sendSweetAlert(
           session = session,
           title = "Mosaic successfully segmented!!",
