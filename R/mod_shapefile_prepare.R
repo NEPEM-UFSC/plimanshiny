@@ -23,75 +23,71 @@ mod_shapefile_prepare_ui <- function(id){
           title = "Input",
           fluidRow(
             col_6(
-              divclass("shape1",
-                       prettyRadioButtons(
-                         inputId = ns("shapetype"),
-                         label = "I want to...",
-                         choices = c("Build", "Import"),
-                         icon = icon("check"),
-                         bigger = TRUE,
-                         status = "info",
-                         animation = "jelly"
-                       )
+              prettyRadioButtons(
+                inputId = ns("shapetype"),
+                label = "I want to...",
+                choices = c("Build", "Import"),
+                icon = icon("check"),
+                bigger = TRUE,
+                status = "info",
+                animation = "jelly"
               )
             ),
             col_6(
               fluidRow(
                 col_4(
-                  divclass("shape2",
-                           br(),
-                           dropdown(
-                             fluidRow(
-                               col_6(
-                                 colorPickr(
-                                   inputId = ns("colorfill"),
-                                   label = "Fill color",
-                                   swatches = scales::viridis_pal()(10),
-                                   theme = "monolith",
-                                   useAsButton = TRUE,
-                                   selected = "#0361FC",
-                                 )
-                               ),
-                               col_6(
-                                 colorPickr(
-                                   inputId = ns("colorstroke"),
-                                   label = "Stroke color",
-                                   swatches = scales::viridis_pal()(10),
-                                   theme = "monolith",
-                                   useAsButton = TRUE,
-                                   selected = "darkred",
-                                 )
-                               )
-                             ),
-                             selectInput(
-                               ns("fillid"),
-                               label = "Fill color",
-                               choices = c("none", "unique_id", "block", "plot_id"),
-                               selected = "none",
-                             ),
-                             pickerpalette(id, "palplot", selected = "RdYlGn"),
-                             sliderInput(ns("ncolors"),
-                                         label = "Number of colors",
-                                         min = 0,
-                                         max = 100,
-                                         value = 4),
-                             sliderInput(ns("alphacolorfill"),
-                                         label = "Fill opacity",
-                                         min = 0,
-                                         max = 1,
-                                         value = 0.7),
-                             sliderInput(ns("lwdt"),
-                                         label = "Line width",
-                                         min = 0,
-                                         max = 5,
-                                         value = 2),
-                             style = "unite",
-                             icon = icon("gear"),
-                             status = "success",
-                             width = "360px",
-                             animate = animateOptions(enter = "fadeInLeft", exit = "fadeOutRight", duration = 1),
-                             tooltip = tooltipOptions(title = "Settings")
-                           )
+                  br(),
+                  dropdown(
+                    fluidRow(
+                      col_6(
+                        colorPickr(
+                          inputId = ns("colorfill"),
+                          label = "Fill color",
+                          swatches = scales::viridis_pal()(10),
+                          theme = "monolith",
+                          useAsButton = TRUE,
+                          selected = "#0361FC",
+                        )
+                      ),
+                      col_6(
+                        colorPickr(
+                          inputId = ns("colorstroke"),
+                          label = "Stroke color",
+                          swatches = scales::viridis_pal()(10),
+                          theme = "monolith",
+                          useAsButton = TRUE,
+                          selected = "darkred",
+                        )
+                      )
+                    ),
+                    selectInput(
+                      ns("fillid"),
+                      label = "Fill color",
+                      choices = c("none", "unique_id", "block", "plot_id"),
+                      selected = "none",
+                    ),
+                    pickerpalette(id, "palplot", selected = "RdYlGn"),
+                    sliderInput(ns("ncolors"),
+                                label = "Number of colors",
+                                min = 0,
+                                max = 100,
+                                value = 4),
+                    sliderInput(ns("alphacolorfill"),
+                                label = "Fill opacity",
+                                min = 0,
+                                max = 1,
+                                value = 0.7),
+                    sliderInput(ns("lwdt"),
+                                label = "Line width",
+                                min = 0,
+                                max = 5,
+                                value = 2),
+                    style = "unite",
+                    icon = icon("gear"),
+                    status = "success",
+                    width = "360px",
+                    animate = animateOptions(enter = "fadeInLeft", exit = "fadeOutRight", duration = 1),
+                    tooltip = tooltipOptions(title = "Settings")
                   )
                 ),
                 col_8(
@@ -125,173 +121,167 @@ mod_shapefile_prepare_ui <- function(id){
           ),
           conditionalPanel(
             condition = "input.shapetype == 'Build'", ns = ns,
-            divclass("shape3",
-                     textInput(ns("shapenamebuild"),
-                               label = "Shapefile Name",
-                               value = "Shapefile Build"),
-                     hl(),
-                     fluidRow(
-                       col_3(
-                         selectInput(
-                           ns("plotlayout"),
-                           label = "Layout",
-                           choices = c("tblr", "tbrl", "btlr", "btrl", "lrtb", "lrbt", "rltb", "rlbt"),
-                           selected = "lrtb",
-                         )
-                       ),
-                       col_5(
-                         prettyCheckbox(
-                           inputId = ns("serpentine"),
-                           label = "Serpentine?",
-                           value = TRUE,
-                           status = "info",
-                           icon = icon("thumbs-up"),
-                           plain = TRUE,
-                           outline = TRUE,
-                           animation = "rotate"
-                         )
-                       ),
-                       col_4(
-                         prettyCheckbox(
-                           inputId = ns("buildblocks"),
-                           label = "Blocks?",
-                           value = FALSE,
-                           status = "info",
-                           icon = icon("thumbs-up"),
-                           plain = TRUE,
-                           outline = TRUE,
-                           animation = "rotate"
-                         )
-                       )
-                     ),
-                     conditionalPanel(
-                       condition = "input.buildblocks == true", ns = ns,
+            textInput(ns("shapenamebuild"),
+                      label = "Shapefile Name",
+                      value = "Shapefile Build"),
+            hl(),
+            fluidRow(
+              col_3(
+                selectInput(
+                  ns("plotlayout"),
+                  label = "Layout",
+                  choices = c("tblr", "tbrl", "btlr", "btrl", "lrtb", "lrbt", "rltb", "rlbt"),
+                  selected = "lrtb",
+                )
+              ),
+              col_5(
+                prettyCheckbox(
+                  inputId = ns("serpentine"),
+                  label = "Serpentine?",
+                  value = TRUE,
+                  status = "info",
+                  icon = icon("thumbs-up"),
+                  plain = TRUE,
+                  outline = TRUE,
+                  animation = "rotate"
+                )
+              ),
+              col_4(
+                prettyCheckbox(
+                  inputId = ns("buildblocks"),
+                  label = "Blocks?",
+                  value = FALSE,
+                  status = "info",
+                  icon = icon("thumbs-up"),
+                  plain = TRUE,
+                  outline = TRUE,
+                  animation = "rotate"
+                )
+              )
+            ),
+            conditionalPanel(
+              condition = "input.buildblocks == true", ns = ns,
+              fluidRow(
+                col_6(
+                  actionBttn(
+                    ns("doneblock"),
+                    label = "Store block",
+                    icon = icon("plus"),
+                    color = "success",
+                    style = "jelly"
+                  )
+                ),
+                col_6(
+                  textOutput(ns("nblocksdone"))
+                )
+              )
+            ),
+            hl(),
+            fluidRow(
+              style = "margin-top: -10px;",
+              col_7(
+                actionBttn(
+                  ns("createupdate"),
+                  label = "Create-update",
+                  icon = icon("arrows-rotate"),
+                  color = "success",
+                  style = "jelly"
+                )
+              ),
+              col_5(
+                conditionalPanel(
+                  condition = "input['config_1-plotinfo'] === true",
+                  actionBttn(
+                    ns("plotinfo"),
+                    label = "Plot info",
+                    icon = icon("info"),
+                    color = "success",
+                    style = "jelly"
+                  )
+                )
+              )
+            ),
+            fluidRow(
+              col_6(
+                textInput(ns("ncols"),
+                          label = "Number of columns",
+                          value = 1)
+              ),
+              col_6(
+                textInput(ns("nrows"),
+                          label = "Number of rows",
+                          value = 1)
+              )
+            ),
+            fluidRow(
+              style = "margin-top: -10px;",
+              col_6(
+                textInput(ns("plot_width"),
+                          label = "Plot width",
+                          value = NA)
+              ),
+              col_6(
+                textInput(ns("plot_height"),
+                          label = "Plot height",
+                          value = NA)
+              )
+            ),
+            fluidRow(
+              style = "margin-top: -10px;",
+              col_6(
+                textInput(ns("buffercol"),
+                          label = "Plot buffer",
+                          value = 0)
+              ),
+              col_6(
+                textInput(ns("numplots"),
+                          label = "Number of plots",
+                          value = "")
+              )
+            ),
+            hl(),
+            fluidRow(
+              style = "margin-top: -10px;",
+              prettyCheckbox(
+                inputId = ns("shapedone"),
+                label = "Shapefile finished",
+                value = FALSE,
+                status = "info",
+                icon = icon("thumbs-up"),
+                plain = TRUE,
+                outline = TRUE,
+                animation = "rotate"
+              )
+            ),
+            conditionalPanel(
+              condition = "input.shapedone == true", ns = ns,
+              divclass("shapeimp3",
                        fluidRow(
                          col_6(
-                           actionBttn(
-                             ns("doneblock"),
-                             label = "Store block",
-                             icon = icon("plus"),
-                             color = "success",
-                             style = "jelly"
-                           )
+                           materialSwitch(
+                             inputId = ns("editplots"),
+                             label = "Edit plots?",
+                             value = FALSE,
+                             status = "danger"
+                           ),
                          ),
                          col_6(
-                           textOutput(ns("nblocksdone"))
-                         )
-                       )
-                     ),
-                     hl(),
-                     fluidRow(
-                       style = "margin-top: -10px;",
-                       col_7(
-                         actionBttn(
-                           ns("createupdate"),
-                           label = "Create-update",
-                           icon = icon("arrows-rotate"),
-                           color = "success",
-                           style = "jelly"
-                         )
-                       ),
-                       col_5(
-                         conditionalPanel(
-                           condition = "input['config_1-plotinfo'] === true",
-                           actionBttn(
-                             ns("plotinfo"),
-                             label = "Plot info",
-                             icon = icon("info"),
-                             color = "success",
-                             style = "jelly"
+                           conditionalPanel(
+                             condition = "input.editplots == true", ns = ns,
+                             prettyCheckbox(
+                               inputId = ns("editdone"),
+                               label = "Edition finished!",
+                               value = FALSE,
+                               status = "info",
+                               icon = icon("thumbs-up"),
+                               plain = TRUE,
+                               outline = TRUE,
+                               animation = "rotate"
+                             )
                            )
                          )
                        )
-                     ),
-                     fluidRow(
-                       col_6(
-                         textInput(ns("ncols"),
-                                   label = "Number of columns",
-                                   value = 1)
-                       ),
-                       col_6(
-                         textInput(ns("nrows"),
-                                   label = "Number of rows",
-                                   value = 1)
-                       )
-                     ),
-                     fluidRow(
-                       style = "margin-top: -10px;",
-                       col_6(
-                         textInput(ns("plot_width"),
-                                   label = "Plot width",
-                                   value = NA)
-                       ),
-                       col_6(
-                         textInput(ns("plot_height"),
-                                   label = "Plot height",
-                                   value = NA)
-                       )
-                     )
-            ),
-            divclass("shape4",
-                     fluidRow(
-                       style = "margin-top: -10px;",
-                       col_6(
-                         textInput(ns("buffercol"),
-                                   label = "Plot buffer",
-                                   value = 0)
-                       ),
-                       col_6(
-                         textInput(ns("numplots"),
-                                   label = "Number of plots",
-                                   value = "")
-                       )
-                     )
-            ),
-            divclass("shape5",
-                     hl(),
-                     fluidRow(
-                       style = "margin-top: -10px;",
-                       prettyCheckbox(
-                         inputId = ns("shapedone"),
-                         label = "Shapefile finished",
-                         value = FALSE,
-                         status = "info",
-                         icon = icon("thumbs-up"),
-                         plain = TRUE,
-                         outline = TRUE,
-                         animation = "rotate"
-                       )
-                     ),
-                     conditionalPanel(
-                       condition = "input.shapedone == true", ns = ns,
-                       divclass("shapeimp3",
-                                fluidRow(
-                                  col_6(
-                                    materialSwitch(
-                                      inputId = ns("editplots"),
-                                      label = "Edit plots?",
-                                      value = FALSE,
-                                      status = "danger"
-                                    ),
-                                  ),
-                                  col_6(
-                                    conditionalPanel(
-                                      condition = "input.editplots == true", ns = ns,
-                                      prettyCheckbox(
-                                        inputId = ns("editdone"),
-                                        label = "Edition finished!",
-                                        value = FALSE,
-                                        status = "info",
-                                        icon = icon("thumbs-up"),
-                                        plain = TRUE,
-                                        outline = TRUE,
-                                        animation = "rotate"
-                                      )
-                                    )
-                                  )
-                                )
-                       )
-                     )
+              )
             )
           ),
           conditionalPanel(
@@ -336,15 +326,10 @@ mod_shapefile_prepare_ui <- function(id){
                            color = "primary")
               )
             ),
-            # fileInput(ns("import_shapefile"),
-            #           "Import a shapefile (.shp, .rds)",
-            #           accept=c(".rds",  ".shp",  ".json", ".kml",  ".gml",  ".dbf",  ".sbn",  ".sbx",  ".shx",  ".prj", ".cpg"), multiple=TRUE),
             tags$hr(),
-            divclass("shapeimp2",
-                     selectInput(ns("colorshapeimport"),
-                                 label = "Fill color",
-                                 choices = NULL)
-            ),
+            selectInput(ns("colorshapeimport"),
+                        label = "Fill color",
+                        choices = NULL),
             fluidRow(
               col_6(
                 materialSwitch(
@@ -369,7 +354,6 @@ mod_shapefile_prepare_ui <- function(id){
             ),
             conditionalPanel(
               condition = "input.editplotsimpo == true", ns = ns,
-              divclass("shapeimp4",
                        prettyCheckbox(
                          inputId = ns("editdoneimpo"),
                          label = "Edition finished!",
@@ -379,8 +363,8 @@ mod_shapefile_prepare_ui <- function(id){
                          plain = TRUE,
                          outline = TRUE,
                          animation = "rotate"
-                       ), br()
-              )
+                       ),
+                       br()
             )
           ),
           selectInput(ns("shapefiletoanalyze"),
@@ -396,7 +380,6 @@ mod_shapefile_prepare_ui <- function(id){
     col_9(
       uiOutput(ns("uishape"))
     )
-
   )
 }
 
@@ -531,7 +514,7 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
 
 
     observeEvent(input$shapetype, {
-      observeEvent(c(basemap$map, mosaic_data$mosaic), {
+      observeEvent(c(basemap$map, mosaic_data$mosaic, input$shapedone), {
         req(basemap$map)
         if (input$shapetype == "Build") {
           cpoints <- callModule(editMod, "shapefile_build",
@@ -678,6 +661,8 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
 
           observeEvent(input$shapedone,{
             if(input$shapedone){
+              cpoints <- NULL
+              drawn$finished <- NULL
               req(input$shapenamebuild)
               req(createdshape)
               shptemp <-
