@@ -1527,11 +1527,11 @@ mod_timeseriesanalysis_server <- function(id, shapefile, mosaiclist, r, g, b, re
       # Sent do datasets
       observe({
         req(result_plot)
-        dfs[["result_plot"]] <- create_reactval("result_plot", result_plot |> sf::st_drop_geometry())
-        shapefile[["result_plot"]] <- create_reactval("result_plot", result_plot)
+        dfs[["result_timeseries_vi"]] <- create_reactval("result_timeseries_vi", result_plot |> sf::st_drop_geometry())
+        shapefile[["result_timeseries_vi"]] <- create_reactval("result_timeseries_vi", result_plot)
         if(!is.null(result_indiv)){
-          dfs[["result_indiv"]] <- create_reactval("result_indiv", result_indiv |> sf::st_drop_geometry())
-          shapefile[["result_indiv"]] <- create_reactval("result_indiv", result_indiv)
+          dfs[["result_timeseries_indiv"]] <- create_reactval("result_timeseries_indiv", result_indiv |> sf::st_drop_geometry())
+          shapefile[["result_timeseries_indiv"]] <- create_reactval("result_timeseries_indiv", result_indiv)
         }
       })
 

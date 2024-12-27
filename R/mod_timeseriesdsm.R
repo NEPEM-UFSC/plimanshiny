@@ -366,12 +366,13 @@ mod_timeseriesdsm_server <- function(id, shapefile, mosaiclist, basemap, dfs, se
       req(mosaiclist$mosaics$data)
       updateSelectInput(session, "dtmfile", choices = c(setdiff(names(mosaiclist$mosaics$data), "mosaic")))
     })
+
     observe({
       req(mosaiclist$mosaics$data)
       vals <- c(setdiff(names(mosaiclist$mosaics$data), c("mosaic", input$dtmfile)))
       vals2 <- c(setdiff(names(mosaiclist$mosaics$data), "mosaic"))
       updateSelectizeInput(session, "dsmfiles", choices = vals, selected = vals)
-      updateSelectizeInput(session, "dsmfileswin", choices = vals, selected = vals2)
+      updateSelectizeInput(session, "dsmfileswin", choices = vals2, selected = vals2)
     })
     observe({
       req(mosaiclist$mosaics$data)

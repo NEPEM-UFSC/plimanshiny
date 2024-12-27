@@ -16,7 +16,6 @@ mod_matanalyze_ui <- function(id){
           title = "Plant Maturity and Heading",
           collapsible = FALSE,
           width = 12,
-          height = "790px",
           dateInput(
             ns("sowing"),
             label = "Sowing Date",
@@ -75,7 +74,16 @@ mod_matanalyze_ui <- function(id){
               ns("thresh"),
               label = "Threshold",
               value = 0
+            ),
+            conditionalPanel(
+              condition = "input.method == 'LOESS (Volpato et al., 2021)'", ns = ns,
+              numericInput(
+                ns("span"),
+                label = "Span",
+                value = 0.75
+              )
             )
+
           ),
 
           textInput(
@@ -113,27 +121,64 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
       showModal(
         modalDialog(
           title = "Details about the prediction",
+          width = 12,
+          headerBorder = FALSE,
+          collapsible = TRUE,
+          closable = TRUE,
+          # Replace bs4TabCard with box for simpler rendering in the modal
           box(
+            title = "Logistic Model L3",
+            status = "primary",
             width = 12,
-            headerBorder = FALSE,
+            collapsed = TRUE,
             collapsible = TRUE,
-            closable = TRUE,
-            h2("Volpato et al. (2021)"),
-            "Details here...", br(),
-            shiny::actionButton(inputId= ns("ref1"),
-                                label="Reference",
-                                icon = icon("link"),
-                                onclick ="window.open('https://onlinelibrary.wiley.com/doi/abs/10.1002/ppj2.20018', '_blank')")
+            solidHeader = TRUE,
+            help_mod_L3()  # Add content for Model L3
+          ),
+          box(
+            title = "Logistic Model L4",
+            status = "primary",
+            width = 12,
+            solidHeader = TRUE,
+            collapsed = TRUE,
+            collapsible = TRUE,
+            help_mod_L4()
+          ),
+          box(
+            title = "Logistic Model L5",
+            status = "primary",
+            width = 12,
+            solidHeader = TRUE,
+            collapsed = TRUE,
+            collapsible = TRUE,
+            help_mod_L5()
+          ),
+          box(
+            title = "locally estimated scatterplot smoothing (LOESS)",
+            status = "primary",
+            width = 12,
+            solidHeader = TRUE,
+            collapsed = TRUE,
+            collapsible = TRUE,
+            help_mod_loess()
+          ),
+          box(
+            title = "Segmented Regression",
+            status = "primary",
+            width = 12,
+            solidHeader = TRUE,
+            collapsed = TRUE,
+            collapsible = TRUE,
+            help_mod_segmented()
           ),
           footer = NULL,
           easyClose = TRUE,
           size = "xl"
         )
       )
-
     })
 
-    refs <-           tabPanel(
+    refs <- tabPanel(
       title = "Home",
       fluidRow(
         col_9(
@@ -143,15 +188,16 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
           h2("About"),
           "This module provides the implementation of several methods for estimating plant heading/maturity.
                 Methods are grouped into those that uses or not a threshold value.", br(),br(),
-          shiny::actionButton(inputId= ns("details"),
-                              label="Method details",
-                              icon = icon("circle-info")),
           h2("Disclaimer"),
           "We welcome feedback and suggestions about the usefulness of the application and make no guarantee of the correctness,
-          reliability, or utility of the results if incorrect selections are made during the steps of DM estimation."
+          reliability, or utility of the results if incorrect selections are made during the steps of DM estimation.", br(),br(),
+          shiny::actionButton(inputId= ns("details"),
+                              label="Method details",
+                              icon = icon("circle-info"))
         )
       )
     )
+
     output$uimat <- renderUI({
       if(input$usethresh){
         bs4TabCard(
@@ -163,25 +209,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
           selected = "Home",
           solidHeader = FALSE,
           type = "tabs",
-          tabPanel(
-            title = "Home",
-            fluidRow(
-              col_9(
-                # img(src = "www/logomat.jpg", width = "100%", height = "90%")
-              ),
-              col_3(
-                h2("About"),
-                "This module provides the implementation of several methods for estimating plant heading/maturity.
-                Methods are grouped into those that uses or not a threshold value.", br(),br(),
-                shiny::actionButton(inputId= ns("details"),
-                                    label="Method details",
-                                    icon = icon("circle-info")),
-                h2("Disclaimer"),
-                "We welcome feedback and suggestions about the usefulness of the application and make no guarantee of the correctness,
-          reliability, or utility of the results if incorrect selections are made during the steps of DM estimation."
-              )
-            )
-          ),
+          refs,
           tabPanel(
             title = "Overview",
             plotlyOutput(ns("overview"), height = "700px") |> add_spinner()
@@ -389,17 +417,12 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
       req(dfactive$df)
       req(input$vegetindex)
       p <-
-        ggplot(dfactive$df, aes(x = .data[[input$flightdate]], y = .data[[input$vegetindex]], group = unique_plot)) +
-        geom_smooth(aes(color = unique_plot),
-                    show.legend = FALSE,
-                    method = 'loess',
-                    formula = "y ~ x",
-                    se = FALSE,
-                    alpha = 0.3) +
+        ggplot(dfactive$df, aes(x = .data[[input$flightdate]], y = .data[[input$vegetindex]], group = 1)) +
+        geom_boxplot(fill = "#28a745") +
+        geom_smooth(method = 'loess', formula = 'y ~ x') +
         labs(x = input$flightdate, y = input$vegetindex) +
         theme_bw(base_size = 18) +
-        theme(panel.grid.minor = element_blank()) +
-        scale_colour_grey(start = 0.1, end = 0.9)
+        theme(panel.grid.minor = element_blank())
       plotly::ggplotly(p)
     })
 
@@ -446,6 +469,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
                       flight_date = input$flightdate,
                       sowing_date = input$sowing,
                       threshold = input$thresh,
+                      span = input$span,
                       parallel = input$parallel)
 
         } else if(input$method == "Logistic Ensamble"){
@@ -476,11 +500,10 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
       })
 
 
-
       observe({
         updateSelectInput(session, "plotattribute",
                           choices = colnames(modl()),
-                          selected = NA)
+                          selected = "q90")
       })
 
       observe({

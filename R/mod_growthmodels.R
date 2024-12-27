@@ -32,6 +32,14 @@ mod_growthmodels_ui <- function(id) {
             label = "Trait to model",
             choices = NULL
           ),
+          prettyCheckbox(
+            inputId = ns("parallel"),
+            label = "Parallel Processing",
+            value = FALSE,
+            icon = icon("check"),
+            status = "success",
+            animation = "rotate"
+          ),
           textInput(
             ns("saveto"),
             label = "Save results to...",
@@ -62,10 +70,14 @@ mod_growthmodels_ui <- function(id) {
               ),
               col_3(
                 h2("About"),
-                "This module provies tools for fitting growth models (Logistic non-linear curve) to model growth traits like plant height and volume.", br(),
+                "This module provies tools for fitting growth models (Logistic non-linear curve) to model growth traits like plant height and volume.", br(), br(),
                 h2("Disclaimer"),
                 "We welcome feedback and suggestions about the usefulness of the application and make no guarantee of the correctness,
-          reliability, or utility of the results if incorrect recomendations are made based on the results."
+          reliability, or utility of the results if incorrect recomendations are made based on the results.",
+                br(), br(),
+                shiny::actionButton(inputId= ns("details"),
+                                    label="Growth Model details",
+                                    icon = icon("circle-info"))
               )
             )
           ),
@@ -128,6 +140,23 @@ mod_growthmodels_server <- function(id, dfs){
   moduleServer(id, function(input, output, session){
     ns <- session$ns
 
+    observeEvent(input$details, {
+      showModal(
+        modalDialog(
+          title = "Details about the growth model",
+          width = 12,
+          headerBorder = FALSE,
+          collapsible = TRUE,
+          closable = TRUE,
+          withMathJax(),
+          help_mod_L4_gm (),
+          footer = NULL,
+          easyClose = TRUE,
+          size = "xl"
+        )
+      )
+    })
+
     observe({
       updatePickerInput(session, "dftoedit",
                         choices = c("none", names(dfs)))
@@ -163,17 +192,12 @@ mod_growthmodels_server <- function(id, dfs){
       req(dfactive$df)
       req(input$traittomodel)
       p <-
-        ggplot(dfactive$df, aes(x = .data[[input$flightdate]], y = .data[[input$traittomodel]], group = unique_plot)) +
-        geom_smooth(aes(color = unique_plot),
-                    show.legend = FALSE,
-                    method = 'loess',
-                    formula = "y ~ x",
-                    se = FALSE,
-                    alpha = 0.3) +
+        ggplot(dfactive$df, aes(x = .data[[input$flightdate]], y = .data[[input$traittomodel]], group = 1)) +
+        geom_boxplot(fill = "#28a745") +
+        geom_smooth(method = 'loess', formula = 'y ~ x') +
         labs(x = input$flightdate, y = input$traittomodel) +
         theme_bw(base_size = 24) +
-        theme(panel.grid.minor = element_blank()) +
-        scale_colour_grey(start = 0.1, end = 0.9)
+        theme(panel.grid.minor = element_blank())
       plotly::ggplotly(p)
     })
 
@@ -199,7 +223,9 @@ mod_growthmodels_server <- function(id, dfs){
         dfactive$df |>
           sf::st_drop_geometry() |>
           as.data.frame() |>
-          mod_L4(predictor = input$traittomodel, sowing_date = min(dfactive$df$date)) |>
+          mod_L4(predictor = input$traittomodel,
+                 sowing_date = min(dfactive$df$date),
+                 parallel = input$parallel) |>
           dplyr::select(-c(heading, maturity, repr_period, auc_repr_period)) |>
           dplyr::rowwise() |>
           dplyr::mutate(

@@ -54,7 +54,7 @@ app_ui <- function(request) {
         fixed = TRUE,
         width = "285px",
         bs4SidebarMenu(
-          id = "tabs",
+          id = "tabshome",
           bs4SidebarHeader("Menu"),
           bs4SidebarMenuItem(
             "Home",
