@@ -306,6 +306,10 @@ app_server <- function(input, output, session) {
       module_loaded$geometricmeasures <- TRUE
       mod_geometricmeasures_server("geometricmeasures_1", shapefile, settings)
     }
+    if(input$tabshome == "growthcurves" && is.null(module_loaded$growthcurves)){
+      module_loaded$growthcurves <- TRUE
+      mod_growthmodelscurves_server("growthmodelscurves_1")
+    }
   })
 }
 
