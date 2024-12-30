@@ -249,6 +249,11 @@ app_ui <- function(request) {
               text = "Geometric measurements",
               tabName = "geometricmeasures",
               icon = shiny::icon("earth-americas", verify_fa = FALSE)
+            ),
+            bs4SidebarMenuSubItem(
+              text = "Growth curves",
+              tabName = "growthcurves",
+              icon = shiny::icon("earth-americas", verify_fa = FALSE)
             )
           ),
           ### Settings
@@ -406,6 +411,10 @@ app_ui <- function(request) {
           bs4TabItem(
             tabName = "geometricmeasures",
             mod_geometricmeasures_ui("geometricmeasures_1")
+          ),
+          bs4TabItem(
+            tabName = "growthcurves",
+            mod_growthmodelscurves_ui("growthmodelscurves_1")
           ),
 
           # Settings

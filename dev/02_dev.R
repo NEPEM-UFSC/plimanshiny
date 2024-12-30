@@ -67,6 +67,7 @@ golem::add_module(name = "timeseriesdsm")
 golem::add_module(name = "summarize")
 golem::add_module(name = "growthmodels")
 golem::add_module(name = "vectorize")
+golem::add_module(name = "growthmodelscurves")
 
 ## Add packages
 usethis::use_package("shiny")

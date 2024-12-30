@@ -11,45 +11,45 @@ mod_utmzonesel_ui <- function(id){
   ns <- NS(id)
   tagList(
     fluidRow(
-      column(3,
-             bs4Card(
-               title = "UTM Zone Selector",
-               collapsible = FALSE,
-               width = 12,
-               height = "auto",
-               numericInput(
-                 ns("latitude"),
-                 label = "Latitude:",
-                 value = NA
-               ),
-               numericInput(
-                 ns("longitude"),
-                 label = "Longitude:",
-                 value = NA,
-               ),
-               actionButton(ns("update_map"), "Update Map"),
+      col_3(
+        bs4Card(
+          title = "UTM Zone Selector",
+          collapsible = FALSE,
+          width = 12,
+          height = "auto",
+          numericInput(
+            ns("latitude"),
+            label = "Latitude:",
+            value = NA
+          ),
+          numericInput(
+            ns("longitude"),
+            label = "Longitude:",
+            value = NA,
+          ),
+          actionButton(ns("update_map"), "Update Map"),
 
-               textInput(
-                 ns("epsg"),
-                 label = "EPSG Code",
-                 value = ""
-               ),
-               textOutput(ns("utm_zone")),
-               textOutput(ns("utm_band")),
-               textOutput(ns("central_meridian")),
-               textOutput(ns("easting")),
-               textOutput(ns("northing")),
-               textOutput(ns("utmcoord"))
-             )
+          textInput(
+            ns("epsg"),
+            label = "EPSG Code",
+            value = ""
+          ),
+          textOutput(ns("utm_zone")),
+          textOutput(ns("utm_band")),
+          textOutput(ns("central_meridian")),
+          textOutput(ns("easting")),
+          textOutput(ns("northing")),
+          textOutput(ns("utmcoord"))
+        )
       ),
-      column(9,
-             bs4Card(
-               title = "Interactive Map",
-               collapsible = FALSE,
-               width = 12,
-               height = "auto",
-               leafletOutput(ns("map"), height = "700px")
-             )
+      col_9(
+        bs4Card(
+          title = "Interactive Map",
+          collapsible = FALSE,
+          width = 12,
+          height = "auto",
+          leafletOutput(ns("map"), height = "700px")
+        )
       )
     )
   )
@@ -70,15 +70,15 @@ mod_utmzonesel_server <- function(id, settings){
     # Example function to calculate UTM details using sf
     calculate_utm_details <- function(lat, lon) {
       # Create an sf point in WGS84
-      point <- st_sfc(st_point(c(lon, lat)), crs = 4326)
+      point <- sf::st_sfc(sf::st_point(c(lon, lat)), crs = 4326)
 
       # Calculate UTM zone based on longitude
       utm_zone <- floor((lon + 180) / 6) + 1
       epsg_code <- ifelse(lat >= 0, 32600 + utm_zone, 32700 + utm_zone)
 
       # Transform to UTM
-      point_utm <- st_transform(point, crs = epsg_code)
-      coords_utm <- st_coordinates(point_utm)
+      point_utm <- sf::st_transform(point, crs = epsg_code)
+      coords_utm <- sf::st_coordinates(point_utm)
 
       # Determine Latitude Band
       lat_bands <- c(letters[3:8], letters[10:13], letters[15:23], letters[25:26]) # Exclude I and O
@@ -88,7 +88,6 @@ mod_utmzonesel_server <- function(id, settings){
 
       # Central Meridian
       central_meridian <- (utm_zone - 1) * 6 - 180 + 3
-
       list(
         zone = utm_zone,
         band = band_letter,
