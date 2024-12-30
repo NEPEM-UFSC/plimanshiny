@@ -1,20 +1,19 @@
+modfun_L3 <- function(x, b0, b1, b2) {
+  b0 / (1 + exp((b1-x)/b2))
+}
+# first derivative
+fdfun_L3 <- function(x, b0, b1, b2) {
+  # D(expression(b0 / (1 + exp((b1-x)/b2))), "x")
+  b0 * (exp((b1 - x)/b2) * (1/b2))/(1 + exp((b1 - x)/b2))^2
+}
+# second derivative
+sdfun_L3 <- function(x, b0, b1, b2) {
+  # D(expression(b0 * (exp((b1 - x)/b2) * (1/b2))/(1 + exp((b1 - x)/b2))^2), "x")
+  -(b0 * (exp((b1 - x)/b2) * (1/b2) * (1/b2))/(1 + exp((b1 - x)/b2))^2 -
+      b0 * (exp((b1 - x)/b2) * (1/b2)) * (2 * (exp((b1 - x)/b2) *
+                                                 (1/b2) * (1 + exp((b1 - x)/b2))))/((1 + exp((b1 - x)/b2))^2)^2)
+}
 mod_L3 <-  function(data, flight_date = "date", predictor = "median.NDVI", sowing_date = NULL, parallel = FALSE){
-  modfun <- function(x, b0, b1, b2) {
-    b0 / (1 + exp((b1-x)/b2))
-  }
-  # first derivative
-  fdfun <- function(x, b0, b1, b2) {
-    # D(expression(b0 / (1 + exp((b1-x)/b2))), "x")
-    b0 * (exp((b1 - x)/b2) * (1/b2))/(1 + exp((b1 - x)/b2))^2
-  }
-
-  # second derivative
-  sdfun <- function(x, b0, b1, b2) {
-    # D(expression(b0 * (exp((b1 - x)/b2) * (1/b2))/(1 + exp((b1 - x)/b2))^2), "x")
-    -(b0 * (exp((b1 - x)/b2) * (1/b2) * (1/b2))/(1 + exp((b1 - x)/b2))^2 -
-        b0 * (exp((b1 - x)/b2) * (1/b2)) * (2 * (exp((b1 - x)/b2) *
-                                                   (1/b2) * (1 + exp((b1 - x)/b2))))/((1 + exp((b1 - x)/b2))^2)^2)
-  }
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
@@ -57,12 +56,12 @@ mod_L3 <-  function(data, flight_date = "date", predictor = "median.NDVI", sowin
     b2 <- coefslog[3]
 
     # Critical points
-    inflec <- optimise(fdfun, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, maximum = FALSE)
-    cp1 <- optimise(sdfun, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, maximum = FALSE)
-    cp2 <- optimise(sdfun, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, maximum = TRUE)
+    inflec <- optimise(fdfun_L3, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, maximum = FALSE)
+    cp1 <- optimise(sdfun_L3, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, maximum = FALSE)
+    cp2 <- optimise(sdfun_L3, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, maximum = TRUE)
 
     xfd <- seq(min(flights), ceiling(inflec$minimum), length.out = 500)
-    yfd <- fdfun(xfd, b0, b1, b2)
+    yfd <- fdfun_L3(xfd, b0, b1, b2)
 
     dfreg <- data.frame(x = c(min(xfd), max(xfd)), y = c(max(yfd), min(yfd)))
     regmod <- lm(y ~ x, data = dfreg)
@@ -71,9 +70,9 @@ mod_L3 <-  function(data, flight_date = "date", predictor = "median.NDVI", sowin
     head <- xfd[which.max(abs(yfd - predline))]
 
     maturation <- cp2$maximum
-    int1 <- integrate(modfun, lower = fflight, upper = lflight, b0 = b0, b1 = b1, b2 = b2)
-    int2 <- integrate(modfun, lower = head, upper = cp2$maximum, b0 = b0, b1 = b1, b2 = b2)
-    int3 <- integrate(modfun, lower = fflight, upper = head, b0 = b0, b1 = b1, b2 = b2)
+    int1 <- integrate(modfun_L3, lower = fflight, upper = lflight, b0 = b0, b1 = b1, b2 = b2)
+    int2 <- integrate(modfun_L3, lower = head, upper = cp2$maximum, b0 = b0, b1 = b1, b2 = b2)
+    int3 <- integrate(modfun_L3, lower = fflight, upper = head, b0 = b0, b1 = b1, b2 = b2)
 
     dplyr::tibble(unique_plot = dftemp$unique_plot[i],
                   b0 = b0,
@@ -86,10 +85,10 @@ mod_L3 <-  function(data, flight_date = "date", predictor = "median.NDVI", sowin
                   auc = int1$value,
                   auc_vege_period = int3$value,
                   auc_repr_period = int2$value,
-                  parms = list(model = modfun,
+                  parms = list(model = modfun_L3,
                                modeladj = model,
-                               fd = fdfun,
-                               sd = sdfun,
+                               fd = fdfun_L3,
+                               sd = sdfun_L3,
                                coefs = list(
                                  b0 = b0,
                                  b1 = b1,
@@ -98,7 +97,6 @@ mod_L3 <-  function(data, flight_date = "date", predictor = "median.NDVI", sowin
                                xmin = fflight,
                                xmax = lflight))
   }
-
   results <-
     results_list |>
     tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) %>%
@@ -220,29 +218,27 @@ mod_L3_thresh <-  function(data, flight_date = "date", predictor = "median.NDVI"
 }
 
 
+# Logistic model L.4()
+modfun_L4 <- function(x, b0, b1, b2, b3) {
+  b1 + (b2 - b1) / (1 + exp(b0 * (x - b3)))
+}
 
+# Derivatives
+fdfun_L4 <- function(x, b0, b1, b2, b3) {
+  -((b2 - b1) * (exp(b0 * (x - b3)) * b0) / (1 + exp(b0 * (x - b3)))^2)
+}
 
-
+sdfun_L4 <- function(x, b0, b1, b2, b3) {
+  -((b2 - b1) * (exp(b0 * (x - b3)) * b0 * b0) / (1 + exp(b0 * (x - b3)))^2 -
+      (b2 - b1) * (exp(b0 * (x - b3)) * b0) * (2 * (exp(b0 * (x - b3)) * b0 * (1 + exp(b0 * (x - b3))))) /
+      ((1 + exp(b0 * (x - b3)))^2)^2)
+}
 mod_L4 <- function(data,
                    flight_date = "date",
                    predictor = "median.NDVI",
                    sowing_date = NULL,
                    parallel = FALSE) {
-  # Logistic model L.4()
-  modfun <- function(x, b0, b1, b2, b3) {
-    b1 + (b2 - b1) / (1 + exp(b0 * (x - b3)))
-  }
 
-  # Derivatives
-  fdfun <- function(x, b0, b1, b2, b3) {
-    -((b2 - b1) * (exp(b0 * (x - b3)) * b0) / (1 + exp(b0 * (x - b3)))^2)
-  }
-
-  sdfun <- function(x, b0, b1, b2, b3) {
-    -((b2 - b1) * (exp(b0 * (x - b3)) * b0 * b0) / (1 + exp(b0 * (x - b3)))^2 -
-        (b2 - b1) * (exp(b0 * (x - b3)) * b0) * (2 * (exp(b0 * (x - b3)) * b0 * (1 + exp(b0 * (x - b3))))) /
-        ((1 + exp(b0 * (x - b3)))^2)^2)
-  }
 
   # Prepare data
   dftemp <-
@@ -288,13 +284,13 @@ mod_L4 <- function(data,
     b3 <- coefslog[4]
 
     # CRITICAL POINTS
-    inflec <- optimise(fdfun, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, b3 = b3, maximum = FALSE)
+    inflec <- optimise(fdfun_L4, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, b3 = b3, maximum = FALSE)
 
-    cp1 <- optimise(sdfun, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, b3 = b3, maximum = FALSE)
-    cp2 <- optimise(sdfun, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, b3 = b3, maximum = TRUE)
+    cp1 <- optimise(sdfun_L4, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, b3 = b3, maximum = FALSE)
+    cp2 <- optimise(sdfun_L4, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, b3 = b3, maximum = TRUE)
 
     xfd <- seq(min(flights), ceiling(cp1$minimum), length.out = 500)
-    yfd <- sdfun(xfd, b0, b1, b2, b3)
+    yfd <- sdfun_L4(xfd, b0, b1, b2, b3)
 
     dfreg <- data.frame(x = c(min(xfd), max(xfd)), y = c(max(yfd), min(yfd)))
     regmod <- lm(y ~ x, data = dfreg)
@@ -303,15 +299,15 @@ mod_L4 <- function(data,
     head <- xfd[which.max(abs(yfd - predline))]
 
     xfd2 <- seq(ceiling(b3), lflight, length.out = 500)
-    yfd2 <- fdfun(xfd2, b0, b1, b2, b3)
+    yfd2 <- fdfun_L4(xfd2, b0, b1, b2, b3)
 
     dfreg2 <- data.frame(x = c(min(xfd2), max(xfd2)), y = c(min(yfd2), max(yfd2)))
     regmod2 <- lm(y ~ x, data = dfreg2)
     predline2 <- predict(regmod2, newdata = data.frame(x = xfd2))
     maturation <- xfd2[which.max(abs(yfd2 - predline2))]
 
-    int1 <- integrate(modfun, lower = fflight, upper = lflight, b0 = b0, b1 = b1, b2 = b2, b3 = b3)
-    int2 <- integrate(modfun, lower = head, upper = maturation, b0 = b0, b1 = b1, b2 = b2, b3 = b3)
+    int1 <- integrate(modfun_L4, lower = fflight, upper = lflight, b0 = b0, b1 = b1, b2 = b2, b3 = b3)
+    int2 <- integrate(modfun_L4, lower = head, upper = maturation, b0 = b0, b1 = b1, b2 = b2, b3 = b3)
 
     tibble::tibble(
       unique_plot = dftemp$unique_plot[i],
@@ -324,7 +320,7 @@ mod_L4 <- function(data,
       repr_period = maturation - head,
       auc = int1$value,
       auc_repr_period = int2$value,
-      parms = list(model = modfun, modeladj = model, fd = fdfun, sd = sdfun,
+      parms = list(model = modfun_L4, modeladj = model, fd = fdfun_L4, sd = sdfun_L4,
                    coefs = list(b0 = b0, b1 = b1, b2 = b2, b3 = b3), xmin = fflight, xmax = lflight)
     )
   }
@@ -338,33 +334,30 @@ mod_L4 <- function(data,
 }
 
 
+# Logistic model L.5()
+modfun_L5 <- function(x, b0, b1, b2, b3, b4) {
+  b1 + (b2 - b1) / (1 + exp(b0 * (x - b3)))^b4
+}
+fdfun_L5 <- function(x, b0, b1, b2, b3, b4){
+  -((b2 - b1) * ((1 + exp(b0 * (x - b3)))^(b4 - 1) * (b4 * (exp(b0 *
+                                                                  (x - b3)) * b0)))/((1 + exp(b0 * (x - b3)))^b4)^2)
+}
+sdfun_L5 <- function(x, b0, b1, b2, b3, b4){
+  -((b2 - b1) * ((1 + exp(b0 * (x - b3)))^((b4 - 1) - 1) * ((b4 -
+                                                               1) * (exp(b0 * (x - b3)) * b0)) * (b4 * (exp(b0 * (x - b3)) *
+                                                                                                          b0)) + (1 + exp(b0 * (x - b3)))^(b4 - 1) * (b4 * (exp(b0 *
+                                                                                                                                                                  (x - b3)) * b0 * b0)))/((1 + exp(b0 * (x - b3)))^b4)^2 -
+      (b2 - b1) * ((1 + exp(b0 * (x - b3)))^(b4 - 1) * (b4 * (exp(b0 *
+                                                                    (x - b3)) * b0))) * (2 * ((1 + exp(b0 * (x - b3)))^(b4 -
+                                                                                                                          1) * (b4 * (exp(b0 * (x - b3)) * b0)) * ((1 + exp(b0 *
+                                                                                                                                                                              (x - b3)))^b4)))/(((1 + exp(b0 * (x - b3)))^b4)^2)^2)
+}
 mod_L5 <-  function(data,
                     flight_date = "date",
                     predictor = "median.NDVI",
                     sowing_date = NULL,
                     parallel = FALSE){
-  # Logistic model L.5()
-  modfun <- function(x, b0, b1, b2, b3, b4) {
-    b1 + (b2 - b1) / (1 + exp(b0 * (x - b3)))^b4
-  }
-  # derivada em relação a x do modelo W1.4()
-  fdfun <- function(x, b0, b1, b2, b3, b4){
-    # D(expression(  b1 + (b2 - b1) / (1 + exp(b0 * (x - b3)))^b4), "x")
-    -((b2 - b1) * ((1 + exp(b0 * (x - b3)))^(b4 - 1) * (b4 * (exp(b0 *
-                                                                    (x - b3)) * b0)))/((1 + exp(b0 * (x - b3)))^b4)^2)
-  }
-  sdfun <- function(x, b0, b1, b2, b3, b4){
-    # D(expression(-((b2 - b1) * ((1 + exp(b0 * (x - b3)))^(b4 - 1) * (b4 * (exp(b0 *
-    #                                                                              (x - b3)) * b0)))/((1 + exp(b0 * (x - b3)))^b4)^2)), "x")
-    -((b2 - b1) * ((1 + exp(b0 * (x - b3)))^((b4 - 1) - 1) * ((b4 -
-                                                                 1) * (exp(b0 * (x - b3)) * b0)) * (b4 * (exp(b0 * (x - b3)) *
-                                                                                                            b0)) + (1 + exp(b0 * (x - b3)))^(b4 - 1) * (b4 * (exp(b0 *
-                                                                                                                                                                    (x - b3)) * b0 * b0)))/((1 + exp(b0 * (x - b3)))^b4)^2 -
-        (b2 - b1) * ((1 + exp(b0 * (x - b3)))^(b4 - 1) * (b4 * (exp(b0 *
-                                                                      (x - b3)) * b0))) * (2 * ((1 + exp(b0 * (x - b3)))^(b4 -
-                                                                                                                            1) * (b4 * (exp(b0 * (x - b3)) * b0)) * ((1 + exp(b0 *
-                                                                                                                                                                                (x - b3)))^b4)))/(((1 + exp(b0 * (x - b3)))^b4)^2)^2)
-  }
+
 
 
   dftemp <-
@@ -407,7 +400,7 @@ mod_L5 <-  function(data,
 
     # CRITICAL POINTS
     inflec <-
-      optimise(fdfun,
+      optimise(fdfun_L5,
                interval = c(fflight, lflight),
                b0 = b0,
                b1 = b1,
@@ -418,7 +411,7 @@ mod_L5 <-  function(data,
 
     # # maturation, estimated as the maximum point of the second derivative
     cp1 <-
-      optimise(sdfun,
+      optimise(sdfun_L5,
                interval = c(fflight, lflight),
                b0 = b0,
                b1 = b1,
@@ -427,7 +420,7 @@ mod_L5 <-  function(data,
                b4 = b4,
                maximum = FALSE)
     cp2 <-
-      optimise(sdfun,
+      optimise(sdfun_L5,
                interval = c(fflight, lflight),
                b0 = b0,
                b1 = b1,
@@ -437,7 +430,7 @@ mod_L5 <-  function(data,
                maximum = TRUE)
     # Heading
     xfd <- seq(min(flights), ceiling(cp1$minimum),  length.out = 500)
-    yfd <- sdfun(xfd, b0, b1, b2, b3, b4)
+    yfd <- sdfun_L5(xfd, b0, b1, b2, b3, b4)
     # Heading, estimated by the maximum curvature of the second derivative
     # from the first flight to the inflection point
 
@@ -453,7 +446,7 @@ mod_L5 <-  function(data,
 
     # Maturation
     xfd2 <- seq(inflec$minimum, lflight,  length.out = 500)
-    yfd2 <- fdfun(xfd2, b0, b1, b2, b3, b4)
+    yfd2 <- fdfun_L5(xfd2, b0, b1, b2, b3, b4)
     # Heading, estimated by the maximum curvature of the second derivative
     # from the first flight to the inflection point
 
@@ -466,8 +459,8 @@ mod_L5 <-  function(data,
     predline2 <- predict(regmod2, newdata = data.frame(x = xfd2))
     maturation <- xfd2[which.max(abs(yfd2 - predline2))]
     # integrate median.NDVI below the curve
-    int1 <- integrate(modfun, lower = fflight, upper = lflight, b0 = b0, b1 = b1, b2 = b2, b3 = b3, b4 = b4)
-    int2 <- integrate(modfun, lower = head, upper = maturation, b0 = b0, b1 = b1, b2 = b2, b3 = b3, b4 = b4)
+    int1 <- integrate(modfun_L5, lower = fflight, upper = lflight, b0 = b0, b1 = b1, b2 = b2, b3 = b3, b4 = b4)
+    int2 <- integrate(modfun_L5, lower = head, upper = maturation, b0 = b0, b1 = b1, b2 = b2, b3 = b3, b4 = b4)
 
 
     tibble::tibble(unique_plot = dftemp$unique_plot[i],
@@ -482,10 +475,10 @@ mod_L5 <-  function(data,
                    repr_period = maturation - head,
                    auc = int1$value,
                    auc_repr_period = int2$value,
-                   parms = list(model = modfun,
+                   parms = list(model = modfun_L5,
                                 modeladj = model,
-                                fd = fdfun,
-                                sd = sdfun,
+                                fd = fdfun_L5,
+                                sd = sdfun_L5,
                                 coefs = list(
                                   b0 = b0,
                                   b1 = b1,
@@ -502,6 +495,7 @@ mod_L5 <-  function(data,
     tidyr::nest(parms = parms)
   return(results)
 }
+
 
 
 # Threshold-based methods
@@ -717,7 +711,20 @@ mod_segmented <-  function(data,
   return(results)
 }
 
-
+help_mod_L3_eq <- function(){
+  "$$y = \\frac{b_0}{1 + \\exp((b_1 - x)/b_2)}$$"
+}
+help_mod_L3_fd <- function(){
+  "$$y'(x) = b_0 \\cdot \\frac{\\exp\\left(\\frac{b_1 - x}{b_2}\\right) \\cdot \\frac{1}{b_2}}{\\left(1 + \\exp\\left(\\frac{b_1 - x}{b_2}\\right)\\right)^2}$$"
+}
+help_mod_L3_sd <- function(){
+  "$$
+    y''(x) = -\\left(
+b_0 \\cdot \\frac{\\exp\\left(\\frac{b_1 - x}{b_2}\\right) \\cdot \\frac{1}{b_2} \\cdot \\frac{1}{b_2}}{\\left(1 + \\exp\\left(\\frac{b_1 - x}{b_2}\\right)\\right)^2} -
+b_0 \\cdot \\frac{\\exp\\left(\\frac{b_1 - x}{b_2}\\right) \\cdot \\frac{1}{b_2} \\cdot \\left(2 \\cdot \\exp\\left(\\frac{b_1 - x}{b_2}\\right) \\cdot \\frac{1}{b_2} \\cdot \\left(1 + \\exp\\left(\\frac{b_1 - x}{b_2}\\right)\\right)\\right)}{\\left(\\left(1 + \\exp\\left(\\frac{b_1 - x}{b_2}\\right)\\right)^2\\right)^2}
+\\right)
+    $$"
+}
 help_mod_L3 <- function(){
   div(
     style = "font-family: Arial, sans-serif; line-height: 1.5;",
@@ -747,7 +754,7 @@ help_mod_L3 <- function(){
     # Description
     p("The three-parameter logistic model (3PL) is a widely used mathematical function to describe sigmoidal curves, often observed in biological growth processes. It is a simplified version of the four-parameter logistic model."),
     p("The equation is given by:"),
-    p("$$y = \\frac{b_0}{1 + \\exp((b_1 - x)/b_2)}$$"),
+    p(help_mod_L3_eq()),
     p(strong("Where:")),
     withMathJax(
       tags$ul(
@@ -766,9 +773,7 @@ help_mod_L3 <- function(){
     # Description
     p("The first derivative of the three-parameter logistic model (3PL) describes the rate of change of the response variable at any given point. It is particularly useful for identifying the inflection point, where the rate of growth is maximal."),
     p("The first derivative is given by:"),
-    p("$$
-    y'(x) = \\frac{b_0 \\cdot \\exp((b_1 - x)/b_2) \\cdot (1/b_2)}{(1 + \\exp((b_1 - x)/b_2))^2}
-    $$"),
+    p(help_mod_L3_fd()),
     p(strong("Key Features:")),
     tags$ul(
       tags$li("Captures the growth rate at any point on the curve."),
@@ -781,12 +786,7 @@ help_mod_L3 <- function(){
     # Description
     p("The second derivative of the three-parameter logistic model (3PL) provides insight into the curvature of the growth curve, helping to identify points of acceleration or deceleration in growth. This is crucial for understanding how growth dynamics change over time."),
     p("The second derivative is given by:"),
-    p("$$
-    y''(x) = -\\frac{b_0 \\cdot \\exp((b_1 - x)/b_2) \\cdot (1/b_2) \\cdot (1/b_2)}{(1 + \\exp((b_1 - x)/b_2))^2} -
-    \\frac{b_0 \\cdot \\exp((b_1 - x)/b_2) \\cdot (1/b_2) \\cdot
-    \\big(2 \\cdot \\exp((b_1 - x)/b_2) \\cdot (1/b_2) \\cdot (1 + \\exp((b_1 - x)/b_2))\\big)}
-    {((1 + \\exp((b_1 - x)/b_2))^2)^2}
-    $$"),
+    p(help_mod_L3_sd()),
     p(strong("Key Features:")),
     tags$ul(
       tags$li("Describes how the rate of growth changes over time (acceleration or deceleration)."),
@@ -797,7 +797,21 @@ help_mod_L3 <- function(){
     p("The second derivative is a powerful tool for understanding not just the growth rate but also the changes in growth dynamics over time. It is particularly useful in identifying critical points in biological systems, such as transitions from rapid growth to slower growth phases.")
   )
 }
-
+help_mod_L4_eq <- function(){
+  "$$y = b_1 + \\frac{b_2 - b_1}{1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)}$$"
+}
+help_mod_L4_fd <- function(){
+  "$$y'(x) = -\\frac{(b_2 - b_1) \\cdot \\left(\\exp\\left(b_0 \\cdot (x - b_3)\\right) \\cdot b_0\\right)}{\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^2}$$"
+}
+help_mod_L4_sd <- function(){
+  "$$
+   y''(x) = -\\left(
+\\frac{(b_2 - b_1) \\cdot \\left(\\exp\\left(b_0 \\cdot (x - b_3)\\right) \\cdot b_0^2\\right)}{\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^2} -
+\\frac{(b_2 - b_1) \\cdot \\left(\\exp\\left(b_0 \\cdot (x - b_3)\\right) \\cdot b_0\\right) \\cdot
+\\left(2 \\cdot \\exp\\left(b_0 \\cdot (x - b_3)\\right) \\cdot b_0 \\cdot \\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)\\right)}{\\left(\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^2\\right)^2}
+\\right)
+  $$"
+}
 help_mod_L4 <- function(){
   div(
     style = "font-family: Arial, sans-serif; line-height: 1.5;",
@@ -959,6 +973,46 @@ help_mod_L4_gm <- function(){
     )
   )
 }
+help_mod_L5_eq <- function(){
+  "$$y = b_1 + \\frac{b_2 - b_1}{\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^{b_4}}$$"
+}
+help_mod_L5_fd <- function(){
+  "$$
+  y'(x) = -\\frac{(b_2 - b_1) \\cdot \\left(\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^{b_4 - 1} \\cdot \\left(b_4 \\cdot \\exp\\left(b_0 \\cdot (x - b_3)\\right) \\cdot b_0\\right)\\right)}{\\left(\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^{b_4}\\right)^2}
+  $$"
+}
+help_mod_L5_sd <- function(){
+  "$$
+  y''(x) = -\\left(
+\\frac{
+(b_2 - b_1) \\cdot
+\\left[
+\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^{(b_4 - 1) - 1} \\cdot
+\\left((b_4 - 1) \\cdot \\exp\\left(b_0 \\cdot (x - b_3)\\right) \\cdot b_0\\right) \\cdot
+\\left(b_4 \\cdot \\exp\\left(b_0 \\cdot (x - b_3)\\right) \\cdot b_0\\right) +
+\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^{b_4 - 1} \\cdot
+\\left(b_4 \\cdot \\exp\\left(b_0 \\cdot (x - b_3)\\right) \\cdot b_0^2\\right)
+\\right]
+}
+{\\left(\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^{b_4}\\right)^2} -
+\\frac{
+(b_2 - b_1) \\cdot
+\\left[
+\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^{b_4 - 1} \\cdot
+\\left(b_4 \\cdot \\exp\\left(b_0 \\cdot (x - b_3)\\right) \\cdot b_0\\right)
+\\right] \\cdot
+\\left[
+2 \\cdot
+\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^{b_4 - 1} \\cdot
+\\left(b_4 \\cdot \\exp\\left(b_0 \\cdot (x - b_3)\\right) \\cdot b_0\\right) \\cdot
+\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^{b_4}
+\\right]
+}
+{\\left(\\left(\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^{b_4}\\right)^2\\right)^2}
+\\right)
+  $$"
+}
+
 help_mod_L5 <- function(){
   div(
     style = "font-family: Arial, sans-serif; line-height: 1.5;",
