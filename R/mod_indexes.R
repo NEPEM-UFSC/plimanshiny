@@ -679,7 +679,7 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
               data_long <-
                 data_long |>
                 dplyr::mutate(dplyr::across(2:length(input$indextoprofile), ~ {
-                  fit <- smooth.spline(data_long$x, .x)
+                  fit <- smooth.spline(data_long$x, .x, spar = input$spar)
                   predict(fit, data_long$x)$y
                 }))
             }
@@ -729,7 +729,7 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
               data_long <-
                 data_long |>
                 dplyr::mutate(dplyr::across(2:length(input$indextoprofile), ~ {
-                  fit <- smooth.spline(data_long$x, .x)
+                  fit <- smooth.spline(data_long$x, .x, spar= input$spar)
                   predict(fit, data_long$x)$y
                 }))
             }
@@ -815,6 +815,14 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
                     icon = icon("check"),
                     status = "success",
                     animation = "rotate"
+                  ),
+                  conditionalPanel(
+                    condition = "input.smooth == true", ns = ns,
+                    sliderInput(ns("spar"),
+                                label = "Spline parameter",
+                                min = 0,
+                                max = 1,
+                                value = 0.3)
                   )
                 )
               ),
