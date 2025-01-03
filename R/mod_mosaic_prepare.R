@@ -232,7 +232,6 @@ mod_mosaic_prepare_ui <- function(id){
         ),
         tabPanel(
           title = "Download",
-          hl(),
           mod_download_mosaic_ui(ns("downloadmosaic")) |>
             add_help(step = 7,
                      intro = "Download the active mosaic.")
@@ -346,8 +345,17 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
           }
         }
 
+
         observe({
           mosaicnames <-  setdiff(names(mosaic_data), "mosaic")
+          if ("mosaic" %in% mosaicnames) {
+            sendSweetAlert(
+              session = session,
+              title = "Reserved name used",
+              text = "'mosaic' is a reserved name and is strongly suggested to not use this name for files. It may be omitted in some dropdown menus.",
+              type = "warning"
+            )
+          }
           # Update selectInput choices
           updateSelectInput(session, "mosaictoanalyze",
                             choices = mosaicnames,
