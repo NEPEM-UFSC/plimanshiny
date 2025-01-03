@@ -122,6 +122,18 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
             )
           ),
           tabPanel(
+            title = "Overview",
+            fluidRow(
+              valueBoxOutput(ns("vbnplots"), width = 2),
+              valueBoxOutput(ns("vbnmeanq90"), width = 2),
+              valueBoxOutput(ns("vbnmeanvol"), width = 2),
+              valueBoxOutput(ns("vbntotvol"), width = 2),
+              valueBoxOutput(ns("vbncovermed"), width = 2),
+              valueBoxOutput(ns("vbnentropy"), width = 2),
+            ),
+            plotlyOutput(ns("overview"), height = "520px")  |> add_spinner()
+          ),
+          tabPanel(
             title = "Explore the field",
             fluidRow(
               col_2(
@@ -156,19 +168,6 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
               )
             ),
             leafletOutput(ns("resultsplotmap"), height = "640px")  |> add_spinner()
-          ),
-
-          tabPanel(
-            title = "Overview",
-            fluidRow(
-              valueBoxOutput(ns("vbnplots"), width = 2),
-              valueBoxOutput(ns("vbnmeanq90"), width = 2),
-              valueBoxOutput(ns("vbnmeanvol"), width = 2),
-              valueBoxOutput(ns("vbntotvol"), width = 2),
-              valueBoxOutput(ns("vbncovermed"), width = 2),
-              valueBoxOutput(ns("vbnentropy"), width = 2),
-            ),
-            plotlyOutput(ns("overview"), height = "520px")  |> add_spinner()
           ),
           tabPanel(
             title = "Raw results",
@@ -226,6 +225,18 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
             )
           ),
           tabPanel(
+            title = "Overview",
+            fluidRow(
+              valueBoxOutput(ns("vbnplots"), width = 2),
+              valueBoxOutput(ns("vbnmeanq90"), width = 2),
+              valueBoxOutput(ns("vbnmeanvol"), width = 2),
+              valueBoxOutput(ns("vbntotvol"), width = 2),
+              valueBoxOutput(ns("vbncovermed"), width = 2),
+              valueBoxOutput(ns("vbnentropy"), width = 2),
+            ),
+            plotlyOutput(ns("overview"), height = "520px")  |> add_spinner()
+          ),
+          tabPanel(
             title = "Explore the field",
             fluidRow(
               col_2(
@@ -268,18 +279,6 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
           tabPanel(
             title = "Digital Terrain Model",
             plotOutput(ns("dtmplot"), height = "640px")  |> add_spinner()
-          ),
-          tabPanel(
-            title = "Overview",
-            fluidRow(
-              valueBoxOutput(ns("vbnplots"), width = 2),
-              valueBoxOutput(ns("vbnmeanq90"), width = 2),
-              valueBoxOutput(ns("vbnmeanvol"), width = 2),
-              valueBoxOutput(ns("vbntotvol"), width = 2),
-              valueBoxOutput(ns("vbncovermed"), width = 2),
-              valueBoxOutput(ns("vbnentropy"), width = 2),
-            ),
-            plotlyOutput(ns("overview"), height = "520px")  |> add_spinner()
           ),
           tabPanel(
             title = "Raw results",
@@ -349,6 +348,18 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
 
           ),
           tabPanel(
+            title = "Overview",
+            fluidRow(
+              valueBoxOutput(ns("vbnplots"), width = 2),
+              valueBoxOutput(ns("vbnmeanq90"), width = 2),
+              valueBoxOutput(ns("vbnmeanvol"), width = 2),
+              valueBoxOutput(ns("vbntotvol"), width = 2),
+              valueBoxOutput(ns("vbncovermed"), width = 2),
+              valueBoxOutput(ns("vbnentropy"), width = 2),
+            ),
+            plotlyOutput(ns("overview"), height = "520px")  |> add_spinner()
+          ),
+          tabPanel(
             title = "Explore the field",
             fluidRow(
               col_2(
@@ -383,18 +394,6 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
               )
             ),
             leafletOutput(ns("resultsplotmap"), height = "640px")  |> add_spinner()
-          ),
-          tabPanel(
-            title = "Overview",
-            fluidRow(
-              valueBoxOutput(ns("vbnplots"), width = 2),
-              valueBoxOutput(ns("vbnmeanq90"), width = 2),
-              valueBoxOutput(ns("vbnmeanvol"), width = 2),
-              valueBoxOutput(ns("vbntotvol"), width = 2),
-              valueBoxOutput(ns("vbncovermed"), width = 2),
-              valueBoxOutput(ns("vbnentropy"), width = 2),
-            ),
-            plotlyOutput(ns("overview"), height = "520px")  |> add_spinner()
           ),
           tabPanel(
             title = "Raw results",
@@ -837,7 +836,7 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
                   data_long <-
                     data_long |>
                     dplyr::mutate(dplyr::across(2, ~ {
-                      fit <- smooth.spline(data_long$x, .x)
+                      fit <- smooth.spline(data_long$x, .x, spar = input$spar)
                       predict(fit, data_long$x)$y
                     }))
                 }
@@ -921,6 +920,14 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
                       icon = icon("check"),
                       status = "success",
                       animation = "rotate"
+                    ),
+                    conditionalPanel(
+                      condition = "input.smooth == true", ns = ns,
+                      sliderInput(ns("spar"),
+                                  label = "Spline parameter",
+                                  min = 0,
+                                  max = 1,
+                                  value = 0.3)
                     )
                   ),
                   col_1(
