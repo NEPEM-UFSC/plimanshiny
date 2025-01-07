@@ -862,7 +862,6 @@ check_mosaic_layers <- function(mosaic, finalindex, r, g, b, re, nir, tir, swir)
     any(finalindex %in% band_indexes$RE & inherits(layers$RE, "try-error")) |
     any(finalindex %in% band_indexes$SWIR & inherits(layers$SWIR, "try-error")) |
     any(finalindex %in% band_indexes$TIR & inherits(layers$TIR, "try-error"))
-  print(layers$NIR)
   if (missing_bands) {
     show_alert("Ops, an error occured.",
                text = "Multispectral indexes cannot be computed since needed bands are not available.",

@@ -32,6 +32,21 @@ mod_growthmodels_ui <- function(id) {
             label = "Trait to model",
             choices = NULL
           ),
+          pickerInput(
+            ns("growthmodel"),
+            label = "Growth Model",
+            choices = list(
+              Sigmoid = c("Logistic 3P", "Logistic 4P", "Gompertz", "Trans-Gompertz", "Weibull"),
+              Exponential = c("Von Bertalanffy", "Exponential", "Janoschek"),
+              Sinusoidal = c("Sinusoidal")
+            ),
+            options = list(
+              `actions-box` = TRUE,
+              `live-search` = TRUE
+            ),
+            multiple = TRUE,
+            selected = "Logistic 4P"
+          ),
           prettyCheckbox(
             inputId = ns("parallel"),
             label = "Parallel Processing",
@@ -47,8 +62,18 @@ mod_growthmodels_ui <- function(id) {
           ),
           actionBttn(
             ns("predictmat"),
-            label = "Predict!",
+            label = "Compute growth models!",
             icon = icon("check")
+          ),
+          hl(),
+          actionButton(
+            inputId = ns("savetoglobalenv"),
+            label = "Save a temporary file",
+            icon = icon("share-from-square"),
+            status = "success",
+            gradient = TRUE,
+            width = "150px",
+            flat = TRUE
           )
         )
       ),
@@ -93,20 +118,69 @@ mod_growthmodels_ui <- function(id) {
             title = "Fitted model",
             fluidRow(
               col_4(
-                pickerInput(
-                  inputId = ns("fittedmodel"),
-                  label = "Select unique_id(s) to plot the growth curve:",
-                  choices = NULL,
-                  multiple = TRUE,
-                  options = list(
-                    "actions-box" = TRUE,
-                    "live-search" = TRUE,
-                    "max-options" = 4,
-                    "max-options-text" = "No more curves allowed"
+                prettyRadioButtons(
+                  inputId = ns("modelorplot"),
+                  label = "Plot type",
+                  choices = c("One model, multiple plots", "One plot, multiple models"),
+                  icon = icon("check"),
+                  bigger = TRUE,
+                  status = "info",
+                  animation = "jelly",
+                  inline = TRUE
+                )
+              ),
+              col_8(
+                conditionalPanel(
+                  condition = "input.modelorplot == 'One model, multiple plots'", ns = ns,
+                  fluidRow(
+                    col_6(
+                      pickerInput(
+                        inputId = ns("plotmultiple"),
+                        label = "Select unique_id(s) to plot the growth curve:",
+                        choices = NULL,
+                        multiple = TRUE,
+                        options = list(
+                          "actions-box" = TRUE,
+                          "live-search" = TRUE,
+                          "max-options" = 4,
+                          "max-options-text" = "No more curves allowed"
+                        )
+                      )
+                    ),
+                    col_6(
+                      pickerInput(
+                        inputId = ns("growthmodelunique"),
+                        label = "Select growth models to plot the curve:",
+                        choices = NULL,
+                        multiple = FALSE
+                      )
+                    )
+                  )
+                ),
+                conditionalPanel(
+                  condition = "input.modelorplot == 'One plot, multiple models'", ns = ns,
+                  fluidRow(
+                    col_6(
+                      pickerInput(
+                        inputId = ns("plotunique"),
+                        label = "Unique plot:",
+                        choices = NULL,
+                        multiple = FALSE
+                      )
+                    ),
+                    col_6(
+                      pickerInput(
+                        inputId = ns("growthmodelmult"),
+                        label = "Select growth models to plot the curve:",
+                        choices = NULL,
+                        multiple = TRUE
+                      )
+                    )
                   )
                 )
               )
             ),
+
             bs4TabCard(
               width = 12,
               icon = icon("chart-line"),
@@ -126,6 +200,25 @@ mod_growthmodels_ui <- function(id) {
                        plotOutput(ns("sderivate"), height = "570px") |> add_spinner()
               )
             )
+          ),
+          tabPanel(
+            title = "Summary",
+            bs4TabCard(
+              width = 12,
+              icon = icon("chart-line"),
+              id = ns("summarytabs"),
+              type = "tabs",
+              status = "success",
+              height = "720px",
+              title = "Growth model curves",
+              selected = "Summary by plot",
+              tabPanel("Summary by plot",
+                       reactable::reactableOutput(ns("summaryplot"), height = "700px")  |> add_spinner()
+              ),
+              tabPanel("Summary by model",
+                       reactable::reactableOutput(ns("summarymodel"), height = "700px")  |> add_spinner()
+              )
+            )
           )
         )
       )
@@ -143,13 +236,116 @@ mod_growthmodels_server <- function(id, dfs){
     observeEvent(input$details, {
       showModal(
         modalDialog(
-          title = "Details about the growth model",
+          title = "Details about growth models",
           width = 12,
           headerBorder = FALSE,
           collapsible = TRUE,
           closable = TRUE,
-          withMathJax(),
-          help_mod_L4_gm (),
+          div(
+            h2(style = "color: #2E86C1;", "Description of Returned Variables"),
+            tags$ul(
+              tags$li(tags$b("block:"), " The identifier for the experimental block, typically used to group plots spatially or temporally."),
+              tags$li(tags$b("plot_id:"), " The unique identifier for individual plots within a block."),
+              tags$li(tags$b("unique_plot:"), " A combined identifier that uniquely identifies each plot across all blocks (e.g., combining ", tags$i("block"), " and ", tags$i("plot_id"), ")."),
+              tags$li(tags$b("model:"), "The name of the growth model used to fit the data."),
+              tags$li(tags$b("asymptote:"), "The growth model's asymptote, representing the upper limit of the response variable."),
+              tags$li(tags$b("auc:"), " The area under the curve (AUC), representing the total response accumulated over the range of the independent variable."),
+              tags$li(tags$b("xinfp:"), " The x-value at the inflection point, providing another representation of the inflection coordinate."),
+              tags$li(tags$b("yinfp:"), " The y-value at the inflection point, corresponding to the response variable's value at the inflection."),
+              tags$li(tags$b("xmace:"), " The x-value where the second derivative is maximum, reflecting the maximum acceleration of growth rate."),
+              tags$li(tags$b("ymace:"), " The y-value showing the response at the maximum acceleration point."),
+              tags$li(tags$b("xmdes:"), " The x-value where the second derivative is minimal, reflecting the maximum deceleration of growth rate."),
+              tags$li(tags$b("ymdes:"), " The y-value showing the response at the maximum deceleration point."),
+              tags$li(tags$b("aic:"), " The Akaike Information Criterion (AIC) value, used to compare the goodness of fit of different models."),
+              tags$li(tags$b("rmse:"), " The Root Mean Squared Error (RMSE) value.."),
+              tags$li(tags$b("mae:"), " The Mean Absolute Error (MAE) value, representing the average absolute difference between the observed and predicted values."),
+            )
+          ),
+          # Replace bs4TabCard with box for simpler rendering in the modal
+          h2("S-shaped curves"),
+          box(
+            title = "Logistic Model L3",
+            status = "primary",
+            width = 12,
+            solidHeader = TRUE,
+            collapsed = TRUE,
+            collapsible = TRUE,
+            help_mod_L3_gm()
+          ),
+          box(
+            title = "Logistic Model L4",
+            status = "primary",
+            width = 12,
+            solidHeader = TRUE,
+            collapsed = TRUE,
+            collapsible = TRUE,
+            help_mod_L4_gm()
+          ),
+          box(
+            title = "Gompertz Growth Model",
+            status = "primary",
+            width = 12,
+            solidHeader = TRUE,
+            collapsed = TRUE,
+            collapsible = TRUE,
+            help_mod_gompertz()
+          ),
+          box(
+            title = "Trans-Gompertz Growth Model",
+            status = "primary",
+            width = 12,
+            solidHeader = TRUE,
+            collapsed = TRUE,
+            collapsible = TRUE,
+            help_mod_transgompertz()
+          ),
+          box(
+            title = "Weibull Growth Curve Model",
+            status = "primary",
+            width = 12,
+            solidHeader = TRUE,
+            collapsed = TRUE,
+            collapsible = TRUE,
+            help_mod_weibull()
+          ),
+          h2("Exponential"),
+          box(
+            title = "Von Bertalanffy Growth Model",
+            status = "primary",
+            width = 12,
+            solidHeader = TRUE,
+            collapsed = TRUE,
+            collapsible = TRUE,
+            help_mod_vonbertalanffy()
+          ),
+          box(
+            title = "Exponential Growth Model",
+            status = "primary",
+            width = 12,
+            solidHeader = TRUE,
+            collapsed = TRUE,
+            collapsible = TRUE,
+            help_mod_exponential()
+          ),
+          box(
+            title = "Janoschek Growth Model",
+            status = "primary",
+            width = 12,
+            solidHeader = TRUE,
+            collapsed = TRUE,
+            collapsible = TRUE,
+            help_mod_janoschek()
+          ),
+          h2("Sinusoidal"),
+          box(
+            title = "Sinusoidal Growth Model",
+            status = "primary",
+            width = 12,
+            solidHeader = TRUE,
+            collapsed = TRUE,
+            collapsible = TRUE,
+            help_mod_sinusoidal()
+          ),
           footer = NULL,
           easyClose = TRUE,
           size = "xl"
@@ -220,49 +416,59 @@ mod_growthmodels_server <- function(id, dfs){
       # summary results
       models <- reactive({
         req(dfactive$df)
-        dfactive$df |>
+        dftomodel <-
+          dfactive$df |>
           sf::st_drop_geometry() |>
-          as.data.frame() |>
-          mod_L4(predictor = input$traittomodel,
-                 sowing_date = min(dfactive$df$date),
-                 parallel = input$parallel) |>
-          dplyr::select(-c(heading, maturity, repr_period, auc_repr_period)) |>
-          dplyr::rowwise() |>
-          dplyr::mutate(
-            # Run optimise for the 'fd' function once and capture the result
-            yinfp_result = list(optimise(
-              f = function(x) parms[[1]]$fd(x, b0 = b0, b1 = b1, b2 = b2, b3 = inflection),
-              interval = c(parms[[1]]$xmin, parms[[1]]$xmax - 20),
-              maximum = TRUE
-            )),
-            xinfp = yinfp_result$maximum,  # Extract the maximum point
-            yinfp = yinfp_result$objective,  # Extract the objective for maximum
+          as.data.frame()
 
-            # Run optimise for the 'sd' function to get the maximum
-            sd_result = list(optimise(
-              f = function(x) parms[[1]]$sd(x, b0 = b0, b1 = b1, b2 = b2, b3 = inflection),
-              interval = c(parms[[1]]$xmin, parms[[1]]$xmax - 20),
-              maximum = TRUE
-            )),
-            xmace = sd_result$maximum,  # Maximum point for sd
-            ymace = sd_result$objective,  # Maximum value for sd
-
-            # Calculate the minimum using -sd
-            pmdes_result = list(optimise(
-              f = function(x) parms[[1]]$sd(x, b0 = b0, b1 = b1, b2 = b2, b3 = inflection),
-              interval = c(parms[[1]]$xmin, parms[[1]]$xmax - 20)
-            )),
-            xmdes = pmdes_result$minimum,  # Minimum point for sd (from -sd)
-            ymdes = pmdes_result$objective,  # Minimum value for sd (negated)
-            .after = auc
-          )  |>
-          dplyr::ungroup()  |>
-          dplyr::select(-c(yinfp_result, sd_result, pmdes_result))
+        purrr::map(input$growthmodel, ~{
+          switch(
+            .x,
+            "Logistic 3P" = mod_logistic_3P(dftomodel,
+                                            predictor = input$traittomodel,
+                                            sowing_date = min(dftomodel$date),
+                                            parallel = input$parallel),
+            "Logistic 4P" = mod_logistic_4P(dftomodel,
+                                            predictor = input$traittomodel,
+                                            sowing_date = min(dftomodel$date),
+                                            parallel = input$parallel),
+            "Gompertz" = mod_gompertz(dftomodel,
+                                      predictor = input$traittomodel,
+                                      sowing_date = min(dftomodel$date),
+                                      parallel = input$parallel),
+            "Weibull" = mod_weibull(dftomodel,
+                                    predictor = input$traittomodel,
+                                    sowing_date = min(dftomodel$date),
+                                    parallel = input$parallel),
+            "Von Bertalanffy" = mod_vonbert(dftomodel,
+                                            predictor = input$traittomodel,
+                                            sowing_date = min(dftomodel$date),
+                                            parallel = input$parallel),
+            "Exponential" = mod_exponential(dftomodel,
+                                            predictor = input$traittomodel,
+                                            sowing_date = min(dftomodel$date),
+                                            parallel = input$parallel),
+            "Janoschek" = mod_janoschek(dftomodel,
+                                        predictor = input$traittomodel,
+                                        sowing_date = min(dftomodel$date),
+                                        parallel = input$parallel),
+            "Trans-Gompertz" = mod_transgompertz(dftomodel,
+                                                 predictor = input$traittomodel,
+                                                 sowing_date = min(dftomodel$date),
+                                                 parallel = input$parallel),
+            "Sinusoidal" = mod_sinusoidal(dftomodel,
+                                          predictor = input$traittomodel,
+                                          sowing_date = min(dftomodel$date),
+                                          parallel = input$parallel)
+          )
+        }) |>
+          purrr::map_dfr(~.x)
       })
+
 
       observe({
         req(models())
-        dfs[["growth_models"]] <- create_reactval("growth_models", models() |> dplyr::select(-parms))
+        dfs[[input$saveto]] <- create_reactval(input$saveto, models() |> dplyr::select(-parms))
         waiter_hide()
         sendSweetAlert(
           session = session,
@@ -288,125 +494,233 @@ mod_growthmodels_server <- function(id, dfs){
                           selected = levels[[1]])
       })
 
+      updatePickerInput(session, "plotunique",
+                        choices = sort(unique(dfactive$df[["unique_plot"]])),
+                        selected = sort(unique(dfactive$df[["unique_plot"]]))[1])
+      updatePickerInput(session, "growthmodelmult",
+                        choices = sort(unique(models()[["model"]])),
+                        selected = sort(unique(models()[["model"]]))[1])
+      updatePickerInput(session, "plotmultiple",
+                        choices = sort(unique(dfactive$df[["unique_plot"]])),
+                        selected = sort(unique(dfactive$df[["unique_plot"]]))[1])
+      updatePickerInput(session, "growthmodelunique",
+                        choices = sort(unique(models()[["model"]])),
+                        selected = sort(unique(models()[["model"]]))[1])
+
       observe({
+        colorlevels <- reactiveVal(c())
         req(models())
-        dfactive$df <- dfactive$df |> sf::st_drop_geometry()
-        req(input$fittedmodel)
+        if(input$modelorplot == 'One model, multiple plots'){
 
-        dfpars <-
-          models() |>
-          dplyr::filter(unique_plot %in% input$fittedmodel)
+          req(input$plotmultiple, input$growthmodelunique)
 
-        df_int <-
-          dplyr::tibble(flights = seq(dfpars$parms[[1]][[1]]$xmin, dfpars$parms[[1]][[1]]$xmax-20, length.out = 1000)) |>
-          as.data.frame()
-        ypred <- predict(dfpars$parms[[1]][[1]]$modeladj, newdata = df_int)
-        df_int <- dplyr::bind_cols(df_int, data.frame(y = ypred))
-        dfplot <-
-          dfactive$df |>
-          dplyr::filter(unique_plot %in% input$fittedmodel) |>
-          dplyr::select(dplyr::all_of(c("unique_plot", "date", input$traittomodel))) |>
-          dplyr::mutate(date = as.integer(difftime(date, min(date), units = "days")) + 1) |>
-          setNames(c("unique_plot", "doy", "vindex"))
+          dfpars <-
+            models() |>
+            dplyr::filter(unique_plot %in% input$plotmultiple,
+                          model == input$growthmodelunique)
 
-        colorsss <- ggplot_color(4)
-        pmod <-
-          ggplot() +
-          geom_point(aes(x = doy, y = vindex, color = unique_plot),
-                     data = dfplot,
-                     size = 3)
+          dfplot <-
+            dfactive$df |>
+            dplyr::filter(unique_plot %in% input$plotmultiple) |>
+            dplyr::select(dplyr::all_of(c("unique_plot", "date", input$traittomodel))) |>
+            dplyr::mutate(date = as.integer(difftime(date, min(date), units = "days")) + 1) |>
+            setNames(c("color", "doy", "vindex"))
 
-        for (i in 1:nrow(dfpars)) {
+
+          colorlevels(dfpars$unique_plot)
+
           pmod <-
-            pmod +
-            stat_function(
-              fun = dfpars$parms[[i]][[1]]$model,
-              xlim = c(dfpars$parms[[i]][[1]]$xmin, dfpars$parms[[i]][[1]]$xmax-20),
-              args = dfpars$parms[[i]][[1]]$coefs,
-              color = colorsss[i],
-              linewidth = 1.5,
-              n = 500
-            )
-        }
+            ggplot() +
+            geom_point(aes(x = doy, y = vindex, color = color),
+                       data = dfplot,
+                       size = 3) +
+            lapply(1:nrow(dfpars), function(i) {
+              geom_function(fun = get_data_info(dfpars, i, "model"),
+                            args = get_data_info(dfpars, i, "coefs"),
+                            aes(colour = colorlevels()[[i]]),
+                            n = 501,
+                            linewidth = 1.5)
 
-        pmod <-
-          pmod +
-          scale_color_manual(values = colorsss[1:length(input$fittedmodel)]) +
-          labs(x = "Days after first flight",
-               y = input$traittomodel,
-               color = "") +
-          theme_bw(base_size = 24) +
-          theme(panel.grid.minor = element_blank(),
-                legend.position = "bottom")
+            }) +
+            labs(x = "Days after first flight",
+                 y = input$traittomodel,
+                 color = "") +
+            theme_bw(base_size = 24) +
+            theme(panel.grid.minor = element_blank(),
+                  legend.position = "bottom")
+
+        } else if(input$modelorplot == 'One plot, multiple models'){
+
+
+          req(input$plotunique, input$growthmodelmult)
+
+          dfpars <-
+            models() |>
+            dplyr::filter(unique_plot  == input$plotunique,
+                          model %in% input$growthmodelmult)
+
+          dfplot <-
+            dfactive$df |>
+            dplyr::filter(unique_plot == input$plotunique) |>
+            dplyr::select(dplyr::all_of(c("unique_plot", "date", input$traittomodel))) |>
+            dplyr::mutate(date = as.integer(difftime(date, min(date), units = "days")) + 1) |>
+            setNames(c("color", "doy", "vindex"))
+
+          colorlevels(dfpars$model)
+
+          pmod <-
+            ggplot() +
+            geom_point(aes(x = doy, y = vindex),
+                       data = dfplot,
+                       size = 3) +
+            lapply(1:nrow(dfpars), function(i) {
+              geom_function(fun = get_data_info(dfpars, i, "model"),
+                            args = get_data_info(dfpars, i, "coefs"),
+                            aes(colour = colorlevels()[[i]]),
+                            n = 501,
+                            linewidth = 1.5)
+
+            }) +
+            labs(x = "Days after first flight",
+                 y = input$traittomodel,
+                 color = "") +
+            theme_bw(base_size = 24) +
+            theme(panel.grid.minor = element_blank(),
+                  legend.position = "bottom")
+
+        }
 
         output$fittedplot <- renderPlot({
           pmod
         })
 
+
         # first derivative
-        pfd <- ggplot()
-        for (i in 1:nrow(dfpars)) {
-          pfd <-
-            pfd +
-            stat_function(
-              fun = dfpars$parms[[i]][[1]]$fd,
-              xlim = c(dfpars$parms[[i]][[1]]$xmin, dfpars$parms[[i]][[1]]$xmax-20),
-              args = dfpars$parms[[i]][[1]]$coefs,
-              color = colorsss[i],
-              linewidth = 1.5,
-              n = 500
-            )
-        }
         pfd <-
-          pfd +
-          labs(x = "Days after first flight",
-               y = "Growth rate (units of y per day)"
-          ) +
-          scale_color_manual(
-            name = "Unique Plot",                   # Legend title
-            values = setNames(colorsss, input$fittedmodel) # Set colors and labels for the legend
+          ggplot() +
+          lapply(1:nrow(dfpars), function(i) {
+            geom_function(fun = get_data_info(dfpars, i, "fd"),
+                          args = get_data_info(dfpars, i, "coefs"),
+                          aes(colour = colorlevels()[[i]]),
+                          xlim = c(get_data_info(dfpars, i, "xmin"), get_data_info(dfpars, i, "xmax")),
+                          n = 501,
+                          linewidth = 1)
+
+          }) +
+          labs(
+            color = NULL,
+            x = "Days after first flight",
+            y = "1st Derivative (Units/Day)"
           ) +
           theme_bw(base_size = 24) +
-          theme(panel.grid.minor = element_blank())
+          theme(panel.grid.minor = element_blank(),
+                legend.position = "bottom")
+
 
         output$fderivate <- renderPlot({
           pfd
         })
 
         # second derivative
-        psd <- ggplot()
-        for (i in 1:nrow(dfpars)) {
-          psd <-
-            psd +
-            stat_function(
-              fun = dfpars$parms[[i]][[1]]$sd,
-              xlim = c(dfpars$parms[[i]][[1]]$xmin, dfpars$parms[[i]][[1]]$xmax-20),
-              args = dfpars$parms[[i]][[1]]$coefs,
-              color = colorsss[i],
-              linewidth = 1.5,
-              n = 500
-            )
-        }
         psd <-
-          psd +
-          labs(x = "Days after first flight",
-               y = "Second derivative") +
-          scale_color_manual(
-            name = "Unique Plot",
-            values = setNames(colorsss, input$fittedmodel)
+          ggplot() +
+          lapply(1:nrow(dfpars), function(i) {
+            geom_function(fun = get_data_info(dfpars, i, "sd"),
+                          args = get_data_info(dfpars, i, "coefs"),
+                          aes(colour = colorlevels()[[i]]),
+                          xlim = c(get_data_info(dfpars, i, "xmin"), get_data_info(dfpars, i, "xmax")),
+                          n = 501,
+                          linewidth = 1)
+
+          }) +
+          labs(
+            color = NULL,
+            x = "Days after first flight",
+            y = "2nd Derivative (Units/Day²)"
           ) +
           theme_bw(base_size = 24) +
-          theme(panel.grid.minor = element_blank())
+          theme(panel.grid.minor = element_blank(),
+                legend.position = "bottom")
 
         output$sderivate <- renderPlot({
           psd
         })
 
+
+        # summary results
+        output$summaryplot <- reactable::renderReactable({
+          models() |>
+            dplyr::select(-parms) |>
+            dplyr::group_by(unique_plot) |>
+            dplyr::summarise(
+              across(
+                c(asymptote, auc, xinfp, aic, rmse, mae),
+                list(
+                  mean = ~mean(., na.rm = TRUE),
+                  min = ~min(., na.rm = TRUE),
+                  max = ~max(., na.rm = TRUE),
+                  n = ~sum(!is.na(.))
+                )
+              )
+            ) |>
+            round_cols(digits = 3) |>
+            render_reactable()
+        })
+
+        output$summarymodel <- reactable::renderReactable({
+          models() |>
+            dplyr::select(-parms) |>
+            dplyr::group_by(model) |>
+            dplyr::summarise(
+              across(
+                c(asymptote, auc, xinfp, aic, rmse, mae),
+                list(
+                  mean = ~mean(., na.rm = TRUE),
+                  min = ~min(., na.rm = TRUE),
+                  max = ~max(., na.rm = TRUE),
+                  n = ~sum(!is.na(.))
+                )
+              )
+            ) |>
+            round_cols(digits = 3) |>
+            render_reactable()
+        })
+
       })
 
+
+      observeEvent(input$savetoglobalenv, {
+        req(models())
+        tf <- tempfile(pattern = "plimanshiny_output", fileext = ".RData")
+        plimanshiny_growth_models <- models()
+        save(plimanshiny_growth_models, file = tf)
+        ask_confirmation(
+          inputId = "myconfirmation",
+          type = "warning",
+          title = "Close the App?",
+          text = glue::glue("The results were saved in a temporary file ({basename(tf)}).
+              To access the created object, you need first to stop the App and run
+              get_plimanshiny_results()
+              to load the list into your R environment.
+              Do you really want to close the app now?"),
+          btn_labels = c("Nope", "Yep"),
+          btn_colors = c("#FE642E", "#04B404")
+        )
+      })
+
+      observe({
+        if (!is.null(input$myconfirmation)) {
+          if (input$myconfirmation) {
+            stopApp()
+          } else {
+            return()
+          }
+        }
+      })
+
+
+
     })
-
-
   })
 }
 
