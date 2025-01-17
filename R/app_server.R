@@ -171,6 +171,10 @@ app_server <- function(input, output, session) {
       module_loaded$summary <- TRUE
       mod_summarize_server("summarize_1", dfs, shapefile)
     }
+    if(input$tabshome == "boxplot" && is.null(module_loaded$boxplot)){
+      module_loaded$boxplot <- TRUE
+      mod_graphicalexploration_server("graphicalexploration_1", dfs, shapefile)
+    }
 
     # Import Rasters
     if(input$tabshome == "mosaicimport" && is.null(module_loaded$mosaicimport)){
@@ -197,6 +201,7 @@ app_server <- function(input, output, session) {
       mod_sentinel_server("sentinel_1", mosaic_data, settings)
       mod_spatjoin_server("spatjoin_1", shapefile, settings)
       mod_vectorize_server("vectorize_1", mosaic_data, shapefile, basemap)
+      mod_cropbatch_server("cropbatch_1", shapefile, mosaiclist, settings)
     }
 
     # Vegetation Index Calculation

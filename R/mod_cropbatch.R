@@ -113,6 +113,14 @@ mod_cropbatch_ui <- function(id){
                 value = "_cropped"
               )
             ),
+            awesomeRadio(
+              inputId = ns("cropormask"),
+              label = "Type",
+              choices = c("Crop", "Mask"),
+              selected = "Crop",
+              inline = FALSE,
+              status = "success"
+            ),
             actionBttn(
               ns("startcrop"),
               label = "Crop!",
@@ -218,13 +226,27 @@ mod_cropbatch_server <- function(id, shapefile, mosaiclist, settings){
       req(mosaic_list$files)
       req(shapefile$shape)
       if(inherits(mosaic_list$files[[1]], "SpatRaster")){
-        if(terra::nlyr(mosaic_list$files[[1]] > 2)){
-          terra::plotRGB(mosaic_list$files[[1]], stretch = "hist")
+        aggr <- find_aggrfact(mosaic_list$files[[1]])
+        if(aggr > 0){
+          mosplot <-
+            mosaic_aggregate(mosaic_list$files[[1]], round(100 / aggr)) |>
+            terra::mask(terra::vect(shapefile$shape$data)) |>
+            terra::crop(terra::vect(shapefile$shape$data))
         } else{
-          terra::plot(mosaic_list$files[[1]][[1]])
+          mosplot <-
+            mosaic_list$files[[1]] |>
+            terra::mask(terra::vect(shapefile$shape$data)) |>
+            terra::crop(terra::vect(shapefile$shape$data))
+
+        }
+
+        if(terra::nlyr(mosaic_list$files[[1]] > 2)){
+          terra::plotRGB(mosplot, smooth = TRUE)
+        } else{
+          terra::plot(mosplot[[1]])
         }
       }
-      terra::plot(terra::vect(shapefile$shape$data), add = TRUE, col = "red")
+      terra::plot(terra::vect(shapefile$shape$data), add = TRUE, border = "red", lwd = 3)
     })
 
     observeEvent(input$startcrop, {
@@ -243,8 +265,8 @@ mod_cropbatch_server <- function(id, shapefile, mosaiclist, settings){
         shpcrop <-
           shapefile$shape$data |>
           terra::vect() |>
-          terra::buffer(input$buffer) |>
-          terra::ext()
+          terra::buffer(input$buffer)
+        shpext <- shpcrop |> terra::ext()
 
         infiles <- sapply(mosaic_list$files, terra::sources)
         outfiles <- paste0(input$outdir, "\\", paste0(file_name(infiles), input$suffix, ".", file_extension(infiles)))
@@ -265,14 +287,21 @@ mod_cropbatch_server <- function(id, shapefile, mosaiclist, settings){
             title = paste0("Cropping the raster files, Please, wait."),
             total = length(infiles)
           )
-          suppressWarnings(
-            sf::gdal_utils(
-              util = "warp",
-              source = infiles[[i]],
-              destination = outfiles[[i]],
-              options = strsplit(paste("-te", shpcrop[1], shpcrop[3], shpcrop[2], shpcrop[4]), split = "\\s")[[1]]
+          if(input$cropormask == "Crop"){
+            suppressWarnings(
+              sf::gdal_utils(
+                util = "warp",
+                source = infiles[[i]],
+                destination = outfiles[[i]],
+                options = strsplit(paste("-te", shpext[1], shpext[3], shpext[2], shpext[4]), split = "\\s")[[1]]
+              )
             )
-          )
+          } else{
+            terra::rast(infiles[[i]]) |>
+              terra::crop(shpcrop) |>
+              terra::mask(shpcrop) |>
+              terra::writeRaster(outfiles[[i]])
+          }
         }
 
         closeSweetAlert(session = session)
