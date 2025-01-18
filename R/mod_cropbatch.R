@@ -54,38 +54,9 @@ mod_cropbatch_ui <- function(id){
                                           'persist'= FALSE)
             ),
             hl(),
-            h3("Shapefile"),
-            fluidRow(
-              col_6(
-                shinyFilesButton(id=ns("shapefileinput"),
-                                 label="Shapefile",
-                                 title="Shapefile",
-                                 buttonType = "primary",
-                                 multiple = TRUE,
-                                 class = NULL,
-                                 icon = icon("magnifying-glass"),
-                                 style = NULL)
-              ),
-              col_6(
-                actionButton(
-                  inputId = ns("importshapefile"),
-                  label = "Import",
-                  icon = icon("share-from-square"),
-                  status = "success",
-                  gradient = TRUE,
-                  width = "130px"
-                )
-              )
-            ),
-            selectizeInput(
-              inputId = ns("shapefileimported"),
-              label = "Selected shapefile",
-              choices = NULL,
-              multiple=TRUE,
-              options = list('plugins' = list('remove_button'),
-                             'create' = TRUE,
-                             'persist' = FALSE)
-            ),
+            selectInput(ns("shape_to_crop"),
+                        label = "Shapefile",
+                        choices = NULL),
             fluidRow(
               col_4(
                 br(),
@@ -187,19 +158,6 @@ mod_cropbatch_server <- function(id, shapefile, mosaiclist, settings){
       req(diroutput)
       updateTextInput(session, "outdir", value = diroutput)
     })
-
-    # shapefile
-    pathshape <- reactiveValues(file = NULL)
-    observe({
-      shinyFileChoose(input, "shapefileinput",
-                      root = getVolumes()(),
-                      filetypes = c("rds",  "shp",  "json", "kml",  "gml",  "dbf",  "sbn",  "sbx",  "shx",  "prj", "cpg"),
-                      session = session)
-      if(!is.null(input$shapefileinput)){
-        pathshape$file <- parseFilePaths(getVolumes()(), input$shapefileinput)
-      }
-    })
-
     #import the mosaics
     observeEvent(input$importrasters, {
       req(mosaic_list$files)
@@ -211,15 +169,13 @@ mod_cropbatch_server <- function(id, shapefile, mosaiclist, settings){
                            selected = nams)
     })
 
-    #import the shapefile
-    observeEvent(input$importshapefile, {
-      req(pathshape$file$datapath[1])
-      shapefile[["shape"]] <- create_reactval("shape", shapefile_input(pathshape$file$datapath[1], info = FALSE))
-      if(length(pathshape$file$datapath) != 0){
-        updateSelectInput(session, "shapefileimported",
-                          choices = file_name(pathshape$file$datapath),
-                          selected = file_name(pathshape$file$datapath))
-      }
+    # shapefile
+    observe({
+      updateSelectInput(session, "shape_to_crop", choices = setdiff(names(shapefile), c("shapefile", "shapefileplot")))
+    })
+    shptocrop <- reactive({
+      req(input$shape_to_crop)
+      shapefile[[input$shape_to_crop]]$data
     })
 
     output$plotmosaic <- renderPlot({
@@ -230,13 +186,13 @@ mod_cropbatch_server <- function(id, shapefile, mosaiclist, settings){
         if(aggr > 0){
           mosplot <-
             mosaic_aggregate(mosaic_list$files[[1]], round(100 / aggr)) |>
-            terra::mask(terra::vect(shapefile$shape$data)) |>
-            terra::crop(terra::vect(shapefile$shape$data))
+            terra::mask(terra::vect(shptocrop())) |>
+            terra::crop(terra::vect(shptocrop()))
         } else{
           mosplot <-
             mosaic_list$files[[1]] |>
-            terra::mask(terra::vect(shapefile$shape$data)) |>
-            terra::crop(terra::vect(shapefile$shape$data))
+            terra::mask(terra::vect(shptocrop())) |>
+            terra::crop(terra::vect(shptocrop()))
 
         }
 
@@ -246,13 +202,13 @@ mod_cropbatch_server <- function(id, shapefile, mosaiclist, settings){
           terra::plot(mosplot[[1]])
         }
       }
-      terra::plot(terra::vect(shapefile$shape$data), add = TRUE, border = "red", lwd = 3)
+      terra::plot(terra::vect(shptocrop()), add = TRUE, border = "red", lwd = 3)
     })
 
     observeEvent(input$startcrop, {
-      req(shapefile$shape$data)
+      req(shptocrop())
       crss <- sapply(mosaic_list$files, function(x) {
-        sf::st_crs(x) == sf::st_crs(shapefile$shape$data)
+        sf::st_crs(x) == sf::st_crs(shptocrop())
       })
       if(any(isFALSE(crss))){
         sendSweetAlert(
@@ -263,9 +219,11 @@ mod_cropbatch_server <- function(id, shapefile, mosaiclist, settings){
         )
       } else{
         shpcrop <-
-          shapefile$shape$data |>
+          shptocrop() |>
           terra::vect() |>
           terra::buffer(input$buffer)
+        tmpshpf <- tempfile(fileext = ".shp")
+        sf::st_write(sf::st_as_sf(shpcrop), tmpshpf, quiet = TRUE)
         shpext <- shpcrop |> terra::ext()
 
         infiles <- sapply(mosaic_list$files, terra::sources)
@@ -297,10 +255,17 @@ mod_cropbatch_server <- function(id, shapefile, mosaiclist, settings){
               )
             )
           } else{
-            terra::rast(infiles[[i]]) |>
-              terra::crop(shpcrop) |>
-              terra::mask(shpcrop) |>
-              terra::writeRaster(outfiles[[i]])
+            # Mask the raster using the shapefile
+            sf::gdal_utils(
+              util = "warp",  # Use gdalwarp for masking
+              source = infiles[[i]],  # Input raster
+              destination = outfiles[[i]],  # Output raster
+              options = c(
+                "-cutline", tmpshpf,  # Use the shapefile as a mask
+                "-crop_to_cutline",   # Crop raster to the extent of the shapefile
+                "-dstnodata", "NA"    # Set nodata value for areas outside the shapefile
+              )
+            )
           }
         }
 

@@ -1,13 +1,13 @@
-#' summarize UI Function
+#' graphicalexploration UI Function
 #'
-#' @description A shiny Module for the summarization of datasets.
+#' @description A shiny Module.
 #'
 #' @param id,input,output,session Internal parameters for {shiny}.
 #'
 #' @noRd
 #'
 #' @importFrom shiny NS tagList
-mod_summarize_ui <- function(id) {
+mod_graphicalexploration_ui <- function(id) {
   ns <- NS(id)
   tagList(
     tags$style(HTML("
@@ -35,7 +35,7 @@ mod_summarize_ui <- function(id) {
         background-color: #b2d9f2;
       }
       .stats-dropzone {
-        background-color: #d1d1f0;
+        background-color: #b2d9f2;
       }
       .draggable {
         cursor: move;
@@ -123,7 +123,7 @@ mod_summarize_ui <- function(id) {
           width = 12,
           height = "790px",
           prettyRadioButtons(
-            inputId = ns("dforshape"),
+            inputId = ns("dforshape2"),
             label = "Use",
             choices = c("data.frame", "shapefile"),
             icon = icon("check"),
@@ -135,16 +135,9 @@ mod_summarize_ui <- function(id) {
           fluidRow(
             col_6(
               pickerInput(
-                ns("dftosummary"),
-                label = "Dataset to summarize",
+                ns("dftoexplore"),
+                label = "Dataset to explore",
                 choices = NULL
-              )
-            ),
-            col_3(
-              textInput(
-                ns("suffix"),
-                label = "Suffix",
-                value = "_summarized"
               )
             ),
             col_3(
@@ -158,50 +151,31 @@ mod_summarize_ui <- function(id) {
           ),
           # Available Variables Section
           fluidRow(
-            div(style = "display: flex; align-items: center; justify-content: space-between; width: 100%;",
-                h4("Available variables:"),
-                div(style = "display: flex; justify-content: flex-start; margin-left: auto; width: 60%;",
-                    div(style = "background-color: #b2f2b2; padding: 5px; border-radius: 15px; width: 100px; text-align: center; display: inline-block;",
-                        "Numeric"),
-                    div(style = "background-color: #b2d9f2; padding: 5px; border-radius: 15px; width: 100px; text-align: center; display: inline-block;",
-                        "Character")
-                )
-            ),
+            h4("Available variables:"),
             uiOutput(ns("variables_ui"))
           ),
           # Drop Zones
           fluidRow(
             div(class = "drag-container",
-                div(id = ns("var_dropzone"), class = "dropzone var-dropzone", "Variables:", style = "text-align: left;"),
-                div(id = ns("group_dropzone"), class = "dropzone group-dropzone", "Grouping (optional)", style = "text-align: left;")
-            )
-          ),
-          # Statistics Section
-          fluidRow(
-            h4("Statistics:"),
-            uiOutput(ns("stats_ui"))
-          ),
-          fluidRow(
-            div(class = "drag-container",
-                div(id = ns("stats_dropzone"), class = "dropzone stats-dropzone", "Stats:", style = "text-align: left;")
+                div(id = ns("var_dropzone"), class = "dropzone var-dropzone", "Variable (Y-Axis):", style = "text-align: left;"),
+                div(id = ns("group_dropzone"), class = "dropzone group-dropzone", "Grouping (X-Axis, optional):", style = "text-align: left;"),
+                div(id = ns("color_dropzone"), class = "dropzone stats-dropzone", "Color (optional):", style = "text-align: left;")
             )
           )
         )
       ),
-      # Summarized Data Display
+      # Graph Display Section
       col_7(
         bs4Card(
-          title = "Summarized data",
+          title = "Graphical Exploration",
           collapsible = FALSE,
           width = 12,
           height = "790px",
-          reactable::reactableOutput(ns("summary_table"), height = "750px") |> add_spinner()
+          plotOutput(ns("exploration_plot"), height = "750px") |> add_spinner()
         )
-      )
-    ),
-
-    # JavaScript for Drag-and-Drop Animation and Interaction
-    tags$script(HTML(paste0("
+      ),
+      # JavaScript for Drag-and-Drop Animation and Interaction
+      tags$script(HTML(paste0("
       var dragged;
       document.addEventListener('dragstart', function(event) {
         dragged = event.target;
@@ -244,18 +218,18 @@ mod_summarize_ui <- function(id) {
             zone: event.target.id,
             value: dragged.innerText
           });
-        } else if (zoneId === '", ns("stats_dropzone"), "' && dragged.classList.contains('stat-item')) {
-          var newItem = document.createElement('div');
-          newItem.className = 'draggable';
-          newItem.innerHTML = dragged.innerText + '<span class=\"remove-btn\">&#10005;</span>';
-          newItem.setAttribute('draggable', 'false');
-          event.target.appendChild(newItem);
+        } if (zoneId === '", ns("color_dropzone"), "') {
+  var newItem = document.createElement('div');
+  newItem.className = 'draggable';
+  newItem.innerHTML = dragged.innerText + '<span class=\"remove-btn\">&#10005;</span>';
+  newItem.setAttribute('draggable', 'false');
+  event.target.appendChild(newItem);
 
-          Shiny.setInputValue('", ns("dropped_item"), "', {
-            zone: event.target.id,
-            value: dragged.innerText
-          });
-        }
+  Shiny.setInputValue('", ns("dropped_item"), "', {
+    zone: event.target.id,
+    value: dragged.innerText
+  });
+}
       });
 
       // Handle removal of items with explosion effect
@@ -276,115 +250,87 @@ mod_summarize_ui <- function(id) {
         }
       });
     ")))
+    )
   )
 }
 
-#' summarize Server Functions
+#' graphicalexploration Server Functions
 #'
 #' @noRd
-mod_summarize_server <- function(id, dfs, shapefile){
+mod_graphicalexploration_server <- function(id, dfs, shapefile) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
     vars <- reactiveVal(c())
     group_vars <- reactiveVal(c())
-    stats <- reactiveVal(c())
+    color_vars <- reactiveVal(c())
     availablevars <- reactiveVal(c())
-    availablestats <- reactiveVal(c("mean", "median", "min", "max", "sum", "sd", "cv", "n"))
 
     observe({
-      if(input$dforshape == "data.frame"){
-        updatePickerInput(session, "dftosummary",
+      if (input$dforshape2 == "data.frame") {
+        updatePickerInput(session, "dftoexplore",
                           choices = c("none", names(dfs)))
-      } else{
-        updatePickerInput(session, "dftosummary",
+      } else {
+        updatePickerInput(session, "dftoexplore",
                           choices = c("none", setdiff(names(shapefile), c("shapefileplot"))))
       }
     })
 
     dfactive <- reactiveValues()
-    observeEvent(input$dftosummary, {
-      # Clear reactive values when dataset changes
+    observeEvent(input$dftoexplore, {
       vars(c())
       group_vars(c())
-      stats(c())
+      color_vars(c())
 
-      # Clear the UI drop zones
       removeUI(selector = paste0("#", ns("var_dropzone"), " > .draggable"), immediate = TRUE)
       removeUI(selector = paste0("#", ns("group_dropzone"), " > .draggable"), immediate = TRUE)
-      removeUI(selector = paste0("#", ns("stats_dropzone"), " > .draggable"), immediate = TRUE)
+      removeUI(selector = paste0("#", ns("color_dropzone"), " > .draggable"), immediate = TRUE)
 
-      # Handle case when dftosummary is set to 'none'
-      if (input$dftosummary == "none") {
+      if (input$dftoexplore == "none") {
         availablevars(c())
-        dfactive$df <- NULL  # Reset the active dataframe
+        dfactive$df <- NULL
       } else {
-        req(input$dftosummary)
-        if (input$dforshape == "data.frame") {
-          dfactive$df <- dfs[[input$dftosummary]]$data |> convert_numeric_cols()
+        req(input$dftoexplore)
+        if (input$dforshape2 == "data.frame") {
+          dfactive$df <- dfs[[input$dftoexplore]]$data |> convert_numeric_cols()
         } else {
-          dfactive$df <- shapefile[[input$dftosummary]]$data |> convert_numeric_cols()
+          dfactive$df <- shapefile[[input$dftoexplore]]$data |> convert_numeric_cols()
         }
       }
     })
 
-
-    # Dynamically render the list of statistics with renderUI
-    output$stats_ui <- renderUI({
-      req(availablestats())  # Ensure stats are available before rendering
-      div(id = ns("statistics"),
-          lapply(availablestats(), function(stat) {
-            div(class = "draggable stat-item", stat, draggable = "true", style = "background-color: #d1d1f0")  # Add a class 'stat-item' to identify stats
-          })
-      )
-    })
-
-    # Add dragged item
-    observeEvent(input$dropped_item, {
-      zone <- input$dropped_item$zone
-      value <- input$dropped_item$value
-      if (zone == ns("var_dropzone")) {
-        vars(unique(c(vars(), value)))
-      } else if (zone == ns("group_dropzone")) {
-        group_vars(unique(c(group_vars(), value)))
-      } else if (zone == ns("stats_dropzone")) {
-        stats(unique(c(stats(), value)))
-        availablestats(setdiff(availablestats(), value))  # Remove dropped stat from available list
-      }
-    })
-
-
-
-    observe({
-      req(dfactive$df)
-      availablevars(setdiff(names(dfactive$df), c(vars(), group_vars())))
-    })
-
-
-    # Dynamically render the list of variables with renderUI
     output$variables_ui <- renderUI({
-
+      req(dfactive$df)
+      availablevars(setdiff(names(dfactive$df), c(vars(), group_vars(), color_vars())))
       div(id = ns("variables"),
           lapply(availablevars(), function(var) {
-            # Classify the variables (numeric, character, no special class for binary)
             var_class <- switch(class(dfactive$df[[var]])[1],
                                 "numeric" = "numeric",
                                 "factor" = "character",
                                 "character" = "character",
                                 "unknown")
-
-            # Only add the class for numeric variables
             color_class <- switch(var_class,
-                                  "numeric" = "numeric-var numeric-item",  # Use color and add 'numeric-item' class for numeric
-                                  "character" = "character-var",  # Use color for character
-                                  NULL)  # No color or special class for binary
-
+                                  "numeric" = "numeric-var numeric-item",
+                                  "character" = "character-var",
+                                  NULL)
             div(class = paste("draggable", color_class), var, draggable = "true")
           })
       )
     })
 
-    # Remove item
+    observeEvent(input$dropped_item, {
+      zone <- input$dropped_item$zone
+      value <- input$dropped_item$value
+
+      if (zone == ns("var_dropzone")) {
+        vars(unique(c(vars(), value)))
+      } else if (zone == ns("group_dropzone")) {
+        group_vars(unique(c(group_vars(), value)))
+      } else if (zone == ns("color_dropzone")) {
+        color_vars(unique(c(color_vars(), value)))
+      }
+    })
+
     observeEvent(input$removed_item, {
       zone <- input$removed_item$zone
       value <- input$removed_item$value
@@ -393,70 +339,41 @@ mod_summarize_server <- function(id, dfs, shapefile){
         vars(setdiff(vars(), value))
       } else if (zone == ns("group_dropzone")) {
         group_vars(setdiff(group_vars(), value))
-      } else if (zone == ns("stats_dropzone")) {
-        stats(setdiff(stats(), value))  # Remove stat from the selected list
-        availablestats(unique(c(availablestats(), value)))  # Re-add stat to available list
+      } else if (zone == ns("color_dropzone")) {
+        color_vars(setdiff(color_vars(), value))
       }
     })
 
+    exploration_plot <- reactive({
+      req(vars())
+      p <- ggplot(dfactive$df, aes(x = .data[[vars()[1]]]))
 
+      if (length(group_vars()) > 0) {
+        p <- ggplot(dfactive$df, aes(y = .data[[vars()[1]]], x = .data[[group_vars()[1]]]))
+      }
+      if (length(color_vars()) > 0) {
+        p <- p + aes(color = .data[[color_vars()[1]]])
+      }
 
-    summary_data <- reactive({
-      req(vars(), stats())
-      showNotification(
-        ui = "Summarizing the data... Please, wait!",
-        type = "message",
-        duration = NULL,   # Infinite duration until manually removed
-        id = "summarydata"
-      )
-      # Selected variables and statistics
-      selected_vars <- vars()
-      selected_stats <- stats()
-      selected_group <- group_vars()
-      # Chosen statistical functions
-      stat_fns <- custom_stats(dfactive$df, selected_stats)
-      # Calculate the summary with or without grouping
-      if (length(selected_group) == 0) {
-        summary_data <-
-          dfactive$df |>
-          dplyr::summarise(dplyr::across(all_of(selected_vars), stat_fns, .names = "{col}_{fn}"), .groups = "drop")
+      if (length(group_vars()) > 0) {
+        p <- p + geom_boxplot()
       } else {
-        summary_data <- dfactive$df |>
-          dplyr::group_by(dplyr::across(dplyr::all_of(selected_group))) |>
-          dplyr::summarise(dplyr::across(dplyr::all_of(selected_vars), stat_fns, .names = "{col}_{fn}", .groups = "drop"))
+        p <- p + geom_density()
       }
-      removeNotification(id = "summarydata")
-      summary_data
+      p + theme_minimal(base_size = 24)
     })
 
-
-
-    # Render summary table
-    output$summary_table <- reactable::renderReactable({
-      req(summary_data())
-      render_reactable(summary_data())
+    output$exploration_plot <- renderPlot({
+      exploration_plot()
     })
 
-    observeEvent(input$doneupdating, {
-      newfile <- paste0(file_name(input$dftosummary), input$suffix)
-      if(input$dforshape == "data.frame"){
-        dfs[[newfile]] <- create_reactval(newfile, summary_data())
-      } else{
-        shapefile[[newfile]] <-  create_reactval(newfile, summary_data())
-      }
-      sendSweetAlert(
-        session = session,
-        title = "You have now a summarized data!",
-        text = "The dataset has been successfully summarized and is now available for further analysis or download.",
-        type = "success"
-      )
-    })
 
   })
 }
 
+
 ## To be copied in the UI
-# mod_summarize_ui("summarize_1")
+# mod_graphicalexploration_ui("graphicalexploration_1")
 
 ## To be copied in the server
-# mod_summarize_server("summarize_1")
+# mod_graphicalexploration_server("graphicalexploration_1")

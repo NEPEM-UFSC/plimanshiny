@@ -172,10 +172,9 @@ mod_crop_server <- function(id, mosaic_data, shapefile, r, g, b, basemap, settin
               edits()$finished |>
               sf::st_transform(sf::st_crs(mosaic_data$mosaic)) |>
               terra::vect()
-            if(input$cropormask == "Crop"){
               mosaiccr <- terra::crop(mosaic_data$mosaic, grids |> terra::ext())
-            } else{
-              mosaiccr <- terra::mask(mosaic_data$mosaic, grids)
+            if(input$cropormask == "Mask"){
+              mosaiccr <- terra::mask(mosaiccr, grids)
             }
             cropped_mosaic(mosaiccr)
           }
@@ -184,16 +183,6 @@ mod_crop_server <- function(id, mosaic_data, shapefile, r, g, b, basemap, settin
 
       output$mosaiccropped <- renderPlot({
         req(cropped_mosaic())  # Ensure cropped_mosaic is not NULL
-        # Print the updated mosaic_data$mosaic
-        # Render the cropped mosaic
-        # bcrop <-
-        #   mosaic_view(
-        #     cropped_mosaic(),
-        #     r = suppressWarnings(as.numeric(r$r)),
-        #     g = suppressWarnings(as.numeric(g$g)),
-        #     b = suppressWarnings(as.numeric(b$b))
-        #   )
-        # bcrop@map
         terra::plotRGB(cropped_mosaic())
       })
 
@@ -208,8 +197,6 @@ mod_crop_server <- function(id, mosaic_data, shapefile, r, g, b, basemap, settin
           type = "success"
         )
       })
-
-
     })
   })
 }

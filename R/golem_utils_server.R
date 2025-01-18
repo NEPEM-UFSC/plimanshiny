@@ -419,7 +419,7 @@ render_reactable <- function(df,
                              ),
                              ...){
   pars <- read_pars()
-  if(pars$sparkline){
+  if(pars$sparkline & nrow(df) > 1){
     dcd = colDef(
       maxWidth = 400,
       footer = function(values) {
