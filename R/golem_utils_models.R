@@ -51,8 +51,7 @@ mod_L3 <-  function(data, flight_date = "date", predictor = "median.NDVI", sowin
 
   # Apply the model
   if(parallel){
-    availablecl <- parallel::detectCores()
-    future::plan(future::multisession, workers = round(availablecl * .75))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
   } else{
     future::plan(future::sequential)
   }
@@ -250,8 +249,7 @@ mod_L3_thresh <-  function(data, flight_date = "date", predictor = "median.NDVI"
 
   # Apply the model
   if(parallel){
-    availablecl <- parallel::detectCores()
-    future::plan(future::multisession, workers = round(availablecl * .75))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
   } else{
     future::plan(future::sequential)
   }
@@ -368,8 +366,7 @@ mod_L4 <- function(data,
 
   # Apply the model
   if(parallel){
-    availablecl <- parallel::detectCores()
-    future::plan(future::multisession, workers = round(availablecl * .75))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
   } else{
     future::plan(future::sequential)
   }
@@ -585,8 +582,7 @@ mod_L5 <-  function(data,
 
   # Apply the model
   if(parallel){
-    availablecl <- parallel::detectCores()
-    future::plan(future::multisession, workers = round(availablecl * .75))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
   } else{
     future::plan(future::sequential)
   }
@@ -851,8 +847,7 @@ mod_loess <-  function(data,
 
   # Apply the model
   if(parallel){
-    availablecl <- parallel::detectCores()
-    future::plan(future::multisession, workers = round(availablecl * .75))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
   } else{
     future::plan(future::sequential)
   }
@@ -936,159 +931,83 @@ help_mod_loess <- function(){
 
 
 ############## SEGMENTED MODEL ################
-mod_segmented <-  function(data,
-                           flight_date = "date",
-                           predictor = "median.NDVI",
-                           sowing_date = NULL,
-                           threshold,
-                           slope = "min",
-                           parallel = FALSE){
-  dftemp <-
-    data |>
+mod_segmented <- function(data,
+                          flight_date = "date",
+                          predictor = "median.NDVI",
+                          sowing_date = NULL,
+                          threshold,
+                          slope = "min",
+                          parallel = FALSE) {
+
+  # Prepare data
+  dftemp <- data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
     dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
     dplyr::group_by(unique_plot) |>
     tidyr::nest()
 
-  # Apply the model
-  if(parallel){
-    availablecl <- parallel::detectCores()
-    future::plan(future::multisession, workers = round(availablecl * .75))
-  } else{
+  # Set parallel or sequential plan
+  if (parallel) {
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+  } else {
     future::plan(future::sequential)
   }
-  on.exit(future::plan(future::sequential))
+  on.exit(future::plan(future::sequential)) # Ensure plan reverts back
 
-  `%dofut%` <- doFuture::`%dofuture%`
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine=rbind) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
-    if(!is.null(sowing_date)){
-      flights <- as.POSIXlt(df$date)$yday + 1 -  (as.POSIXlt(sowing_date)$yday + 1)
-    } else {
-      flights <- as.POSIXlt(df$date)$yday + 1
-    }
-    fflight <- min(flights)
-    lflight <- max(flights) + 20
-    flights_seq <- fflight:lflight
-    y <- df |> dplyr::pull()
-
-    # create linear model
-    mod<-lm(y ~ flights)
-    # set attempts to 0
-    attempts = 0
-    # set if.false to false
-    if.false <- F
-    # while if.false is false
-    while(if.false == F){
+  # Helper function to fit model and calculate DPM
+  calculate_dpm <- function(df, flights, threshold, slope) {
+    mod <- stats::lm(df[[predictor]] ~ flights)
+    attempts <- 0
+    max_attempts <- 100
+    dpm <- NA
+    repeat {
       attempts <- attempts + 1
-      #if the number of rows in the data is greater than 7 and the number of attempts is less than 100, then run the segmented function
-      if(nrow(df) > 7 && attempts < 100){
-        #run the segmented function with the following parameters
-        seg_loop<-try(segmented::segmented(mod,
-                                           seg.Z = ~ flights,
-                                           npsi = 2,
-                                           control = segmented::seg.control(n.boot = 50, random=T, tol=0.01)),
-                      silent = T)
+      seg_model <- try(segmented::segmented(mod, seg.Z = ~flights, npsi = ifelse(nrow(df) > 7, 2, 1),
+                                            control = segmented::seg.control(n.boot = 50, random = TRUE, tol = 0.01)),
+                       silent = TRUE)
 
-        #if the segmented function returns an error, then run the lm function
-        if("try-error" %in% class(seg_loop)) {
-          #run the lm function with the following parameters
-          seg_loop<-lm(y ~ flights)
-          #create a variable called slps that is equal to the second coefficient of the lm function
-          slps <- (seg_loop$coefficients)[2]
-          #create a variable called ncpt that is equal to the first coefficient of the lm function
-          ncpt <- (seg_loop$coefficients)[1]
-          #create a variable called DPM that is equal to the difference between the thresholdold and the intercept divided by the slope
-          DPM <- (threshold - ncpt) / slps
+      if (!inherits(seg_model, "try-error") && !is.null(seg_model$psi)) {
+        slopes <- segmented::slope(seg_model)$flights
+        intercepts <- segmented::intercept(seg_model)$flights
 
-          #if the segmented function does not return an error and the psi variable is not null, then run the following code
-        } else if (!is.null(seg_loop$psi)) {
-
-          #create a variable called slps that is equal to the slope of the segmented function
-          slps <- segmented::slope(seg_loop)$flights
-          #create a variable called ncpt that is equal to the intercept of the segmented function
-          ncpt <- segmented::intercept(seg_loop)$flights
-
-          #if the vegetation index is GLI or TGI, then set the slope variable equal to the minimum slope
-          if (slope == "min") {
-            slope <- min(slps[,1])
-            #if the vegetation index is HI, then set the slope variable equal to the maximum slope
-          } else {
-            slope <- max(slps[,1])
-            #if the vegetation index is not GLI, TGI, or HI, then print an error message
-          }
-          #create a variable called slope_interc that is equal to the index of the slope variable
-          slope_interc <- which(slps[,1] == slope)
-          #create a variable called B1_interc that is equal to the intercept at the slope_interc index
-          B1_interc <- ncpt[slope_interc,1]
-
-          #create a variable called DPM that is equal to the difference between the thresholdold and the intercept divided by the slope
-          DPM <- (threshold - B1_interc) / slope
-          #if the segmented function does not return an error and the psi variable is null, then run the following code
-        } else {
-          #run the lm function with the following parameters
-          seg_loop<-lm(y ~ flights)
-          #create a variable called slps that is equal to the second coefficient of the lm function
-          slps <- (seg_loop$coefficients)[2]
-          #create a variable called ncpt that is equal to the first coefficient of the lm function
-          ncpt <- (seg_loop$coefficients)[1]
-          #create a variable called DPM that is equal to the difference between the thresholdold and the intercept divided by the slope
-          DPM <- (threshold - ncpt) / slps
-
-        }
-
-      } else {
-        seg_loop<-try(segmented::segmented(mod,
-                                           seg.Z = ~ flights,
-                                           npsi = 1,
-                                           control = segmented::seg.control(n.boot = 50, random=T, tol=0.01)),
-                      silent = T) # try to run the segmented function
-
-        if("try-error" %in% class(seg_loop)) { # if the segmented function fails, run a linear model
-          seg_loop<-lm(y ~ flights) # run a linear model
-          slps <- (seg_loop$coefficients)[2] # get the slope of the linear model
-          ncpt <- (seg_loop$coefficients)[1] # get the intercept of the linear model
-          DPM <- (threshold - ncpt) / slps # calculate the DPM
-
-        } else if (!is.null(seg_loop$psi)) {
-
-          slps <- segmented::slope(seg_loop)$flights
-          ncpt <- segmented::intercept(seg_loop)$flights
-
-          if (slope == "min") {
-            slope <- min(slps[,1])
-            #if the vegetation index is HI, then set the slope variable equal to the maximum slope
-          } else {
-            slope <- max(slps[,1])
-            #if the vegetation index is not GLI, TGI, or HI, then print an error message
-          }
-          slope_interc <- which(slps[,1] == slope)
-          B1_interc <- ncpt[slope_interc,1]
-
-          DPM <- (threshold - B1_interc) / slope
-
-        } else {
-          seg_loop<-lm(y ~ flights)
-          slps <- (seg_loop$coefficients)[2]
-          ncpt <- (seg_loop$coefficients)[1]
-          DPM <- (threshold - ncpt) / slps
-        }
+        target_slope <- if (slope == "min") min(slopes[, 1]) else max(slopes[, 1])
+        idx <- which(slopes[, 1] == target_slope)
+        dpm <- (threshold - intercepts[idx, 1]) / target_slope
+        break
+      } else if (attempts >= max_attempts || nrow(df) <= 7) {
+        dpm <- (threshold - stats::coef(mod)[1]) / stats::coef(mod)[2]
+        break
       }
-      if.false <- T
     }
-
-
-    tibble::tibble(unique_plot = dftemp$unique_plot[i],
-                   maturity = as.numeric(DPM),
-                   threshold = threshold,
-                   parms = list(modeladj = seg_loop))
+    list(dpm = dpm, model = ifelse(inherits(seg_model, "try-error"), mod, seg_model))
   }
-  results <-
-    results_list |>
+
+  # Process each nested dataset in parallel
+  `%dofut%` <- doFuture::`%dofuture%`
+  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = rbind) %dofut% {
+    df <- as.data.frame(dftemp$data[[i]])
+    flights <- as.POSIXlt(df[[flight_date]])$yday + 1
+    if (!is.null(sowing_date)) {
+      flights <- flights - (as.POSIXlt(sowing_date)$yday + 1)
+    }
+    model_result <- calculate_dpm(df, flights, threshold, slope)
+
+    tibble::tibble(
+      unique_plot = dftemp$unique_plot[i],
+      maturity = as.numeric(model_result$dpm),
+      threshold = threshold,
+      parms = list(modeladj = model_result$model)
+    )
+  }
+
+  # Post-process results
+  results <- results_list |>
     tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
+
   return(results)
 }
+
 
 
 
@@ -1141,6 +1060,80 @@ help_mod_segmented <- function(){
 }
 
 
+############## SEGMENTED MODEL 2 ################
+mod_segmented2 <- function(data,
+                           flight_date = "date",
+                           predictor = "median.NDVI",
+                           sowing_date = NULL,
+                           parallel = FALSE) {
+
+  # Prepare data
+  dftemp <- data |>
+    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::group_by(unique_plot) |>
+    tidyr::nest()
+
+  # Set parallel or sequential plan
+  if (parallel) {
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+  } else {
+    future::plan(future::sequential)
+  }
+  on.exit(future::plan(future::sequential)) # Ensure plan reverts back
+
+  # Helper function to fit segmented regression model and calculate DPM
+  calculate_dpm <- function(y, flights) {
+    mod <- stats::lm(y ~ flights)  # Initial linear model
+    seg_model <- try(segmented::segmented(
+      mod,
+      seg.Z = ~flights,
+      npsi = 1,
+      control = segmented::seg.control(n.boot = 50, random = TRUE, tol = 0.01)
+    ), silent = TRUE)
+
+    if (!inherits(seg_model, "try-error") && !is.null(seg_model$psi)) {
+      # Extract breakpoint(s)
+      breakpoints <- seg_model$psi[, "Est."]
+
+      # Extract slopes and intercepts
+      slopes <- segmented::slope(seg_model)$flights[,1]
+      intercepts <- segmented::intercept(seg_model)$flights[, 1]
+
+      # Return results
+      list(dpm = breakpoints, model = seg_model, coefs = list(slopes = slopes, intercepts = intercepts))
+    } else {
+      # Fallback to linear regression if segmentation fails
+      list(dpm = NA,  model = NA, coefs = NA)
+    }
+  }
+
+  # Process each nested dataset in parallel
+  `%dofut%` <- doFuture::`%dofuture%`
+  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = rbind) %dofut% {
+    df <- as.data.frame(dftemp$data[[i]])
+    flights <- as.POSIXlt(df[[flight_date]])$yday + 1
+    if (!is.null(sowing_date)) {
+      flights <- flights - (as.POSIXlt(sowing_date)$yday + 1)
+    }
+    model_result <- calculate_dpm(df[[predictor]], flights)
+
+    tibble::tibble(
+      unique_plot = dftemp$unique_plot[i],
+      maturity = as.numeric(model_result$dpm),
+      parms = list(modeladj = model_result$model,
+                   coefs = model_result$coefs)
+    )
+  }
+
+  # Post-process results
+  results <-
+    results_list |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+    tidyr::nest(parms = parms)
+
+  return(results)
+}
 
 
 
@@ -1176,8 +1169,7 @@ mod_weibull <- function(data,
 
   # Parallel or Sequential Plan
   if (parallel) {
-    availablecl <- parallel::detectCores()
-    future::plan(future::multisession, workers = round(availablecl * 0.75))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
   } else {
     future::plan(future::sequential)
   }
@@ -1226,53 +1218,53 @@ mod_weibull <- function(data,
                  Drop = coefs[[2]],
                  lrc = coefs[[3]],
                  pwr = coefs[[4]],
-      interval = c(fflight, lflight),
-      maximum = TRUE)
+                 interval = c(fflight, lflight),
+                 maximum = TRUE)
 
-    # maximum acceleration
-    sdopt_result <-
-      optimize(sdfun_weibull,
-               Asym = coefs[[1]],
-               Drop = coefs[[2]],
-               lrc = coefs[[3]],
-               pwr = coefs[[4]],
-               interval = c(fflight, lflight),
-               maximum = TRUE)
+      # maximum acceleration
+      sdopt_result <-
+        optimize(sdfun_weibull,
+                 Asym = coefs[[1]],
+                 Drop = coefs[[2]],
+                 lrc = coefs[[3]],
+                 pwr = coefs[[4]],
+                 interval = c(fflight, lflight),
+                 maximum = TRUE)
 
-    # maximum deceleration
-    sdopt_result2 <-
-      optimize(sdfun_weibull,
-               Asym = coefs[[1]],
-               Drop = coefs[[2]],
-               lrc = coefs[[3]],
-               pwr = coefs[[4]],
-               interval = c(fflight, lflight),
-               maximum = FALSE)
+      # maximum deceleration
+      sdopt_result2 <-
+        optimize(sdfun_weibull,
+                 Asym = coefs[[1]],
+                 Drop = coefs[[2]],
+                 lrc = coefs[[3]],
+                 pwr = coefs[[4]],
+                 interval = c(fflight, lflight),
+                 maximum = FALSE)
 
-    # Return results
-    tibble::tibble(
-      unique_plot = dftemp$unique_plot[i],
-      model = "Weibull",
-      asymptote = coefs[[1]],
-      auc = int1$value,
-      xinfp = fdopt_result$maximum,
-      yinfp = fdopt_result$objective,
-      xmace = sdopt_result$maximum,
-      ymace = sdopt_result$objective,
-      xmdes = sdopt_result2$minimum,
-      ymdes = sdopt_result2$objective,
-      aic = gofval[[1]],
-      rmse = gofval[[2]],
-      mae = gofval[[3]],
-      parms = list(model = modfun_weibull,
-                   modeladj = model,
-                   fd = fdfun_weibull,
-                   sd = sdfun_weibull,
-                   coefs = list(Asym = coefs[[1]],
-                                Drop = coefs[[2]],
-                                lrc = coefs[[3]],
-                                pwr = coefs[[4]]), xmin = fflight, xmax = lflight)
-    )
+      # Return results
+      tibble::tibble(
+        unique_plot = dftemp$unique_plot[i],
+        model = "Weibull",
+        asymptote = coefs[[1]],
+        auc = int1$value,
+        xinfp = fdopt_result$maximum,
+        yinfp = fdopt_result$objective,
+        xmace = sdopt_result$maximum,
+        ymace = sdopt_result$objective,
+        xmdes = sdopt_result2$minimum,
+        ymdes = sdopt_result2$objective,
+        aic = gofval[[1]],
+        rmse = gofval[[2]],
+        mae = gofval[[3]],
+        parms = list(model = modfun_weibull,
+                     modeladj = model,
+                     fd = fdfun_weibull,
+                     sd = sdfun_weibull,
+                     coefs = list(Asym = coefs[[1]],
+                                  Drop = coefs[[2]],
+                                  lrc = coefs[[3]],
+                                  pwr = coefs[[4]]), xmin = fflight, xmax = lflight)
+      )
     }, error = function(e) {
       # Return NA values if model fails
       tibble::tibble(
@@ -1293,7 +1285,7 @@ mod_weibull <- function(data,
       )
     })
 
-result
+    result
   }
   results <-
     results_list |>
@@ -1398,8 +1390,7 @@ mod_gompertz <- function(data,
 
   # Parallel or Sequential Plan
   if (parallel) {
-    availablecl <- parallel::detectCores()
-    future::plan(future::multisession, workers = round(availablecl * 0.75))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
   } else {
     future::plan(future::sequential)
   }
@@ -1601,8 +1592,7 @@ mod_logistic_3P <- function(data,
 
   # Parallel or Sequential Plan
   if (parallel) {
-    availablecl <- parallel::detectCores()
-    future::plan(future::multisession, workers = round(availablecl * 0.75))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
   } else {
     future::plan(future::sequential)
   }
@@ -1793,8 +1783,7 @@ mod_logistic_4P <- function(data,
 
   # Parallel or Sequential Plan
   if (parallel) {
-    availablecl <- parallel::detectCores()
-    future::plan(future::multisession, workers = round(availablecl * 0.75))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
   } else {
     future::plan(future::sequential)
   }
@@ -2032,8 +2021,7 @@ mod_vonbert <- function(data,
 
   # Parallel or Sequential Plan
   if (parallel) {
-    availablecl <- parallel::detectCores()
-    future::plan(future::multisession, workers = round(availablecl * 0.75))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
   } else {
     future::plan(future::sequential)
   }
@@ -2259,9 +2247,8 @@ mod_exponential <- function(data,
     tidyr::nest()
 
   # Parallel or Sequential Plan
-  if (parallel) {
-    availablecl <- parallel::detectCores()
-    future::plan(future::multisession, workers = round(availablecl * 0.75))
+  if(parallel){
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
   } else {
     future::plan(future::sequential)
   }
@@ -2495,8 +2482,7 @@ mod_janoschek <- function(data,
 
   # Parallel or Sequential Plan
   if (parallel) {
-    availablecl <- parallel::detectCores()
-    future::plan(future::multisession, workers = round(availablecl * 0.75))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
   } else {
     future::plan(future::sequential)
   }
@@ -2746,8 +2732,7 @@ mod_transgompertz <- function(data,
 
   # Parallel or Sequential Plan
   if (parallel) {
-    availablecl <- parallel::detectCores()
-    future::plan(future::multisession, workers = round(availablecl * 0.75))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
   } else {
     future::plan(future::sequential)
   }
@@ -3004,8 +2989,7 @@ mod_sinusoidal <- function(data,
 
   # Parallel or Sequential Plan
   if (parallel) {
-    availablecl <- parallel::detectCores()
-    future::plan(future::multisession, workers = round(availablecl * 0.75))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
   } else {
     future::plan(future::sequential)
   }

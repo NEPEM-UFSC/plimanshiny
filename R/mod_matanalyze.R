@@ -59,7 +59,8 @@ mod_matanalyze_ui <- function(id){
               label = "Method for prediction",
               choices = c("Logistic Model L3",
                           "Logistic Model L4",
-                          "Logistic Model L5")
+                          "Logistic Model L5",
+                          "Segmented Regression")
             )
           ),
           conditionalPanel(
@@ -419,7 +420,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
       p <-
         ggplot(dfactive$df, aes(x = .data[[input$flightdate]], y = .data[[input$vegetindex]], group = 1)) +
         geom_boxplot(fill = "#28a745") +
-        geom_smooth(method = 'loess', formula = 'y ~ x') +
+        geom_smooth(method = 'loess', formula = 'y ~ x', se = FALSE) +
         labs(x = input$flightdate, y = input$vegetindex) +
         theme_bw(base_size = 18) +
         theme(panel.grid.minor = element_blank())
@@ -472,10 +473,14 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
                       span = input$span,
                       parallel = input$parallel)
 
-        } else if(input$method == "Logistic Ensamble"){
-          # modl <- predict_mat_ensamble
-
         } else if(input$method == "Segmented Regression"){
+          dfactive$df |>
+            mod_segmented2(predictor = input$vegetindex,
+                           flight_date = input$flightdate,
+                           sowing_date = input$sowing,
+                           parallel = input$parallel)
+
+        } else if(input$method == "Segmented Regression (Volpato et al., 2021)"){
           # modl <-
           dfactive$df |>
             mod_segmented(predictor = input$vegetindex,
@@ -490,7 +495,9 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
         req(modl())
         dfs[[input$saveto]] <- create_reactval(input$saveto, modl() |> dplyr::select(-parms))
       })
+
       observe({
+        req(modl())
         sendSweetAlert(
           session = session,
           title = "Prediction done",
@@ -521,11 +528,6 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
           roundcols(digits = 3) |>
           render_reactable()
       })
-
-
-
-
-
 
 
 
@@ -575,6 +577,8 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
             dplyr::mutate(doy = as.POSIXlt(doy)$yday + 1 -  (as.POSIXlt(input$sowing)$yday + 1)) |>
             dplyr::filter(!!dplyr::sym("unique_plot") %in% input$fittedmodel)
 
+          req(modl())
+
           dfpars <-
             modl() |>
             dplyr::filter(unique_plot == input$fittedmodel)
@@ -612,73 +616,97 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
           #
           # Plot the fitted models
           observe({
-            output$fittedplot <- renderPlot({
+            if(input$method != "Segmented Regression"){
+              output$fittedplot <- renderPlot({
 
-              df_int <-
-                dplyr::tibble(flights = seq(dfpars$parms[[1]][[1]]$xmin, dfpars$parms[[1]][[1]]$xmax, length.out = 1000),
-                              class = ifelse(flights < dfpars$heading, "Vegetative", "Reproductive")) |>
-                as.data.frame()
-              ypred <- predict(dfpars$parms[[1]][[1]]$modeladj, newdata = df_int)
-              df_int <- dplyr::bind_cols(df_int, data.frame(y = ypred))
+                df_int <-
+                  dplyr::tibble(flights = seq(dfpars$parms[[1]][[1]]$xmin, dfpars$parms[[1]][[1]]$xmax, length.out = 1000),
+                                class = ifelse(flights < dfpars$heading, "Vegetative", "Reproductive")) |>
+                  as.data.frame()
+                ypred <- predict(dfpars$parms[[1]][[1]]$modeladj, newdata = df_int)
+                df_int <- dplyr::bind_cols(df_int, data.frame(y = ypred))
 
 
-              pmod <-
-                ggplot() +
-                geom_point(aes(x = doy, y = vindex),
-                           data = dfplot) +
-                stat_function(fun = dfpars$parms[[1]][[1]]$model,
-                              xlim = c(dfpars$parms[[1]][[1]]$xmin, dfpars$parms[[1]][[1]]$xmax),
-                              args = dfpars$parms[[1]][[1]]$coefs) +
-                geom_ribbon(data = df_int,
-                            aes(x = flights,
-                                ymin = min(y),
-                                ymax =  y,
-                                fill = class),
-                            alpha = 0.5) +
-                geom_vline(aes(xintercept = dfpars$heading), color = "red") +
-                geom_vline(xintercept = dfpars$maturity, color = "salmon") +
-                labs(x = "Days after sowing",
-                     y = input$vegetindex,
-                     fill = "Phase") +
-                theme_bw(base_size = 18) +
-                theme(panel.grid.minor = element_blank(),
-                      legend.position = "bottom")
+                pmod <-
+                  ggplot() +
+                  geom_point(aes(x = doy, y = vindex),
+                             data = dfplot) +
+                  stat_function(fun = dfpars$parms[[1]][[1]]$model,
+                                xlim = c(dfpars$parms[[1]][[1]]$xmin, dfpars$parms[[1]][[1]]$xmax),
+                                args = dfpars$parms[[1]][[1]]$coefs) +
+                  geom_ribbon(data = df_int,
+                              aes(x = flights,
+                                  ymin = min(y),
+                                  ymax =  y,
+                                  fill = class),
+                              alpha = 0.5) +
+                  geom_vline(aes(xintercept = dfpars$heading), color = "red") +
+                  geom_vline(xintercept = dfpars$maturity, color = "salmon") +
+                  labs(x = "Days after sowing",
+                       y = input$vegetindex,
+                       fill = "Phase") +
+                  theme_bw(base_size = 18) +
+                  theme(panel.grid.minor = element_blank(),
+                        legend.position = "bottom")
 
-              fd <-
-                ggplot() +
-                stat_function(fun = dfpars$parms[[1]][[1]]$fd,
-                              xlim = c(dfpars$parms[[1]][[1]]$xmin, dfpars$parms[[1]][[1]]$xmax),
-                              args = dfpars$parms[[1]][[1]]$coefs) +
-                labs(x = "Days after sowing",
-                     y = "First derivative") +
-                geom_vline(aes(xintercept = dfpars$heading), color = "red") +
-                geom_vline(xintercept = dfpars$maturity, color = "salmon") +
-                theme_bw(base_size = 18) +
-                theme(panel.grid.minor = element_blank())
-              #
-              sd <-
-                ggplot() +
-                stat_function(fun = dfpars$parms[[1]][[1]]$sd,
-                              xlim = c(dfpars$parms[[1]][[1]]$xmin, dfpars$parms[[1]][[1]]$xmax),
-                              args = dfpars$parms[[1]][[1]]$coefs) +
-                labs(x =  "Days after sowing",
-                     y = "Second derivative") +
-                geom_vline(aes(xintercept = dfpars$heading), color = "red") +
-                geom_vline(xintercept = dfpars$maturity, color = "salmon") +
-                theme_bw(base_size = 18) +
-                theme(panel.grid.minor = element_blank())
+                fd <-
+                  ggplot() +
+                  stat_function(fun = dfpars$parms[[1]][[1]]$fd,
+                                xlim = c(dfpars$parms[[1]][[1]]$xmin, dfpars$parms[[1]][[1]]$xmax),
+                                args = dfpars$parms[[1]][[1]]$coefs) +
+                  labs(x = "Days after sowing",
+                       y = "First derivative") +
+                  geom_vline(aes(xintercept = dfpars$heading), color = "red") +
+                  geom_vline(xintercept = dfpars$maturity, color = "salmon") +
+                  theme_bw(base_size = 18) +
+                  theme(panel.grid.minor = element_blank())
+                #
+                sd <-
+                  ggplot() +
+                  stat_function(fun = dfpars$parms[[1]][[1]]$sd,
+                                xlim = c(dfpars$parms[[1]][[1]]$xmin, dfpars$parms[[1]][[1]]$xmax),
+                                args = dfpars$parms[[1]][[1]]$coefs) +
+                  labs(x =  "Days after sowing",
+                       y = "Second derivative") +
+                  geom_vline(aes(xintercept = dfpars$heading), color = "red") +
+                  geom_vline(xintercept = dfpars$maturity, color = "salmon") +
+                  theme_bw(base_size = 18) +
+                  theme(panel.grid.minor = element_blank())
 
-              output$fderivate <- renderPlot({
-                fd
+                output$fderivate <- renderPlot({
+                  fd
+                })
+
+                output$sderivate <- renderPlot({
+                  sd
+                })
+                pmod
               })
+            } else{
+              output$fittedplot <- renderPlot({
 
-              output$sderivate <- renderPlot({
-                sd
+                ggplot() +
+                  geom_point(aes(x = doy, y = vindex),
+                             data = dfplot) +
+                  # add two lines from segmented regression
+                  geom_abline(intercept = dfpars$parms[[1]][[1]]$coefs$intercepts[1],
+                              slope = dfpars$parms[[1]][[1]]$coefs$slopes[1],
+                              color = "red") +
+                  geom_abline(intercept = dfpars$parms[[1]][[1]]$coefs$intercepts[2],
+                              slope = dfpars$parms[[1]][[1]]$coefs$slopes[2],
+                              color = "red") +
+                  geom_vline(xintercept = dfpars$maturity, color = "salmon", linetype = 2) +
+                  labs(x = "Days after sowing",
+                       y = input$vegetindex,
+                       fill = "Phase") +
+                  theme_bw(base_size = 18) +
+                  theme(panel.grid.minor = element_blank(),
+                        legend.position = "bottom")
+
               })
-              pmod
-            })
-
+            }
           })
+
           waiter_hide()
         }
 
