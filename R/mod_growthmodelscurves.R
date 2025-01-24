@@ -21,9 +21,10 @@ mod_growthmodelscurves_ui <- function(id) {
             ns("models"),
             label = "Select a model",
             choices = list(
-              Sigmoid = c("Logistic 3P", "Logistic 4P", "Gompertz", "Trans-Gompertz", "Weibull"),
-              Exponential = c("Von Bertalanffy", "Exponential", "Janoschek"),
-              Sinusoidal = c("Sinusoidal")
+              Sigmoid = c("Logistic 3P", "Logistic 4P", "Gompertz", "Trans-Gompertz", "Weibull", "Beta growth", "Hill"),
+              Exponential = c("Von Bertalanffy", "Exponential", "Janoschek", "Asymptotic", "Exponential-Plateau", "Expolinear"),
+              Peak = c("Asymmetric Gaussian", ""),
+              Cyclical = c("Sinusoidal", "")
             ),
             options = list(
               `actions-box` = TRUE,
@@ -166,8 +167,8 @@ mod_growthmodelscurves_ui <- function(id) {
             condition = "input.models == 'Logistic 4P'", ns = ns,
             # slider for b3
             sliderInput(
-              ns("b0l4"),
-              label = "b0",
+              ns("al4"),
+              label = "a",
               min = -1,
               max = 1,
               value = -0.1,
@@ -175,8 +176,8 @@ mod_growthmodelscurves_ui <- function(id) {
             ),
             # slider for b1
             sliderInput(
-              ns("b1l4"),
-              label = "b1",
+              ns("bl4"),
+              label = "b",
               min = 0,
               max = 1,
               value = 0.05,
@@ -184,19 +185,19 @@ mod_growthmodelscurves_ui <- function(id) {
             ),
             # slider for b2
             sliderInput(
-              ns("b2l4"),
-              label = "b2",
-              min = 0,
-              max = 5,
-              value = 1,
-              step = 0.001
-            ),
-            sliderInput(
-              ns("b3l4"),
-              label = "b3",
+              ns("xmidl4"),
+              label = "xmid",
               min = 0,
               max = 150,
               value = 75,
+              step = 0.001
+            ),
+            sliderInput(
+              ns("scall4"),
+              label = "scal",
+              min = 1,
+              max = 50,
+              value = 15,
               step = 0.001
             )
           ),
@@ -271,6 +272,60 @@ mod_growthmodelscurves_ui <- function(id) {
               min = -10,
               max = 10,
               value = 0,
+              step = 0.1
+            )
+          ),
+          conditionalPanel(
+            condition = "input.models == 'Beta growth'", ns = ns,
+            sliderInput(
+              ns("asymbeta"),
+              label = "Asymptote",
+              min = 0,
+              max = 100,
+              value = 40,
+              step = 0.1
+            ),
+            sliderInput(
+              ns("xebeta"),
+              label = "xe (Time at maximum growth",
+              min = 0,
+              max = 230,
+              value = 50,
+              step = 0.001
+            ),
+            sliderInput(
+              ns("xmbeta"),
+              label = "xm (Time at which half of the maximum growth is reached)",
+              min = 10,
+              max = 500,
+              value = 200,
+              step = 0.1
+            )
+          ),
+          conditionalPanel(
+            condition = "input.models == 'Hill'", ns = ns,
+            sliderInput(
+              ns("Kahill"),
+              label = "Half-saturation, where f(x) = a/2",
+              min = 0,
+              max = 200,
+              value = 75,
+              step = 0.1
+            ),
+            sliderInput(
+              ns("nhill"),
+              label = "Hill coefficient",
+              min = 0,
+              max = 20,
+              value = 5,
+              step = 0.001
+            ),
+            sliderInput(
+              ns("ahill"),
+              label = "a (asymptote)",
+              min = 0,
+              max = 5,
+              value = 1,
               step = 0.1
             )
           ),
@@ -364,6 +419,130 @@ mod_growthmodelscurves_ui <- function(id) {
               value = 0,
               step = 0.01
             )
+          ),
+          conditionalPanel(
+            condition = "input.models == 'Asymptotic'", ns = ns,
+            sliderInput(
+              ns("Asymasym"),
+              label = "Asym",
+              min = 0,
+              max = 100,
+              value = 10,
+              step = 0.01
+            ),
+            sliderInput(
+              ns("R0asym"),
+              label = "R0",
+              min = 0,
+              max = 5,
+              value = 0,
+              step = 0.1
+            ),
+            sliderInput(
+              ns("lrcasym"),
+              label = "lrc",
+              min = -5,
+              max = 5,
+              value = -3,
+              step = 0.01
+            )
+          ),
+          conditionalPanel(
+            condition = "input.models == 'Asymmetric Gaussian'", ns = ns,
+            sliderInput(
+              ns("etaagaus"),
+              label = "eta",
+              min = 0,
+              max = 100,
+              value = 10,
+              step = 0.01
+            ),
+            sliderInput(
+              ns("betaagaus"),
+              label = "beta",
+              min = 0,
+              max = 5,
+              value = 2,
+              step = 0.1
+            ),
+            sliderInput(
+              ns("deltaagaus"),
+              label = "delta",
+              min = 1,
+              max = 500,
+              value = 100,
+              step = 0.01
+            ),
+            sliderInput(
+              ns("sigma1"),
+              label = "sigma1",
+              min = 1,
+              max = 50,
+              value = 2,
+              step = 0.01
+            ),
+            sliderInput(
+              ns("sigma2"),
+              label = "sigma1",
+              min = 1,
+              max = 50,
+              value = 20,
+              step = 0.01
+            )
+          ),
+          conditionalPanel(
+            condition = "input.models == 'Exponential-Plateau'", ns = ns,
+            sliderInput(
+              ns("aplat"),
+              label = "a (value at x = 0)",
+              min = 0,
+              max = 1,
+              value = 0.05,
+              step = 0.001
+            ),
+            sliderInput(
+              ns("cplat"),
+              label = "c (exponential rate)",
+              min = 0,
+              max = 1,
+              value = 0.05,
+              step = 0.001
+            ),
+            sliderInput(
+              ns("xsplat"),
+              label = "xs (breakpoint at which the plateau starts)",
+              min = 1,
+              max = 100,
+              value = 80,
+              step = 0.001
+            )
+          ),
+          conditionalPanel(
+            condition = "input.models == 'Expolinear'", ns = ns,
+            sliderInput(
+              ns("cmexplin"),
+              label = "cm (maximum growth during the linear phase)",
+              min = 0,
+              max = 1,
+              value = 0.5,
+              step = 0.001
+            ),
+            sliderInput(
+              ns("rmexplin"),
+              label = "rm (maximum growth during the exponential phase)",
+              min = 0,
+              max = 1,
+              value = 0.1,
+              step = 0.001
+            ),
+            sliderInput(
+              ns("tbexplin"),
+              label = "tb (breakpoint at which the plateau starts)",
+              min = 1,
+              max = 200,
+              value = 150,
+              step = 0.001
+            )
           )
         )
 
@@ -450,6 +629,30 @@ mod_growthmodelscurves_server <- function(id){
         eq <- help_mod_sinusoidal_eq()
         fd <- help_mod_sinusoidal_fd()
         sd <- help_mod_sinusoidal_sd()
+      } else if (input$models == "Asymptotic") {
+        eq <- help_mod_asym_eq()
+        fd <- help_mod_asym_fd()
+        sd <- help_mod_asym_sd()
+      } else if (input$models == "Asymmetric Gaussian") {
+        eq <- help_mod_agaus_eq()
+        fd <- help_mod_agaus_fd()
+        sd <- help_mod_agaus_sd()
+      } else if (input$models == "Beta growth") {
+        eq <- help_mod_beta_eq()
+        fd <- help_mod_beta_fd()
+        sd <- help_mod_beta_sd()
+      } else if (input$models == "Hill") {
+        eq <- help_mod_hill_eq()
+        fd <- help_mod_hill_fd()
+        sd <- help_mod_hill_sd()
+      } else if (input$models == "Exponential-Plateau") {
+        eq <- help_mod_exponential_plateau_eq()
+        fd <- help_mod_exponential_plateau_fd()
+        sd <- help_mod_exponential_plateau_sd()
+      } else if (input$models == "Expolinear") {
+        eq <- help_mod_exponential_linear_eq()
+        fd <- help_mod_exponential_linear_fd()
+        sd <- help_mod_exponential_linear_sd()
       }
       div(
         style = "font-family: Arial, sans-serif; line-height: 1.5;",
@@ -484,7 +687,7 @@ mod_growthmodelscurves_server <- function(id){
           stat_function(
             fun = modfun_L4,
             xlim = c(input$range[1], input$range[2]),
-            args = list(b0 = input$b0l4, b1 = input$b1l4, b2 = input$b2l4, b3 = input$b3l4),
+            args = list(a = input$al4, b = input$bl4, xmid = input$xmidl4, scal = input$scall4),
             linewidth = 1.5,
             n = 500
           ) +
@@ -597,9 +800,88 @@ mod_growthmodelscurves_server <- function(id){
                x = "Time",
                y = "Response") +
           theme_minimal(base_size = 20)
+      } else if (input$models == "Asymptotic") {
+        ggplot() +
+          stat_function(
+            fun = modfun_asym,
+            xlim = c(input$range[1], input$range[2]),
+            args = list(Asym = input$Asymasym, R0 = input$R0asym, lrc = input$lrcasym),
+            linewidth = 1.5,
+            n = 500
+          ) +
+          labs(title = "Asymptotic model",
+               x = "Time",
+               y = "Response") +
+          theme_minimal(base_size = 20)
+      } else if (input$models == "Asymmetric Gaussian") {
+        ggplot() +
+          stat_function(
+            fun = modfun_agaus,
+            xlim = c(input$range[1], input$range[2]),
+            args = list(eta = input$etaagaus, beta = input$betaagaus, delta = input$deltaagaus, sigma1 = input$sigma1, sigma2 = input$sigma2),
+            linewidth = 1.5,
+            n = 500
+          ) +
+          labs(title = "Asymmetric Gaussian",
+               x = "Time",
+               y = "Response") +
+          theme_minimal(base_size = 20)
+      } else if (input$models == "Beta growth") {
+        ggplot() +
+          stat_function(
+            fun = modfun_beta,
+            xlim = c(input$range[1], input$range[2]),
+            args = list(asym = input$asymbeta, xm = input$xmbeta, xe = input$xebeta),
+            linewidth = 1.5,
+            n = 500
+          ) +
+          labs(title = "Beta growth",
+               x = "Time",
+               y = "Response") +
+          theme_minimal(base_size = 20)
+      } else if (input$models == "Hill") {
+        ggplot() +
+          stat_function(
+            fun = modfun_hill,
+            xlim = c(input$range[1], input$range[2]),
+            args = list(Ka = input$Kahill, n = input$nhill, a = input$ahill),
+            linewidth = 1.5,
+            n = 500
+          ) +
+          labs(title = "Hill curve",
+               x = "Time",
+               y = "Response") +
+          theme_minimal(base_size = 20)
+      } else if (input$models == "Exponential-Plateau") {
+        ggplot() +
+          stat_function(
+            fun = modfun_exponential_plateau,
+            xlim = c(input$range[1], input$range[2]),
+            args = list(a = input$aplat, c = input$cplat, xs = input$xsplat),
+            linewidth = 1.5,
+            n = 500
+          ) +
+          labs(title = "Exponential-Plateau",
+               x = "Time",
+               y = "Response") +
+          theme_minimal(base_size = 20)
+      } else if (input$models == "Expolinear") {
+        ggplot() +
+          stat_function(
+            fun = modfun_exponential_linear,
+            xlim = c(input$range[1], input$range[2]),
+            args = list(cm = input$cmexplin, rm = input$rmexplin, tb = input$tbexplin),
+            linewidth = 1.5,
+            n = 500
+          ) +
+          labs(title = "Expolinear",
+               x = "Time",
+               y = "Response") +
+          theme_minimal(base_size = 20)
       }
     })
 
+    ################### First derivative ###################
 
     output$fdcurve <- renderPlot({
       if(input$models == "Logistic 3P"){
@@ -622,7 +904,7 @@ mod_growthmodelscurves_server <- function(id){
           stat_function(
             fun = fdfun_L4,
             xlim = c(input$range[1], input$range[2]),
-            args = list(b0 = input$b0l4, b1 = input$b1l4, b2 = input$b2l4, b3 = input$b3l4),
+            args = list(a = input$al4, b = input$bl4, xmid = input$xmidl4, scal = input$scall4),
             linewidth = 1.5,
             n = 500
           ) +
@@ -753,9 +1035,100 @@ mod_growthmodelscurves_server <- function(id){
             y = "Growth Rate"
           ) +
           theme_minimal(base_size = 20)
+      } else if (input$models == "Asymptotic") {
+        ggplot() +
+          stat_function(
+            fun = fdfun_asym,
+            xlim = c(input$range[1], input$range[2]),
+            args = list(Asym = input$Asymasym, R0 = input$R0asym, lrc = input$lrcasym),
+            linewidth = 1.5,
+            n = 500
+          ) +
+          labs(
+            title = "First Derivative",
+            x = "Time",
+            y = "Growth Rate"
+          ) +
+          theme_minimal(base_size = 20)
+      } else if (input$models == "Asymmetric Gaussian") {
+        ggplot() +
+          stat_function(
+            fun = fdfun_agaus,
+            xlim = c(input$range[1], input$range[2]),
+            args = list(eta = input$etaagaus, beta = input$betaagaus, delta = input$deltaagaus, sigma1 = input$sigma1, sigma2 = input$sigma2),
+            linewidth = 1.5,
+            n = 500
+          ) +
+          labs(
+            title = "First Derivative",
+            x = "Time",
+            y = "Growth Rate"
+          ) +
+          theme_minimal(base_size = 20)
+      } else if (input$models == "Beta growth") {
+        ggplot() +
+          stat_function(
+            fun = fdfun_beta,
+            xlim = c(input$range[1], input$range[2]),
+            args = list(asym = input$asymbeta, xm = input$xmbeta, xe = input$xebeta),
+            linewidth = 1.5,
+            n = 500
+          ) +
+          labs(
+            title = "First Derivative",
+            x = "Time",
+            y = "Growth Rate"
+          ) +
+          theme_minimal(base_size = 20)
+      } else if (input$models == "Hill") {
+        ggplot() +
+          stat_function(
+            fun = fdfun_hill,
+            xlim = c(input$range[1], input$range[2]),
+            args = list(Ka = input$Kahill, n = input$nhill, a = input$ahill),
+            linewidth = 1.5,
+            n = 500
+          ) +
+          labs(
+            title = "First Derivative",
+            x = "Time",
+            y = "Growth Rate"
+          ) +
+          theme_minimal(base_size = 20)
+      } else if (input$models == "Exponential-Plateau") {
+        ggplot() +
+          stat_function(
+            fun = fdfun_exponential_plateau,
+            xlim = c(input$range[1], input$range[2]),
+            args = list(a = input$aplat, c = input$cplat, xs = input$xsplat),
+            linewidth = 1.5,
+            n = 500
+          ) +
+          labs(
+            title = "First Derivative",
+            x = "Time",
+            y = "Growth Rate"
+          ) +
+          theme_minimal(base_size = 20)
+      } else if (input$models == "Expolinear") {
+        ggplot() +
+          stat_function(
+            fun = fdfun_exponential_linear,
+            xlim = c(input$range[1], input$range[2]),
+            args = list(cm = input$cmexplin, rm = input$rmexplin, tb = input$tbexplin),
+            linewidth = 1.5,
+            n = 500
+          ) +
+          labs(
+            title = "First Derivative",
+            x = "Time",
+            y = "Growth Rate"
+          ) +
+          theme_minimal(base_size = 20)
       }
     })
 
+    ######################## seconde derivative  #####################
     output$sdcurve <- renderPlot({
       if(input$models == "Logistic 3P"){
         ggplot() +
@@ -777,7 +1150,7 @@ mod_growthmodelscurves_server <- function(id){
           stat_function(
             fun = sdfun_L4,
             xlim = c(input$range[1], input$range[2]),
-            args = list(b0 = input$b0l4, b1 = input$b1l4, b2 = input$b2l4, b3 = input$b3l4),
+            args = list(a = input$al4, b = input$bl4, xmid = input$xmidl4, scal = input$scall4),
             linewidth = 1.5,
             n = 500
           ) +
@@ -899,6 +1272,96 @@ mod_growthmodelscurves_server <- function(id){
             fun = sdfun_sinusoidal,
             xlim = c(input$range[1], input$range[2]),
             args = list(y0 = input$y0sin, a = input$asin, b = input$bsin, c = input$csin),
+            linewidth = 1.5,
+            n = 500
+          ) +
+          labs(
+            title = "Second Derivative",
+            x = "Time",
+            y = "Acceleration"
+          ) +
+          theme_minimal(base_size = 20)
+      } else if (input$models == "Asymptotic") {
+        ggplot() +
+          stat_function(
+            fun = sdfun_asym,
+            xlim = c(input$range[1], input$range[2]),
+            args = list(Asym = input$Asymasym, R0 = input$R0asym, lrc = input$lrcasym),
+            linewidth = 1.5,
+            n = 500
+          ) +
+          labs(
+            title = "Second Derivative",
+            x = "Time",
+            y = "Acceleration"
+          ) +
+          theme_minimal(base_size = 20)
+      } else if (input$models == "Asymmetric Gaussian") {
+        ggplot() +
+          stat_function(
+            fun = sdfun_agaus,
+            xlim = c(input$range[1], input$range[2]),
+            args = list(eta = input$etaagaus, beta = input$betaagaus, delta = input$deltaagaus, sigma1 = input$sigma1, sigma2 = input$sigma2),
+            linewidth = 1.5,
+            n = 500
+          ) +
+          labs(
+            title = "Second Derivative",
+            x = "Time",
+            y = "Acceleration"
+          ) +
+          theme_minimal(base_size = 20)
+      } else if (input$models == "Beta growth") {
+        ggplot() +
+          stat_function(
+            fun = sdfun_beta,
+            xlim = c(input$range[1], input$range[2]),
+            args = list(asym = input$asymbeta, xm = input$xmbeta, xe = input$xebeta),
+            linewidth = 1.5,
+            n = 500
+          ) +
+          labs(
+            title = "Second Derivative",
+            x = "Time",
+            y = "Acceleration"
+          ) +
+          theme_minimal(base_size = 20)
+      } else if (input$models == "Hill") {
+        ggplot() +
+          stat_function(
+            fun = sdfun_hill,
+            xlim = c(input$range[1], input$range[2]),
+            args = list(Ka = input$Kahill, n = input$nhill, a = input$ahill),
+            linewidth = 1.5,
+            n = 500
+          ) +
+          labs(
+            title = "Second Derivative",
+            x = "Time",
+            y = "Acceleration"
+          ) +
+          theme_minimal(base_size = 20)
+      } else if (input$models == "Exponential-Plateau") {
+        ggplot() +
+          stat_function(
+            fun = sdfun_exponential_plateau,
+            xlim = c(input$range[1], input$range[2]),
+            args = list(a = input$aplat, c = input$cplat, xs = input$xsplat),
+            linewidth = 1.5,
+            n = 500
+          ) +
+          labs(
+            title = "Second Derivative",
+            x = "Time",
+            y = "Acceleration"
+          ) +
+          theme_minimal(base_size = 20)
+      } else if (input$models == "Expolinear") {
+        ggplot() +
+          stat_function(
+            fun = sdfun_exponential_linear,
+            xlim = c(input$range[1], input$range[2]),
+            args = list(cm = input$cmexplin, rm = input$rmexplin, tb = input$tbexplin),
             linewidth = 1.5,
             n = 500
           ) +

@@ -30,107 +30,130 @@ modfun_L3 <- function(x, b0, b1, b2) {
 }
 # first derivative
 fdfun_L3 <- function(x, b0, b1, b2) {
-  # D(expression(b0 / (1 + exp((b1-x)/b2))), "x")
   b0 * (exp((b1 - x)/b2) * (1/b2))/(1 + exp((b1 - x)/b2))^2
 }
 # second derivative
 sdfun_L3 <- function(x, b0, b1, b2) {
-  # D(expression(b0 * (exp((b1 - x)/b2) * (1/b2))/(1 + exp((b1 - x)/b2))^2), "x")
   -(b0 * (exp((b1 - x)/b2) * (1/b2) * (1/b2))/(1 + exp((b1 - x)/b2))^2 -
       b0 * (exp((b1 - x)/b2) * (1/b2)) * (2 * (exp((b1 - x)/b2) *
                                                  (1/b2) * (1 + exp((b1 - x)/b2))))/((1 + exp((b1 - x)/b2))^2)^2)
 }
 
-mod_L3 <-  function(data, flight_date = "date", predictor = "median.NDVI", sowing_date = NULL, parallel = FALSE){
-  dftemp <-
-    data |>
+mod_L3 <- function(data, flight_date = "date", predictor = "median.NDVI", sowing_date = NULL, parallel = FALSE) {
+  dftemp <- data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
     dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
     dplyr::group_by(unique_plot) |>
     tidyr::nest()
 
-  # Apply the model
-  if(parallel){
+  # Parallel or Sequential Plan
+  if (parallel) {
     future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
-  } else{
+  } else {
     future::plan(future::sequential)
   }
   on.exit(future::plan(future::sequential))
 
   `%dofut%` <- doFuture::`%dofuture%`
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine=rbind) %dofut% {
+  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
 
-    if(!is.null(sowing_date)){
-      flights <- as.POSIXlt(df$date)$yday + 1 -  (as.POSIXlt(sowing_date)$yday + 1)
-    } else {
-      flights <- as.POSIXlt(df$date)$yday + 1
-    }
-    fflight <- min(flights)
-    lflight <- max(flights) + 20
-    flights_seq <- fflight:lflight
-    y <- df |> dplyr::pull()
+    tryCatch({
+      if (!is.null(sowing_date)) {
+        flights <- as.POSIXlt(df[[flight_date]])$yday + 1 - (as.POSIXlt(sowing_date)$yday + 1)
+      } else {
+        flights <- as.POSIXlt(df[[flight_date]])$yday + 1
+      }
 
-    # Logistic regression to predict median.NDVI as a function of flights
-    model <- try(nls(y ~ SSlogis(flights, Asym, xmid, scal),
-                     control = nls.control(maxiter = 1000)), silent = TRUE)
+      fflight <- min(flights)
+      lflight <- max(flights) + 20
+      flights_seq <- fflight:lflight
+      y <- df |> dplyr::pull(!!rlang::sym(predictor))
 
-    if (inherits(model, "try-error")) return(data.frame())
+      # Logistic regression to predict median.NDVI as a function of flights
+      model <- try(nls(y ~ SSlogis(flights, Asym, xmid, scal),
+                       control = nls.control(maxiter = 1000),
+                       data = data.frame(flights, y)),
+                   silent = TRUE)
 
-    coefslog <- coef(model)
-    b0 <- coefslog[1]
-    b1 <- coefslog[2]
-    b2 <- coefslog[3]
+      if (inherits(model, "try-error")) {
+        model <- suppressWarnings(
+          minpack.lm::nlsLM(y ~ SSlogis(flights, Asym, xmid, scal),
+                            data = data.frame(flights, y))
+        )
+      }
 
-    # Critical points
-    inflec <- optimise(fdfun_L3, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, maximum = FALSE)
-    cp1 <- optimise(sdfun_L3, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, maximum = FALSE)
-    cp2 <- optimise(sdfun_L3, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, maximum = TRUE)
+      coefslog <- coef(model)
+      b0 <- coefslog["Asym"]
+      b1 <- coefslog["xmid"]
+      b2 <- coefslog["scal"]
 
-    xfd <- seq(min(flights), ceiling(inflec$minimum), length.out = 500)
-    yfd <- fdfun_L3(xfd, b0, b1, b2)
+      # Critical points
+      inflec <- optimise(fdfun_L3, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, maximum = FALSE)
+      cp1 <- optimise(sdfun_L3, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, maximum = FALSE)
+      cp2 <- optimise(sdfun_L3, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, maximum = TRUE)
 
-    dfreg <- data.frame(x = c(min(xfd), max(xfd)), y = c(max(yfd), min(yfd)))
-    regmod <- lm(y ~ x, data = dfreg)
-    predline <- predict(regmod, newdata = data.frame(x = xfd))
-    distances <- abs(yfd - predline)
-    head <- xfd[which.max(abs(yfd - predline))]
+      xfd <- seq(min(flights), ceiling(inflec$minimum), length.out = 500)
+      yfd <- fdfun_L3(xfd, b0, b1, b2)
 
-    maturation <- cp2$maximum
-    int1 <- integrate(modfun_L3, lower = fflight, upper = lflight, b0 = b0, b1 = b1, b2 = b2)
-    int2 <- integrate(modfun_L3, lower = head, upper = cp2$maximum, b0 = b0, b1 = b1, b2 = b2)
-    int3 <- integrate(modfun_L3, lower = fflight, upper = head, b0 = b0, b1 = b1, b2 = b2)
+      dfreg <- data.frame(x = c(min(xfd), max(xfd)), y = c(max(yfd), min(yfd)))
+      regmod <- lm(y ~ x, data = dfreg)
+      predline <- predict(regmod, newdata = data.frame(x = xfd))
+      head <- xfd[which.max(abs(yfd - predline))]
 
-    dplyr::tibble(unique_plot = dftemp$unique_plot[i],
-                  b0 = b0,
-                  b1 = b1,
-                  b2 = b2,
-                  heading = head,
-                  inflection = inflec$minimum,
-                  maturity = maturation,
-                  repr_period = cp2$maximum - head,
-                  auc = int1$value,
-                  auc_vege_period = int3$value,
-                  auc_repr_period = int2$value,
-                  parms = list(model = modfun_L3,
-                               modeladj = model,
-                               fd = fdfun_L3,
-                               sd = sdfun_L3,
-                               coefs = list(
-                                 b0 = b0,
-                                 b1 = b1,
-                                 b2 = b2
-                               ),
-                               xmin = fflight,
-                               xmax = lflight))
+      maturation <- cp2$maximum
+      int1 <- integrate(modfun_L3, lower = fflight, upper = lflight, b0 = b0, b1 = b1, b2 = b2)
+      int2 <- integrate(modfun_L3, lower = head, upper = cp2$maximum, b0 = b0, b1 = b1, b2 = b2)
+      int3 <- integrate(modfun_L3, lower = fflight, upper = head, b0 = b0, b1 = b1, b2 = b2)
+
+      dplyr::tibble(
+        unique_plot = dftemp$unique_plot[i],
+        b0 = b0,
+        b1 = b1,
+        b2 = b2,
+        heading = head,
+        inflection = inflec$minimum,
+        maturity = maturation,
+        repr_period = cp2$maximum - head,
+        auc = int1$value,
+        auc_vege_period = int3$value,
+        auc_repr_period = int2$value,
+        parms = list(
+          model = modfun_L3,
+          modeladj = model,
+          fd = fdfun_L3,
+          sd = sdfun_L3,
+          coefs = list(b0 = b0, b1 = b1, b2 = b2),
+          xmin = fflight,
+          xmax = lflight
+        )
+      )
+    }, error = function(e) {
+      # Handle errors in model fitting or calculations
+      dplyr::tibble(
+        unique_plot = dftemp$unique_plot[i],
+        b0 = NA_real_,
+        b1 = NA_real_,
+        b2 = NA_real_,
+        heading = NA_real_,
+        inflection = NA_real_,
+        maturity = NA_real_,
+        repr_period = NA_real_,
+        auc = NA_real_,
+        auc_vege_period = NA_real_,
+        auc_repr_period = NA_real_,
+        parms = NA
+      )
+    })
   }
-  results <-
-    results_list |>
+
+  results <- results_list |>
     tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
 
   return(results)
 }
+
 help_mod_L3_eq <- function(){
   "$$y = \\frac{b_0}{1 + \\exp((b_1 - x)/b_2)}$$"
 }
@@ -220,131 +243,23 @@ help_mod_L3 <- function(){
 
 
 
-
-
-mod_L3_thresh <-  function(data, flight_date = "date", predictor = "median.NDVI", sowing_date = NULL, threshold,
-                           parallel = FALSE){
-  modfun <- function(x, b0, b1, b2) {
-    b0 / (1 + exp((b1-x)/b2))
-  }
-  # first derivative
-  fdfun <- function(x, b0, b1, b2) {
-    # D(expression(b0 / (1 + exp((b1-x)/b2))), "x")
-    b0 * (exp((b1 - x)/b2) * (1/b2))/(1 + exp((b1 - x)/b2))^2
-  }
-
-  # second derivative
-  sdfun <- function(x, b0, b1, b2) {
-    # D(expression(b0 * (exp((b1 - x)/b2) * (1/b2))/(1 + exp((b1 - x)/b2))^2), "x")
-    -(b0 * (exp((b1 - x)/b2) * (1/b2) * (1/b2))/(1 + exp((b1 - x)/b2))^2 -
-        b0 * (exp((b1 - x)/b2) * (1/b2)) * (2 * (exp((b1 - x)/b2) *
-                                                   (1/b2) * (1 + exp((b1 - x)/b2))))/((1 + exp((b1 - x)/b2))^2)^2)
-  }
-  dftemp <-
-    data |>
-    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
-    dplyr::group_by(unique_plot) |>
-    tidyr::nest()
-
-  # Apply the model
-  if(parallel){
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
-  } else{
-    future::plan(future::sequential)
-  }
-  on.exit(future::plan(future::sequential))
-
-  `%dofut%` <- doFuture::`%dofuture%`
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine=rbind) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
-
-    if(!is.null(sowing_date)){
-      flights <- as.POSIXlt(df$date)$yday + 1 -  (as.POSIXlt(sowing_date)$yday + 1)
-    } else {
-      flights <- as.POSIXlt(df$date)$yday + 1
-    }
-    fflight <- min(flights)
-    lflight <- max(flights) + 20
-    flights_seq <- fflight:lflight
-    y <- df |> dplyr::pull()
-
-    # Logistic regression to predict median.NDVI as a function of flights
-    model <- try(nls(y ~ SSlogis(flights, Asym, xmid, scal),
-                     control = nls.control(maxiter = 1000)), silent = TRUE)
-
-    if (inherits(model, "try-error")) return(data.frame())
-
-    coefslog <- coef(model)
-    b0 <- coefslog[1]
-    b1 <- coefslog[2]
-    b2 <- coefslog[3]
-
-    # Critical points
-    inflec <- optimise(fdfun, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, maximum = FALSE)
-    cp1 <- optimise(sdfun, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, maximum = FALSE)
-    cp2 <- optimise(sdfun, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, maximum = TRUE)
-
-    xfd <- seq(min(flights), ceiling(inflec$minimum), length.out = 500)
-    yfd <- fdfun(xfd, b0, b1, b2)
-
-    dfreg <- data.frame(x = c(min(xfd), max(xfd)), y = c(max(yfd), min(yfd)))
-    regmod <- lm(y ~ x, data = dfreg)
-    predline <- predict(regmod, newdata = data.frame(x = xfd))
-    distances <- abs(yfd - predline)
-    head <- xfd[which.max(abs(yfd - predline))]
-
-    maturation <- cp2$maximum
-    int1 <- integrate(modfun, lower = fflight, upper = lflight, b0 = b0, b1 = b1, b2 = b2)
-    int2 <- integrate(modfun, lower = head, upper = cp2$maximum, b0 = b0, b1 = b1, b2 = b2)
-    int3 <- integrate(modfun, lower = fflight, upper = head, b0 = b0, b1 = b1, b2 = b2)
-
-    dplyr::tibble(unique_plot = dftemp$unique_plot[i],
-                  b0 = b0,
-                  b1 = b1,
-                  b2 = b2,
-                  heading = head,
-                  inflection = inflec$minimum,
-                  maturity = maturation,
-                  repr_period = cp2$maximum - head,
-                  auc = int1$value,
-                  auc_vege_period = int3$value,
-                  auc_repr_period = int2$value,
-                  parms = list(model = modfun,
-                               modeladj = model,
-                               fd = fdfun,
-                               sd = sdfun,
-                               coefs = list(
-                                 b0 = b0,
-                                 b1 = b1,
-                                 b2 = b2
-                               ),
-                               xmin = fflight,
-                               xmax = lflight))
-  }
-  results <-
-    results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
-    tidyr::nest(parms = parms)
-
-  return(results)
-}
-
 ########### LOGISTIC MODEL 4 PARAMETERS #############
-# Logistic model L.4()
-modfun_L4 <- function(x, b0, b1, b2, b3) {
-  b1 + (b2 - b1) / (1 + exp(b0 * (x - b3)))
+modfun_L4 <- function(x, a, b, xmid, scal) {
+  a + (b - a) / (1 + exp((xmid - x) / scal))
 }
 
 # Derivatives
-fdfun_L4 <- function(x, b0, b1, b2, b3) {
-  -((b2 - b1) * (exp(b0 * (x - b3)) * b0) / (1 + exp(b0 * (x - b3)))^2)
+fdfun_L4 <- function(x, a, b, xmid, scal) {
+
+  (b - a) * (exp((xmid - x)/scal) * (1/scal))/(1 + exp((xmid -
+                                                          x)/scal))^2
 }
 
-sdfun_L4 <- function(x, b0, b1, b2, b3) {
-  -((b2 - b1) * (exp(b0 * (x - b3)) * b0 * b0) / (1 + exp(b0 * (x - b3)))^2 -
-      (b2 - b1) * (exp(b0 * (x - b3)) * b0) * (2 * (exp(b0 * (x - b3)) * b0 * (1 + exp(b0 * (x - b3))))) /
-      ((1 + exp(b0 * (x - b3)))^2)^2)
+sdfun_L4 <- function(x, a, b, xmid, scal) {
+  -((b - a) * (exp((xmid - x)/scal) * (1/scal) * (1/scal))/(1 +
+                                                              exp((xmid - x)/scal))^2 - (b - a) * (exp((xmid - x)/scal) *
+                                                                                                     (1/scal)) * (2 * (exp((xmid - x)/scal) * (1/scal) * (1 +
+                                                                                                                                                            exp((xmid - x)/scal))))/((1 + exp((xmid - x)/scal))^2)^2)
 }
 
 mod_L4 <- function(data,
@@ -353,476 +268,606 @@ mod_L4 <- function(data,
                    sowing_date = NULL,
                    parallel = FALSE) {
   # Prepare data
-  dftemp <-
-    data  |>
+  dftemp <- data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
     dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
     dplyr::group_by(unique_plot) |>
     tidyr::nest()
 
-  results_list <- list()
-
-  # For loop to process each group
-
-  # Apply the model
-  if(parallel){
+  # Parallel or Sequential Plan
+  if (parallel) {
     future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
-  } else{
+  } else {
     future::plan(future::sequential)
   }
   on.exit(future::plan(future::sequential))
 
   `%dofut%` <- doFuture::`%dofuture%`
 
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine=rbind) %dofut% {
+  # Fit model for each group
+  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
-    if (!is.null(sowing_date)) {
-      flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday + 1)
-    } else {
-      flights <- as.POSIXlt(df$date)$yday + 1
-    }
+    tryCatch({
+      # Compute flight days
+      if (!is.null(sowing_date)) {
+        flights <- as.POSIXlt(df[[flight_date]])$yday + 1 - (as.POSIXlt(sowing_date)$yday + 1)
+      } else {
+        flights <- as.POSIXlt(df[[flight_date]])$yday + 1
+      }
 
-    fflight <- min(flights)
-    lflight <- max(flights) + 20
-    flights_seq <- fflight:lflight
-    y <- df |> dplyr::pull()
+      fflight <- min(flights)
+      lflight <- max(flights) + 20
+      y <- df |> dplyr::pull(!!rlang::sym(predictor))
 
-    model <- drc::drm(y ~ flights, fct = drc::L.4(), data = df)
-    coefslog <- coef(model)
-    b0 <- coefslog[1]
-    b1 <- coefslog[2]
-    b2 <- coefslog[3]
-    b3 <- coefslog[4]
+      # Fit the L4 model
+      model <- nls(
+        y ~ SSfpl(flights, A, B, xmid, scal),
+        data = data.frame(x = flights, y = y),
+        control = minpack.lm::nls.lm.control(maxiter = 1000)
+      )
 
-    # CRITICAL POINTS
-    inflec <- optimise(fdfun_L4, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, b3 = b3, maximum = FALSE)
+      model <- try(
+        nls( y ~ SSfpl(flights, A, B, xmid, scal),
+            data = data.frame(flights, y),
+            control = nls.control(maxiter = 1000)),
+        silent = TRUE
+      )
 
-    cp1 <- optimise(sdfun_L4, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, b3 = b3, maximum = FALSE)
-    cp2 <- optimise(sdfun_L4, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, b3 = b3, maximum = TRUE)
+      if (inherits(model, "try-error")) {
+        model <- suppressWarnings(
+          minpack.lm::nlsLM(y ~ SSfpl(flights, A, B, xmid, scal),
+                            data = data.frame(flights, y))
+        )
+      }
 
-    xfd <- seq(min(flights), ceiling(cp1$minimum), length.out = 500)
-    yfd <- sdfun_L4(xfd, b0, b1, b2, b3)
+      coefslog <- coef(model)
+      a <- coefslog[1]
+      b <- coefslog[2]
+      xmid <- coefslog[3]
+      scal <- coefslog[4]
 
-    dfreg <- data.frame(x = c(min(xfd), max(xfd)), y = c(max(yfd), min(yfd)))
-    regmod <- lm(y ~ x, data = dfreg)
-    predline <- predict(regmod, newdata = data.frame(x = xfd))
-    distances <- abs(yfd - predline)
-    head <- xfd[which.max(abs(yfd - predline))]
+      # Critical points
+      cp1 <- optimise(sdfun_L4, interval = c(fflight, lflight), a = a, b = b, xmid = xmid, scal = scal, maximum = FALSE)
+      cp2 <- optimise(sdfun_L4, interval = c(fflight, lflight), a = a, b = b, xmid = xmid, scal = scal, maximum = TRUE)
 
-    xfd2 <- seq(ceiling(b3), lflight, length.out = 500)
-    yfd2 <- fdfun_L4(xfd2, b0, b1, b2, b3)
+      # Heading and maturity
+      xfd <- seq(min(flights), ceiling(cp1$minimum), length.out = 500)
+      yfd <- sdfun_L4(xfd, a, b, xmid, scal)
+      dfreg <- data.frame(x = c(min(xfd), max(xfd)), y = c(max(yfd), min(yfd)))
+      regmod <- lm(y ~ x, data = dfreg)
+      predline <- predict(regmod, newdata = data.frame(x = xfd))
+      head <- xfd[which.max(abs(yfd - predline))]
 
-    dfreg2 <- data.frame(x = c(min(xfd2), max(xfd2)), y = c(min(yfd2), max(yfd2)))
-    regmod2 <- lm(y ~ x, data = dfreg2)
-    predline2 <- predict(regmod2, newdata = data.frame(x = xfd2))
-    maturation <- xfd2[which.max(abs(yfd2 - predline2))]
+      xfd2 <- seq(ceiling(xmid), lflight, length.out = 500)
+      yfd2 <- fdfun_L4(xfd2, a, b, xmid, scal)
+      dfreg2 <- data.frame(x = c(min(xfd2), max(xfd2)), y = c(min(yfd2), max(yfd2)))
+      regmod2 <- lm(y ~ x, data = dfreg2)
+      predline2 <- predict(regmod2, newdata = data.frame(x = xfd2))
+      maturation <- xfd2[which.max(abs(yfd2 - predline2))]
 
-    int1 <- integrate(modfun_L4, lower = fflight, upper = lflight, b0 = b0, b1 = b1, b2 = b2, b3 = b3)
-    int2 <- integrate(modfun_L4, lower = head, upper = maturation, b0 = b0, b1 = b1, b2 = b2, b3 = b3)
+      # Area under curve
+      int1 <- integrate(modfun_L4, lower = fflight, upper = lflight, a = a, b = b, xmid = xmid, scal = scal)
+      int2 <- integrate(modfun_L4, lower = head, upper = maturation, a = a, b = b, xmid = xmid, scal = scal)
 
-    tibble::tibble(
-      unique_plot = dftemp$unique_plot[i],
-      b0 = b0,
-      b1 = b1,
-      b2 = b2,
-      inflection = b3,
-      heading = head,
-      maturity = maturation,
-      repr_period = maturation - head,
-      auc = int1$value,
-      auc_repr_period = int2$value,
-      parms = list(model = modfun_L4, modeladj = model, fd = fdfun_L4, sd = sdfun_L4,
-                   coefs = list(b0 = b0, b1 = b1, b2 = b2, b3 = b3), xmin = fflight, xmax = lflight)
-    )
+      tibble::tibble(
+        unique_plot = dftemp$unique_plot[i],
+        a = a,
+        b = b,
+        inflection = xmid,
+        scal = scal,
+        heading = head,
+        maturity = maturation,
+        repr_period = maturation - head,
+        auc = int1$value,
+        auc_repr_period = int2$value,
+        parms = list(
+          model = modfun_L4,
+          modeladj = model,
+          fd = fdfun_L4,
+          sd = sdfun_L4,
+          coefs = list(a = a, b = b, xmid = xmid, scal = scal),
+          xmin = fflight,
+          xmax = lflight
+        )
+      )
+    }, error = function(e) {
+      # Return NA values if model fitting fails
+      tibble::tibble(
+        unique_plot = dftemp$unique_plot[i],
+        a = NA_real_,
+        b = NA_real_,
+        inflection = NA_real_,
+        scal = NA_real_,
+        heading = NA_real_,
+        maturity = NA_real_,
+        repr_period = NA_real_,
+        auc = NA_real_,
+        auc_repr_period = NA_real_,
+        parms = NA
+      )
+    })
   }
 
-  results <-
-    results_list |>
+  # Final results table
+  results <- results_list |>
     tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
 
   return(results)
 }
 
-help_mod_L4_eq <- function(){
-  "$$y = b_1 + \\frac{b_2 - b_1}{1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)}$$"
+
+help_mod_L4_eq <- function() {
+  "$$y(x) = a + \\frac{b - a}{1 + \\exp\\left(\\frac{x_{mid} - x}{scal}\\right)}$$"
 }
-help_mod_L4_fd <- function(){
-  "$$y'(x) = -\\frac{(b_2 - b_1) \\cdot \\left(\\exp\\left(b_0 \\cdot (x - b_3)\\right) \\cdot b_0\\right)}{\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^2}$$"
+
+help_mod_L4_fd <- function() {
+  "$$y'(x) = \\frac{(b - a) \\cdot \\exp\\left(\\frac{x_{mid} - x}{scal}\\right) \\cdot \\frac{1}{scal}}{\\left(1 + \\exp\\left(\\frac{x_{mid} - x}{scal}\\right)\\right)^2}$$"
 }
-help_mod_L4_sd <- function(){
-  "$$
-   y''(x) = -\\left(
-\\frac{(b_2 - b_1) \\cdot \\left(\\exp\\left(b_0 \\cdot (x - b_3)\\right) \\cdot b_0^2\\right)}{\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^2} -
-\\frac{(b_2 - b_1) \\cdot \\left(\\exp\\left(b_0 \\cdot (x - b_3)\\right) \\cdot b_0\\right) \\cdot
-\\left(2 \\cdot \\exp\\left(b_0 \\cdot (x - b_3)\\right) \\cdot b_0 \\cdot \\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)\\right)}{\\left(\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^2\\right)^2}
-\\right)
-  $$"
+
+help_mod_L4_sd <- function() {
+  "$$y''(x) = -\\left(\\frac{(b - a) \\cdot \\exp\\left(\\frac{x_{mid} - x}{scal}\\right) \\cdot \\frac{1}{scal}^2}{\\left(1 + \\exp\\left(\\frac{x_{mid} - x}{scal}\\right)\\right)^2} +
+  \\frac{(b - a) \\cdot \\exp\\left(\\frac{x_{mid} - x}{scal}\\right) \\cdot \\frac{1}{scal} \\cdot \\left(2 \\cdot \\exp\\left(\\frac{x_{mid} - x}{scal}\\right) \\cdot \\frac{1}{scal} \\cdot \\left(1 + \\exp\\left(\\frac{x_{mid} - x}{scal}\\right)\\right)\\right)}{\\left(\\left(1 + \\exp\\left(\\frac{x_{mid} - x}{scal}\\right)\\right)^2\\right)^2}\\right)$$"
 }
-help_mod_L4 <- function(){
+
+help_mod_L4 <- function() {
   div(
     style = "font-family: Arial, sans-serif; line-height: 1.5;",
     h2(style = "color: #2E86C1;", "Description of Returned Variables"),
     tags$ul(
-      tags$li(tags$b("block:"), " The identifier for the experimental block, typically used to group plots spatially or temporally."),
-      tags$li(tags$b("plot_id:"), " The unique identifier for individual plots within a block."),
-      tags$li(tags$b("unique_plot:"), " A combined identifier that uniquely identifies each plot across all blocks (e.g., combining ", tags$i("block"), " and ", tags$i("plot_id"), ")."),
-      tags$li(tags$b("b0:"), " The slope factor of the logistic model, determining the steepness of the curve at the inflection point."),
-      tags$li(tags$b("b1:"), " The lower asymptote of the logistic curve, representing the minimum value of the response variable."),
-      tags$li(tags$b("b2:"), " The upper asymptote of the logistic curve, representing the maximum value of the response variable."),
-      tags$li(tags$b("inflection:"), " The x-value at the inflection point of the logistic curve, where the growth rate is maximal."),
-      tags$li(tags$b("auc:"), " The area under the curve (AUC), representing the total response accumulated over the range of the independent variable."),
-      tags$li(tags$b("xinfp:"), " The x-value at the inflection point, providing another representation of the inflection coordinate."),
-      tags$li(tags$b("yinfp:"), " The y-value at the inflection point, corresponding to the response variable's value at the inflection."),
-      tags$li(tags$b("xmace:"), " The x-value where the second derivative is maximum, reflecting the maximum acceleration of growth rate."),
-      tags$li(tags$b("ymace:"), " The y-value showing the response at the maximum acceleration point."),
-      tags$li(tags$b("xmdes:"), " The x-value where the second derivative is minimal, reflecting the maximum deceleration of growth rate."),
-      tags$li(tags$b("ymdes:"), " The y-value showing the response at the maximum deceleration point.")
+      tags$li(tags$b("block:"), " The identifier for the experimental block."),
+      tags$li(tags$b("plot_id:"), " The unique identifier for individual plots."),
+      tags$li(tags$b("unique_plot:"), " A combined identifier uniquely identifying each plot."),
+      tags$li(tags$b("a:"), " The lower asymptote of the curve, representing the minimum response value."),
+      tags$li(tags$b("b:"), " The upper asymptote of the curve, representing the maximum response value."),
+      tags$li(tags$b("xmid:"), " The inflection point, where the rate of change in the response variable is maximal."),
+      tags$li(tags$b("scal:"), " A scale parameter controlling the steepness of the curve."),
+      tags$li(tags$b("inflection:"), " The x-value at the inflection point."),
+      tags$li(tags$b("auc:"), " The area under the curve (AUC), representing the accumulated response."),
+      tags$li(tags$b("xinfp:"), " The x-value at the inflection point."),
+      tags$li(tags$b("yinfp:"), " The y-value at the inflection point."),
+      tags$li(tags$b("xmace:"), " The x-value where the second derivative is maximal, indicating maximum acceleration."),
+      tags$li(tags$b("ymace:"), " The y-value at the maximum acceleration point."),
+      tags$li(tags$b("xmdes:"), " The x-value where the second derivative is minimal, indicating maximum deceleration."),
+      tags$li(tags$b("ymdes:"), " The y-value at the maximum deceleration point.")
     ),
     h2(style = "color: #2E86C1;", "Growth Curve"),
-    # Description
-    style = "font-family: Arial, sans-serif; line-height: 1.5;",
-    p("The four-parameter logistic model (4PL) is widely used to describe biological growth processes, such as plant height, weight, or population dynamics. It captures the characteristic sigmoidal (S-shaped) growth pattern often observed in nature."),
+    p("The four-parameter logistic model (4PL) captures sigmoidal growth patterns, often observed in biological systems. It is characterized by lower and upper asymptotes, an inflection point, and a steepness parameter."),
     p("The equation is given by:"),
-    p("$$y = b_1 + \\frac{(b_2 - b_1)}{1 + \\exp(b_0 \\cdot (x - b_3))}$$"),
+    p(help_mod_L4_eq()),
     p(strong("Where:")),
     withMathJax(
       tags$ul(
-        tags$li("\\(x\\): The time in days after sowing."),
-        tags$li("\\(b_0\\): The growth rate (steepness of the curve)."),
-        tags$li("\\(b_1\\): The lower asymptote (e.g., NDVI at the maturity)."),
-        tags$li("\\(b_2\\): The upper asymptote (e.g., NDVI at vegetative stage)."),
-        tags$li("\\(b_3\\): The inflection point (e.g.,  time at which the rate of change in NDVI is maximal).")
+        tags$li("\\(x\\): The independent variable, typically time."),
+        tags$li("\\(a\\): The lower asymptote, representing the minimal response."),
+        tags$li("\\(b\\): The upper asymptote, representing the maximal response."),
+        tags$li("\\(x_{mid}\\): The inflection point."),
+        tags$li("\\(scal\\): The scale parameter controlling steepness.")
       )
     ),
     p(strong("Key Features:")),
     tags$ul(
-      tags$li("Models sigmoidal growth curves that start slow, accelerate, and then plateau."),
-      tags$li("Represents initial size, growth rate, and maximum size clearly."),
-      tags$li("Commonly applied to plant growth studies, animal development, and population dynamics.")
+      tags$li("Models growth curves that start slow, accelerate, and plateau."),
+      tags$li("Represents initial, maximal, and inflection characteristics."),
+      tags$li("Applicable to growth studies, population dynamics, and more.")
     ),
     h2(style = "color: #2E86C1;", "First Derivative"),
-    p("The first derivative of the four-parameter logistic model (4PL) describes the rate of change of the response variable (e.g., growth rate) at any given point. It is particularly useful for identifying the inflection point, where the rate of growth is maximal."),
-    p("The first derivative is given by:"),
-    p("$$
-    y'(x) = -\\frac{(b_2 - b_1) \\cdot \\exp(b_0 \\cdot (x - b_3)) \\cdot b_0}{(1 + \\exp(b_0 \\cdot (x - b_3)))^2}
-    $$"),
+    p("The first derivative describes the rate of change of the response variable:"),
+    p(help_mod_L4_fd()),
     p(strong("Key Features:")),
     tags$ul(
-      tags$li("Captures the rate of change in vegetation index values at any point on the curve."),
-      tags$li("The maximum value of the derivative corresponds to the inflection point, indicating the peak rate of vegetation growth."),
-      tags$li("Helps in understanding the temporal dynamics of vegetation growth and greening."),
-      tags$li("Useful for comparing vegetation growth rates across different conditions, treatments, or geographical regions."),
-      p("This derivative is particularly useful for studying dynamic vegetation processes, such as the rapid greening phase, where understanding the rate of change in vegetation index values like NDVI is crucial."),
-      h2(style = "color: #2E86C1;", "Second Derivative"),
-      # Description
-      style = "font-family: Arial, sans-serif; line-height: 1.5;",
-      p("The second derivative of the vegetation index curve provides insight into the curvature of the growth trajectory, helping to identify points of acceleration or deceleration in greening or vegetation growth. This is crucial for understanding how vegetation dynamics change over time."),
-      p("The second derivative is given by:"),
-      p("$$
-y''(x) = -\\frac{(b_2 - b_1) \\cdot \\exp(b_0 \\cdot (x - b_3)) \\cdot b_0^2}{(1 + \\exp(b_0 \\cdot (x - b_3)))^2} -
-\\frac{(b_2 - b_1) \\cdot \\exp(b_0 \\cdot (x - b_3)) \\cdot b_0 \\cdot
-\\big(2 \\cdot \\exp(b_0 \\cdot (x - b_3)) \\cdot b_0 \\cdot (1 + \\exp(b_0 \\cdot (x - b_3)))\\big)}
-{(1 + \\exp(b_0 \\cdot (x - b_3)))^4}
-$$"),
-      p(strong("Key Features:")),
-      tags$ul(
-        tags$li("Describes how the rate of change in the vegetation index varies over time (acceleration or deceleration)."),
-        tags$li("Helps identify regions of rapid greening (acceleration) or slower growth phases (deceleration)."),
-        tags$li("Provides insights into the dynamics of vegetation growth and senescence for temporal modeling."),
-        tags$li("Useful for refining predictions of vegetation phenology and analyzing ecological phenomena.")
-      ),
-      p("The second derivative is a powerful tool for understanding not just the growth rate of vegetation indexes but also the changes in growth dynamics over time. It is particularly useful in identifying critical phases in vegetation systems, such as the transition from rapid growth to stabilization or senescence.")
-    )
-  )
-}
-
-D(expression(  -((b2 - b1) * ((1 + exp(b0 * (x - b3)))^((b4 - 1) - 1) * ((b4 -
-                                                                            1) * (exp(b0 * (x - b3)) * b0)) * (b4 * (exp(b0 * (x - b3)) *
-                                                                                                                       b0)) + (1 + exp(b0 * (x - b3)))^(b4 - 1) * (b4 * (exp(b0 *
-                                                                                                                                                                               (x - b3)) * b0 * b0)))/((1 + exp(b0 * (x - b3)))^b4)^2 -
-                   (b2 - b1) * ((1 + exp(b0 * (x - b3)))^(b4 - 1) * (b4 * (exp(b0 *
-                                                                                 (x - b3)) * b0))) * (2 * ((1 + exp(b0 * (x - b3)))^(b4 -
-                                                                                                                                       1) * (b4 * (exp(b0 * (x - b3)) * b0)) * ((1 + exp(b0 *
-                                                                                                                                                                                           (x - b3)))^b4)))/(((1 + exp(b0 * (x - b3)))^b4)^2)^2)), "x")
-
-############### Logistic model 5 PARAMETERS #########
-modfun_L5 <- function(x, b0, b1, b2, b3, b4) {
-  b1 + (b2 - b1) / (1 + exp(b0 * (x - b3)))^b4
-}
-fdfun_L5 <- function(x, b0, b1, b2, b3, b4){
-  -((b2 - b1) * ((1 + exp(b0 * (x - b3)))^(b4 - 1) * (b4 * (exp(b0 *
-                                                                  (x - b3)) * b0)))/((1 + exp(b0 * (x - b3)))^b4)^2)
-}
-sdfun_L5 <- function(x, b0, b1, b2, b3, b4){
-  -((b2 - b1) * ((1 + exp(b0 * (x - b3)))^((b4 - 1) - 1) * ((b4 -
-                                                               1) * (exp(b0 * (x - b3)) * b0)) * (b4 * (exp(b0 * (x - b3)) *
-                                                                                                          b0)) + (1 + exp(b0 * (x - b3)))^(b4 - 1) * (b4 * (exp(b0 *
-                                                                                                                                                                  (x - b3)) * b0 * b0)))/((1 + exp(b0 * (x - b3)))^b4)^2 -
-      (b2 - b1) * ((1 + exp(b0 * (x - b3)))^(b4 - 1) * (b4 * (exp(b0 *
-                                                                    (x - b3)) * b0))) * (2 * ((1 + exp(b0 * (x - b3)))^(b4 -
-                                                                                                                          1) * (b4 * (exp(b0 * (x - b3)) * b0)) * ((1 + exp(b0 *
-                                                                                                                                                                              (x - b3)))^b4)))/(((1 + exp(b0 * (x - b3)))^b4)^2)^2)
-}
-mod_L5 <-  function(data,
-                    flight_date = "date",
-                    predictor = "median.NDVI",
-                    sowing_date = NULL,
-                    parallel = FALSE){
-
-
-
-  dftemp <-
-    data |>
-    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
-    dplyr::group_by(unique_plot) |>
-    tidyr::nest()
-
-
-  # Apply the model
-  if(parallel){
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
-  } else{
-    future::plan(future::sequential)
-  }
-  on.exit(future::plan(future::sequential))
-
-  `%dofut%` <- doFuture::`%dofuture%`
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine=rbind) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
-    if(!is.null(sowing_date)){
-      flights <- as.POSIXlt(df$date)$yday + 1 -  (as.POSIXlt(sowing_date)$yday + 1)
-    } else {
-      flights <- as.POSIXlt(df$date)$yday + 1
-    }
-    fflight <- min(flights)
-    lflight <- max(flights) + 20
-    flights_seq <- fflight:lflight
-    y <- df |> dplyr::pull()
-
-    model <- drc::drm(y ~ flights, fct = drc::L.5(), data = df)
-    coefslog <- coef(model)
-    b0 <- coefslog[1]
-    b1 <- coefslog[2]
-    b2 <- coefslog[3]
-    b3 <- coefslog[4]
-    b4 <- coefslog[5]
-
-    # CRITICAL POINTS
-    inflec <-
-      optimise(fdfun_L5,
-               interval = c(fflight, lflight),
-               b0 = b0,
-               b1 = b1,
-               b2 = b2,
-               b3 = b3,
-               b4 = b4,
-               maximum = FALSE)
-
-    # # maturation, estimated as the maximum point of the second derivative
-    cp1 <-
-      optimise(sdfun_L5,
-               interval = c(fflight, lflight),
-               b0 = b0,
-               b1 = b1,
-               b2 = b2,
-               b3 = b3,
-               b4 = b4,
-               maximum = FALSE)
-    cp2 <-
-      optimise(sdfun_L5,
-               interval = c(fflight, lflight),
-               b0 = b0,
-               b1 = b1,
-               b2 = b2,
-               b3 = b3,
-               b4 = b4,
-               maximum = TRUE)
-    # Heading
-    xfd <- seq(min(flights), ceiling(cp1$minimum),  length.out = 500)
-    yfd <- sdfun_L5(xfd, b0, b1, b2, b3, b4)
-    # Heading, estimated by the maximum curvature of the second derivative
-    # from the first flight to the inflection point
-
-    # linear decreasing
-    dfreg <- data.frame(x = c(min(xfd), max(xfd)),
-                        y = c(max(yfd), min(yfd)))
-
-    regmod <- lm(y ~ x, data = dfreg)
-    coefsr <- coef(regmod)
-    predline <- predict(regmod, newdata = data.frame(x = xfd))
-    distances <- abs(yfd - predline)
-    head <- xfd[which.max(abs(yfd - predline))]
-
-    # Maturation
-    xfd2 <- seq(inflec$minimum, lflight,  length.out = 500)
-    yfd2 <- fdfun_L5(xfd2, b0, b1, b2, b3, b4)
-    # Heading, estimated by the maximum curvature of the second derivative
-    # from the first flight to the inflection point
-
-    # linear decreasing
-    dfreg2 <- data.frame(x = c(min(xfd2), max(xfd2)),
-                         y = c(min(yfd2), max(yfd2)))
-
-    regmod2 <- lm(y ~ x, data = dfreg2)
-    # coefsr <- coef(regmod2)
-    predline2 <- predict(regmod2, newdata = data.frame(x = xfd2))
-    maturation <- xfd2[which.max(abs(yfd2 - predline2))]
-    # integrate median.NDVI below the curve
-    int1 <- integrate(modfun_L5, lower = fflight, upper = lflight, b0 = b0, b1 = b1, b2 = b2, b3 = b3, b4 = b4)
-    int2 <- integrate(modfun_L5, lower = head, upper = maturation, b0 = b0, b1 = b1, b2 = b2, b3 = b3, b4 = b4)
-
-
-    tibble::tibble(unique_plot = dftemp$unique_plot[i],
-                   b0 = b0,
-                   b1 = b1,
-                   b2 = b2,
-                   b3 = b3,
-                   b4 = b4,
-                   inflection = inflec$minimum,
-                   heading = head,
-                   maturity = maturation,
-                   repr_period = maturation - head,
-                   auc = int1$value,
-                   auc_repr_period = int2$value,
-                   parms = list(model = modfun_L5,
-                                modeladj = model,
-                                fd = fdfun_L5,
-                                sd = sdfun_L5,
-                                coefs = list(
-                                  b0 = b0,
-                                  b1 = b1,
-                                  b2 = b2,
-                                  b3 = b3,
-                                  b4 = b4
-                                ),
-                                xmin = fflight,
-                                xmax = lflight))
-  }
-  results <-
-    results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
-    tidyr::nest(parms = parms)
-  return(results)
-}
-
-
-help_mod_L5_eq <- function(){
-  "$$y = b_1 + \\frac{b_2 - b_1}{\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^{b_4}}$$"
-}
-help_mod_L5_fd <- function(){
-  "$$
-  y'(x) = -\\frac{(b_2 - b_1) \\cdot \\left(\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^{b_4 - 1} \\cdot \\left(b_4 \\cdot \\exp\\left(b_0 \\cdot (x - b_3)\\right) \\cdot b_0\\right)\\right)}{\\left(\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^{b_4}\\right)^2}
-  $$"
-}
-help_mod_L5_sd <- function(){
-  "$$
-  y''(x) = -\\left(
-\\frac{
-(b_2 - b_1) \\cdot
-\\left[
-\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^{(b_4 - 1) - 1} \\cdot
-\\left((b_4 - 1) \\cdot \\exp\\left(b_0 \\cdot (x - b_3)\\right) \\cdot b_0\\right) \\cdot
-\\left(b_4 \\cdot \\exp\\left(b_0 \\cdot (x - b_3)\\right) \\cdot b_0\\right) +
-\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^{b_4 - 1} \\cdot
-\\left(b_4 \\cdot \\exp\\left(b_0 \\cdot (x - b_3)\\right) \\cdot b_0^2\\right)
-\\right]
-}
-{\\left(\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^{b_4}\\right)^2} -
-\\frac{
-(b_2 - b_1) \\cdot
-\\left[
-\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^{b_4 - 1} \\cdot
-\\left(b_4 \\cdot \\exp\\left(b_0 \\cdot (x - b_3)\\right) \\cdot b_0\\right)
-\\right] \\cdot
-\\left[
-2 \\cdot
-\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^{b_4 - 1} \\cdot
-\\left(b_4 \\cdot \\exp\\left(b_0 \\cdot (x - b_3)\\right) \\cdot b_0\\right) \\cdot
-\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^{b_4}
-\\right]
-}
-{\\left(\\left(\\left(1 + \\exp\\left(b_0 \\cdot (x - b_3)\\right)\\right)^{b_4}\\right)^2\\right)^2}
-\\right)
-  $$"
-}
-
-help_mod_L5 <- function(){
-  div(
-    style = "font-family: Arial, sans-serif; line-height: 1.5;",
-    h2(style = "color: #2E86C1;", "Description of Returned Variables"),
-    tags$ul(
-      tags$li(tags$b("unique_plot:"), " A unique identifier for each individual plot."),
-      tags$li(tags$b("b0:"), " The slope factor of the logistic model."),
-      tags$li(tags$b("b1:"), " The lower asymptote of the logistic curve."),
-      tags$li(tags$b("b2:"), " The upper asymptote of the logistic curve."),
-      tags$li(tags$b("b3:"), " The x-value at the inflection point."),
-      tags$li(tags$b("b4:"), " The Hill slope, influencing the steepness of the curve."),
-      tags$li(tags$b("inflection:"), " The x-value at the inflection point of the logistic curve, where the growth rate is maximal."),
-      tags$li(tags$b("auc:"), " The area under the curve (AUC), representing the total response accumulated over the range of the independent variable.")
-    ),
-    p("These variables provide comprehensive information about the dynamics of the logistic growth model. For example:"),
-    tags$ul(
-      tags$li(tags$b("Asymptotes:"), tags$i(" b1"), " and ", tags$i("b2"), " define the lower and upper bounds of the response variable."),
-      tags$li(tags$b("Inflection Point:"), " Variables like ", tags$i("inflection"), " mark the stage of maximum growth rate."),
-      tags$li(tags$b("Curve Steepness:"), " The ", tags$i("b4"), " parameter (Hill slope) controls the steepness of the curve around the inflection point.")
-    ),
-    p("This information is essential for analyzing growth patterns, comparing treatments, and understanding biological dynamics."),
-    h2(style = "color: #2E86C1;", "Growth Curve"),
-    # Description
-    p("The five-parameter logistic model (5PL) is a flexible mathematical function used to describe sigmoidal curves, often encountered in biological and pharmacological contexts."),
-    p("The equation is given by:"),
-    p("$$y = b_1 + \\frac{(b_2 - b_1)}{(1 + \\exp(b_0 * (x - b_3)))^{b_4}}$$"),
-    p(strong("Where:")),
-    withMathJax(
-      tags$ul(
-        tags$li("\\(x\\): The time or independent variable."),
-        tags$li("\\(b_0\\): The slope factor."),
-        tags$li("\\(b_1\\): The lower asymptote."),
-        tags$li("\\(b_2\\): The upper asymptote."),
-        tags$li("\\(b_3\\): The x-value at the inflection point."),
-        tags$li("\\(b_4\\): The Hill slope.")
-      )
-    ),
-    p(strong("Model Description Features:")),
-    tags$ul(
-      tags$li("Highly flexible model that can capture a wide range of sigmoidal shapes."),
-      tags$li("Allows for more precise fitting of data compared to simpler logistic models."),
-      tags$li("Widely used in areas like drug discovery and pharmacokinetics."),
-      tags$li("Requires careful parameter estimation due to the increased complexity.")
-    ),
-    h2(style = "color: #2E86C1;", "First Derivative"),
-    # Description
-    p("The first derivative of the five-parameter logistic model (5PL) describes the rate of change of the response variable at any given point. It is useful for identifying the inflection point and understanding the dynamics of the growth or response curve."),
-    p("The first derivative is given by:"),
-    p("$$
-      y'(x) = -\\frac{(b_2 - b_1) * ((1 + \\exp(b_0 * (x - b_3)))^{(b_4 - 1)} * (b_4 * (\\exp(b_0 * (x - b_3))) * b_0))}{((1 + \\exp(b_0 * (x - b_3)))^{b_4})^2}
-      $$"),
-    p(strong("Key Features:")),
-    tags$ul(
-      tags$li("Captures the growth rate at any point on the curve."),
-      tags$li("The maximum value of the derivative corresponds to the inflection point."),
-      tags$li("Helps in understanding the dynamics of growth over time."),
-      tags$li("Useful for comparing growth rates across different conditions or treatments.")
+      tags$li("Captures the instantaneous growth rate."),
+      tags$li("Useful for identifying inflection points."),
+      tags$li("Helps in understanding temporal growth dynamics.")
     ),
     h2(style = "color: #2E86C1;", "Second Derivative"),
-    # Description
-    p("The second derivative of the five-parameter logistic model (5PL) provides information about the curvature of the growth curve, indicating regions of acceleration or deceleration in the response."),
-    p("The second derivative is given by:"),
-    p("$$
-      y''(x) = -\\frac{(b_2 - b_1) * ((1 + \\exp(b_0 * (x - b_3)))^((b_4 - 1) - 1) * ((b_4 - 1) * (\\exp(b_0 * (x - b_3))) * b_0) * (b_4 * (\\exp(b_0 * (x - b_3))) * b_0) + (1 + \\exp(b_0 * (x - b_3)))^{(b_4 - 1)} * (b_4 * (\\exp(b_0 * (x - b_3))) * b_0 * b_0))}{((1 + \\exp(b_0 * (x - b_3)))^{b_4})^2} -
-      \\frac{(b_2 - b_1) * ((1 + \\exp(b_0 * (x - b_3)))^{(b_4 - 1)} * (b_4 * (\\exp(b_0 * (x - b_3))) * b_0)) * (2 * ((1 + \\exp(b_0 * (x - b_3)))^{(b_4 - 1)} * (b_4 * (\\exp(b_0 * (x - b_3))) * b_0) * ((1 + \\exp(b_0 * (x - b_3)))^{b_4})))}{(((1 + \\exp(b_0 * (x - b_3)))^{b_4})^2)^2}
-      $$"),
+    p("The second derivative provides insight into the acceleration or deceleration of growth:"),
+    p(help_mod_L4_sd()),
     p(strong("Key Features:")),
     tags$ul(
-      tags$li("Describes how the rate of growth changes over time (acceleration or deceleration)."),
-      tags$li("Helps identify regions of maximum acceleration or deceleration in growth."),
-      tags$li("Provides insights into the dynamics of curvature for growth modeling."),
-      tags$li("Useful for fine-tuning growth predictions and analyzing biological phenomena.")
+      tags$li("Identifies regions of rapid acceleration or deceleration."),
+      tags$li("Highlights critical phases of growth or decline."),
+      tags$li("Useful for studying dynamic growth processes.")
     )
   )
 }
+
+
+
+
+############### Logistic model 5 PARAMETERS #########
+modfun_L5 <- function(x, asym1, asym2, xmid, iscal, theta) {
+  asym2 + (asym1 - asym2)/(1 + exp(iscal * (log(x) - log(xmid))))^theta
+}
+fdfun_L5 <- function(x, asym1, asym2, xmid, iscal, theta){
+  -((asym1 - asym2) * ((1 + exp(iscal * (log(x) - log(xmid))))^(theta -
+                                                                  1) * (theta * (exp(iscal * (log(x) - log(xmid))) * (iscal *
+                                                                                                                        (1/x)))))/((1 + exp(iscal * (log(x) - log(xmid))))^theta)^2)
+}
+sdfun_L5 <- function(x, asym1, asym2, xmid, iscal, theta){
+  -((asym1 - asym2) * ((1 + exp(iscal * (log(x) - log(xmid))))^((theta -
+                                                                   1) - 1) * ((theta - 1) * (exp(iscal * (log(x) - log(xmid))) *
+                                                                                               (iscal * (1/x)))) * (theta * (exp(iscal * (log(x) - log(xmid))) *
+                                                                                                                               (iscal * (1/x)))) + (1 + exp(iscal * (log(x) - log(xmid))))^(theta -
+                                                                                                                                                                                              1) * (theta * (exp(iscal * (log(x) - log(xmid))) * (iscal *
+                                                                                                                                                                                                                                                    (1/x)) * (iscal * (1/x)) - exp(iscal * (log(x) - log(xmid))) *
+                                                                                                                                                                                                               (iscal * (1/x^2)))))/((1 + exp(iscal * (log(x) - log(xmid))))^theta)^2 -
+      (asym1 - asym2) * ((1 + exp(iscal * (log(x) - log(xmid))))^(theta -
+                                                                    1) * (theta * (exp(iscal * (log(x) - log(xmid))) * (iscal *
+                                                                                                                          (1/x))))) * (2 * ((1 + exp(iscal * (log(x) - log(xmid))))^(theta -
+                                                                                                                                                                                       1) * (theta * (exp(iscal * (log(x) - log(xmid))) * (iscal *
+                                                                                                                                                                                                                                             (1/x)))) * ((1 + exp(iscal * (log(x) - log(xmid))))^theta)))/(((1 +
+                                                                                                                                                                                                                                                                                                               exp(iscal * (log(x) - log(xmid))))^theta)^2)^2)
+}
+
+SSlogis5 <- selfStart(
+  model = function(x, asym1, asym2, xmid, iscal, theta) {
+    # Validate input
+    if (any(x < 0)) {
+      stop("Input (x) should be positive for this equation", call. = FALSE)
+    }
+
+    # Model equation
+    .lxmid <- suppressWarnings(log(xmid))
+    .expre1 <- 1 + exp(iscal * (log(x) - .lxmid))
+    .expre2 <- .expre1^theta
+    .expre3 <- (asym1 - asym2) / .expre2
+    .value <- asym2 + .expre3
+    .value <- ifelse(is.nan(.value), 0, .value)
+
+    # Gradients
+    .expr8 <- (1 + exp(iscal * (log(x) - .lxmid)))^theta
+    .exp1 <- ifelse(is.nan(.expr8), 0, 1 / .expr8)
+    .exp2 <- ifelse(is.nan(.expr8), 0, 1 - 1 / .expr8)
+
+    .expr1 <- asym1 - asym2
+    .expr6 <- exp(iscal * (log(x) - .lxmid))
+    .expr7 <- 1 + .expr6
+    .exp3 <- .expr1 * (.expr7^(theta - 1) * (theta * (.expr6 * (iscal * (1 / xmid))))) / .expr8^2
+    .exp3 <- ifelse(is.nan(.exp3), 0, .exp3)
+
+    .expr4 <- log(x) - .lxmid
+    .exp4 <- -(.expr1 * (.expr7^(theta - 1) * (theta * (.expr6 * .expr4))) / .expr8^2)
+    .exp4 <- ifelse(is.nan(.exp4), 0, .exp4)
+
+    .exp5 <- -(.expr1 * (.expr8 * log(.expr7)) / .expr8^2)
+    .exp5 <- ifelse(is.nan(.exp5), 0, .exp5)
+
+    .actualArgs <- as.list(match.call()[c("asym1", "asym2", "xmid", "iscal", "theta")])
+
+    # Gradient matrix
+    if (all(unlist(lapply(.actualArgs, is.name)))) {
+      .grad <- array(0, c(length(.value), 5L), list(NULL, c("asym1", "asym2", "xmid", "iscal", "theta")))
+      .grad[, "asym1"] <- .exp1
+      .grad[, "asym2"] <- .exp2
+      .grad[, "xmid"] <- .exp3
+      .grad[, "iscal"] <- .exp4
+      .grad[, "theta"] <- .exp5
+      dimnames(.grad) <- list(NULL, .actualArgs)
+      attr(.value, "gradient") <- .grad
+    }
+    .value
+  },
+  initial = function(mCall, LHS, data, ...) {
+    # Initialization logic
+    xy <- sortedXyData(mCall[["x"]], LHS, data)
+    if (nrow(xy) < 5) {
+      stop("Too few distinct input values to fit a logis5")
+    }
+    asym1 <- xy[1, "y"]
+    asym2 <- xy[nrow(xy), "y"]
+    xmid <- NLSstClosestX(xy, mean(c(asym1, asym2)))
+    iscal <- 1 / (max(xy[,"x"], na.rm = TRUE) - xmid)
+    theta <- 1
+
+    objfun <- function(cfs) {
+      pred <- SSlogis5(xy[,"x"], asym1 = cfs[1], asym2 = cfs[2], xmid = cfs[3], iscal = cfs[4], theta = cfs[5])
+      ans <- sum((xy[,"y"] - pred)^2)
+      ans
+    }
+    cfs <- c(asym1, asym2, xmid, iscal, theta)
+    op <- try(stats::optim(cfs, objfun), silent = TRUE)
+
+    if (!inherits(op, "try-error")) {
+      asym1 <- op$par[1]
+      asym2 <- op$par[2]
+      xmid <- op$par[3]
+      iscal <- op$par[4]
+      theta <- op$par[5]
+    }
+
+    value <- c(asym1, asym2, xmid, iscal, theta)
+    names(value) <- mCall[c("asym1", "asym2", "xmid", "iscal", "theta")]
+    value
+  },
+  parameters = c("asym1", "asym2", "xmid", "iscal", "theta")
+)
+
+mod_L5 <- function(data,
+                   flight_date = "date",
+                   predictor = "median.NDVI",
+                   sowing_date = NULL,
+                   parallel = FALSE) {
+
+  # Prepare data
+  dftemp <- data |>
+    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::group_by(unique_plot) |>
+    tidyr::nest()
+
+  # Parallel or Sequential Plan
+  if (parallel) {
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+  } else {
+    future::plan(future::sequential)
+  }
+  on.exit(future::plan(future::sequential))
+
+  `%dofut%` <- doFuture::`%dofuture%`
+  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
+    df <- as.data.frame(dftemp$data[[i]])
+
+    tryCatch({
+      if (!is.null(sowing_date)) {
+        flights <- as.POSIXlt(df[[flight_date]])$yday + 1 - (as.POSIXlt(sowing_date)$yday + 1)
+      } else {
+        flights <- as.POSIXlt(df[[flight_date]])$yday + 1
+      }
+
+      fflight <- min(flights)
+      lflight <- max(flights) + 20
+      y <- df |> dplyr::pull(!!rlang::sym(predictor))
+
+      # Fit the logistic model with 5 parameters
+      model <- try(
+        nls(y ~ SSlogis5(flights, asym1, asym2, xmid, iscal, theta),
+            data = data.frame(flights, y),
+            control = nls.control(maxiter = 1000)),
+        silent = TRUE
+      )
+
+      if (inherits(model, "try-error")) {
+        model <- suppressWarnings(
+          minpack.lm::nlsLM(y ~ SSlogis5(flights, asym1, asym2, xmid, iscal, theta),
+                            data = data.frame(flights, y))
+        )
+      }
+
+      coefs <- coef(model)
+      asym1 <- coefs["asym1"]
+      asym2 <- coefs["asym2"]
+      xmid <- coefs["xmid"]
+      iscal <- coefs["iscal"]
+      theta <- coefs["theta"]
+      indexdecrease <- asym2 < asym1
+      # Critical Points
+      inflec <- suppressWarnings(
+        optimise(
+          fdfun_L5,
+          interval = c(fflight, lflight),
+          iscal = iscal,
+          asym1 = asym1,
+          asym2 = asym2,
+          xmid = xmid,
+          theta = theta,
+          maximum = !indexdecrease
+        )
+      )
+
+      cp1 <-
+        suppressWarnings(
+          optimise(
+            sdfun_L5,
+            interval = c(fflight, lflight),
+            iscal = iscal,
+            asym1 = asym1,
+            asym2 = asym2,
+            xmid = xmid,
+            theta = theta,
+            maximum = !indexdecrease
+          )
+        )
+
+      cp2 <-
+        suppressWarnings(
+          optimise(
+            sdfun_L5,
+            interval = c(fflight, lflight),
+            iscal = iscal,
+            asym1 = asym1,
+            asym2 = asym2,
+            xmid = xmid,
+            theta = theta,
+            maximum = indexdecrease
+          )
+        )
+
+      # Heading
+      xfd <- seq(min(flights), ceiling(cp1$minimum), length.out = 500)
+      yfd <- sdfun_L5(xfd, asym1, asym2, xmid, iscal,  theta)
+      dfreg <- data.frame(x = c(min(xfd), max(xfd)), y = c(max(yfd), min(yfd)))
+      regmod <- lm(y ~ x, data = dfreg)
+      predline <- predict(regmod, newdata = data.frame(x = xfd))
+      head <- xfd[which.max(abs(yfd - predline))]
+
+      # Maturation
+      xfd2 <- seq(inflec[[1]], lflight, length.out = 500)
+      yfd2 <- fdfun_L5(xfd2, asym1, asym2, xmid, iscal, theta)
+      dfreg2 <- data.frame(x = c(min(xfd2), max(xfd2)), y = c(min(yfd2), max(yfd2)))
+      regmod2 <- lm(y ~ x, data = dfreg2)
+      predline2 <- predict(regmod2, newdata = data.frame(x = xfd2))
+      maturation <- xfd2[which.max(abs(yfd2 - predline2))]
+
+      # Integrate AUC
+      int1 <- integrate(
+        modfun_L5,
+        lower = fflight,
+        upper = lflight,
+        asym1 = asym1,
+        asym2 = asym2,
+        xmid = xmid,
+        iscal = iscal,
+        theta = theta
+      )
+
+      int2 <- integrate(
+        modfun_L5,
+        lower = head,
+        upper = maturation,
+        asym1 = asym1,
+        asym2 = asym2,
+        xmid = xmid,
+        iscal = iscal,
+        theta = theta
+      )
+
+      # Return results
+      tibble::tibble(
+        unique_plot = dftemp$unique_plot[i],
+        asym1 = asym1,
+        asym2 = asym2,
+        xmid = xmid,
+        iscal = iscal,
+        theta = theta,
+        inflection = inflec[[1]],
+        heading = head,
+        maturity = maturation,
+        repr_period = maturation - head,
+        auc = int1$value,
+        auc_repr_period = int2$value,
+        parms = list(
+          model = modfun_L5,
+          modeladj = model,
+          fd = fdfun_L5,
+          sd = sdfun_L5,
+          coefs = list(
+            asym1 = asym1,
+            asym2 = asym2,
+            xmid = xmid,
+            iscal = iscal,
+            theta = theta
+          ),
+          xmin = fflight,
+          xmax = lflight
+        )
+      )
+    }, error = function(e) {
+      # Return NA values if the model fails
+      tibble::tibble(
+        unique_plot = dftemp$unique_plot[i],
+        asym1 = NA_real_,
+        asym2 = NA_real_,
+        xmid = NA_real_,
+        iscal = NA_real_,
+        theta = NA_real_,
+        inflection = NA_real_,
+        heading = NA_real_,
+        maturity = NA_real_,
+        repr_period = NA_real_,
+        auc = NA_real_,
+        auc_repr_period = NA_real_,
+        parms = NA
+      )
+    })
+  }
+
+  # Finalize results
+  results <- results_list |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+    tidyr::nest(parms = parms)
+
+  return(results)
+}
+
+
+
+help_mod_L5_eq <- function() {
+  "$$y(x) = asym2 + \\frac{asym1 - asym2}{\\left(1 + \\exp\\left(iscal \\cdot \\left(\\log(x) - \\log(xmid)\\right)\\right)\\right)^{theta}}$$"
+}
+
+help_mod_L5_fd <- function() {
+  "$$
+  y'(x) = -\\frac{
+    (asym1 - asym2) \\cdot
+    \\left[
+      \\left(1 + \\exp\\left(iscal \\cdot \\left(\\log(x) - \\log(xmid)\\right)\\right)\\right)^{theta - 1} \\cdot
+      \\left(theta \\cdot \\exp\\left(iscal \\cdot \\left(\\log(x) - \\log(xmid)\\right)\\right) \\cdot \\frac{iscal}{x}\\right)
+    \\right]
+  }{
+    \\left(1 + \\exp\\left(iscal \\cdot \\left(\\log(x) - \\log(xmid)\\right)\\right)\\right)^{2 \\cdot theta}
+  }
+  $$"
+}
+
+help_mod_L5_sd <- function() {
+  "$$
+  y''(x) = -\\left(
+    \\frac{
+      (asym1 - asym2) \\cdot
+      \\left[
+        \\left(1 + \\exp\\left(iscal \\cdot \\left(\\log(x) - \\log(xmid)\\right)\\right)\\right)^{theta - 2} \\cdot
+        \\left(
+          (theta - 1) \\cdot \\exp\\left(iscal \\cdot \\left(\\log(x) - \\log(xmid)\\right)\\right) \\cdot \\frac{iscal}{x} \\cdot
+          theta \\cdot \\exp\\left(iscal \\cdot \\left(\\log(x) - \\log(xmid)\\right)\\right) \\cdot \\frac{iscal}{x}
+        \\right) +
+        \\left(1 + \\exp\\left(iscal \\cdot \\left(\\log(x) - \\log(xmid)\\right)\\right)\\right)^{theta - 1} \\cdot
+        \\left(theta \\cdot \\exp\\left(iscal \\cdot \\left(\\log(x) - \\log(xmid)\\right)\\right) \\cdot \\frac{iscal^2}{x^2}\\right)
+      \\right]
+    }{
+      \\left(1 + \\exp\\left(iscal \\cdot \\left(\\log(x) - \\log(xmid)\\right)\\right)\\right)^{2 \\cdot theta}
+    } -
+    \\frac{
+      (asym1 - asym2) \\cdot
+      \\left[
+        \\left(1 + \\exp\\left(iscal \\cdot \\left(\\log(x) - \\log(xmid)\\right)\\right)\\right)^{theta - 1} \\cdot
+        \\left(theta \\cdot \\exp\\left(iscal \\cdot \\left(\\log(x) - \\log(xmid)\\right)\\right) \\cdot \\frac{iscal}{x}\\right)
+      \\right] \\cdot
+      2 \\cdot
+      \\left[
+        \\left(1 + \\exp\\left(iscal \\cdot \\left(\\log(x) - \\log(xmid)\\right)\\right)\\right)^{theta - 1} \\cdot
+        \\left(theta \\cdot \\exp\\left(iscal \\cdot \\left(\\log(x) - \\log(xmid)\\right)\\right) \\cdot \\frac{iscal}{x}\\right)
+      \\right]
+    }{
+      \\left(1 + \\exp\\left(iscal \\cdot \\left(\\log(x) - \\log(xmid)\\right)\\right)\\right)^{4 \\cdot theta}
+    }
+  \\right)
+  $$"
+}
+
+help_mod_L5 <- function() {
+  div(
+    style = "font-family: Arial, sans-serif; line-height: 1.5;",
+    h2(style = "color: #2E86C1;", "Description of Parameters and Outputs"),
+    tags$ul(
+      tags$li(tags$b("x:"), " Input variable, typically representing time or independent variable."),
+      tags$li(tags$b("asym1:"), " Asymptotic value for low values of x."),
+      tags$li(tags$b("asym2:"), " Asymptotic value for high values of x."),
+      tags$li(tags$b("xmid:"), " The x-value at which y = (asym1 + asym2)/2 when theta = 1."),
+      tags$li(tags$b("iscal:"), " Steepness of the transition from asym1 to asym2 (inverse of the scale)."),
+      tags$li(tags$b("theta:"), " Asymmetry parameter; when theta = 1, this reduces to the 4-parameter logistic model."),
+      tags$li(tags$b("inflection:"), " The x-value at the inflection point, where the growth rate is maximal."),
+      tags$li(tags$b("auc:"), " The area under the curve (AUC), representing the total response over the range of x.")
+    ),
+    h2(style = "color: #2E86C1;", "Growth Curve"),
+    p("The five-parameter logistic model (5PL) captures sigmoidal growth patterns with added flexibility for asymmetry."),
+    p("The equation is given by:"),
+    p(help_mod_L5_eq()),
+    h2(style = "color: #2E86C1;", "First Derivative"),
+    p("The first derivative describes the rate of change of the response variable:"),
+    p(help_mod_L5_fd()),
+    h2(style = "color: #2E86C1;", "Second Derivative"),
+    p("The second derivative describes the curvature of the growth curve, indicating acceleration or deceleration:"),
+    p(help_mod_L5_sd()),
+    h2(style = "color: #2E86C1;", "Applications and Insights"),
+    tags$ul(
+      tags$li("The 5PL model provides more flexibility compared to simpler logistic models, allowing for asymmetry in growth."),
+      tags$li("Useful for analyzing biological growth patterns, dose-response relationships, and more."),
+      tags$li("Captures critical growth dynamics, including inflection points, asymptotes, and steepness.")
+    )
+  )
+}
+
 
 
 
@@ -1178,7 +1223,7 @@ mod_weibull <- function(data,
   `%dofut%` <- doFuture::`%dofuture%`
 
   # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows) %dofut% {
+  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
     if (!is.null(sowing_date)) {
       flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
@@ -1399,7 +1444,7 @@ mod_gompertz <- function(data,
   `%dofut%` <- doFuture::`%dofuture%`
 
   # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows) %dofut% {
+  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
     if (!is.null(sowing_date)) {
       flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
@@ -1601,7 +1646,7 @@ mod_logistic_3P <- function(data,
   `%dofut%` <- doFuture::`%dofuture%`
 
   # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows) %dofut% {
+  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
     if (!is.null(sowing_date)) {
       flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
@@ -1768,7 +1813,7 @@ help_mod_L3_gm <- function() {
 ############## LOGISTIC MODEL 4 PARAMETERS - GROWTH MODELS #############
 mod_logistic_4P <- function(data,
                             flight_date = "date",
-                            predictor = "median.NDVI",
+                            predictor = "q90",
                             sowing_date = NULL,
                             parallel = FALSE) {
   # Prepare data
@@ -1792,7 +1837,7 @@ mod_logistic_4P <- function(data,
   `%dofut%` <- doFuture::`%dofuture%`
 
   # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows) %dofut% {
+  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
 
     if (!is.null(sowing_date)) {
@@ -1807,47 +1852,59 @@ mod_logistic_4P <- function(data,
 
     # Use tryCatch to handle model fitting errors
     result <- tryCatch({
-      # Fit Logistic model
-      model <- drc::drm(y ~ flights, fct = drc::L.4(), data = data.frame(flights, y))
+
+      model <- try(
+        nls( y ~ SSfpl(flights, a, b, xmid, scal),
+             data = data.frame(flights, y),
+             control = nls.control(maxiter = 1000)),
+        silent = TRUE
+      )
+
+      if (inherits(model, "try-error")) {
+        model <- suppressWarnings(
+          minpack.lm::nlsLM(y ~ SSfpl(flights, a, b, xmid, scal),
+                            data = data.frame(flights, y))
+        )
+      }
+
       coefslog <- coef(model)
-      b0 <- coefslog[1]
-      b1 <- coefslog[2]
-      b2 <- coefslog[3]
-      b3 <- coefslog[4]
+      a <- coefslog[1]
+      b <- coefslog[2]
+      xmid <- coefslog[3]
+      scal <- coefslog[4]
 
       # Goodness of fit
       gofval <- gof(model, y)
 
       # Area under curve
-      auc <- integrate(modfun_L4, lower = fflight, upper = lflight, b0 = b0, b1 = b1, b2 = b2, b3 = b3)
-
+      auc <- integrate(modfun_L4, lower = fflight, upper = lflight, a = a, b = b, xmid = xmid, scal = scal)
       # critical points
       fdopt_result <-
         optimize(fdfun_L4,
-                 b0 = b0,
-                 b1 = b1,
-                 b2 = b2,
-                 b3 = b3,
+                 a = a,
+                 b = b,
+                 xmid = xmid,
+                 scal = scal,
                  interval = c(fflight, lflight),
                  maximum = TRUE)
 
       # maximum acceleration
       sdopt_result <-
         optimize(sdfun_L4,
-                 b0 = b0,
-                 b1 = b1,
-                 b2 = b2,
-                 b3 = b3,
+                 a = a,
+                 b = b,
+                 xmid = xmid,
+                 scal = scal,
                  interval = c(fflight, lflight),
                  maximum = TRUE)
 
       # maximum deceleration
       sdopt_result2 <-
         optimize(sdfun_L4,
-                 b0 = b0,
-                 b1 = b1,
-                 b2 = b2,
-                 b3 = b3,
+                 a = a,
+                 b = b,
+                 xmid = xmid,
+                 scal = scal,
                  interval = c(fflight, lflight),
                  maximum = FALSE)
 
@@ -1855,7 +1912,7 @@ mod_logistic_4P <- function(data,
       tibble::tibble(
         unique_plot = dftemp$unique_plot[i],
         model = "Logistic 4P",
-        asymptote = b2,
+        asymptote = b,
         auc = auc$value,
         xinfp = fdopt_result$maximum,
         yinfp = fdopt_result$objective,
@@ -1870,7 +1927,7 @@ mod_logistic_4P <- function(data,
                      modeladj = model,
                      fd = fdfun_L4,
                      sd = sdfun_L4,
-                     coefs = list(b0 = b0, b1 = b1, b2 = b2, b3 = b3),
+                     coefs = list(a = a, b = b, xmid = xmid, scal = scal),
                      xmin = fflight, xmax = lflight)
       )
     }, error = function(e) {
@@ -1905,24 +1962,26 @@ mod_logistic_4P <- function(data,
 }
 
 # Logistic
-help_mod_L4_gm <- function(){
+help_mod_L4_gm <- function() {
   div(
     style = "font-family: Arial, sans-serif; line-height: 1.5;",
+
+    # Introduction
     p("This information is essential for analyzing growth patterns, comparing treatments, and understanding biological dynamics."),
+
+    # Growth Curve Section
     h2(style = "color: #2E86C1;", "Growth Curve"),
-    # Description
-    style = "font-family: Arial, sans-serif; line-height: 1.5;",
     p("The four-parameter logistic model (4PL) is widely used to describe biological growth processes, such as plant height, weight, or population dynamics. It captures the characteristic sigmoidal (S-shaped) growth pattern often observed in nature."),
     p("The equation is given by:"),
-    p("$$y = b_1 + \\frac{(b_2 - b_1)}{1 + \\exp(b_0 \\cdot (x - b_3))}$$"),
+    p(help_mod_L4_eq()),
     p(strong("Where:")),
     withMathJax(
       tags$ul(
-        tags$li("\\(x\\): The time in days after sowing."),
-        tags$li("\\(b_0\\): The growth rate (steepness of the curve)."),
-        tags$li("\\(b_1\\): The initial size or lower asymptote (e.g., initial plant height)."),
-        tags$li("\\(b_2\\): The maximum potential size or upper asymptote (e.g., maximum plant height)."),
-        tags$li("\\(b_3\\): The inflection point (time or stage when growth rate is maximal).")
+        tags$li("\\(x\\): The independent variable, typically time or stage."),
+        tags$li("\\(a\\): The lower asymptote, representing the minimum value of the response variable."),
+        tags$li("\\(b\\): The upper asymptote, representing the maximum value of the response variable."),
+        tags$li("\\(x_{mid}\\): The inflection point, where the rate of change in the response variable is maximal."),
+        tags$li("\\(scal\\): A scale parameter that determines the steepness of the curve.")
       )
     ),
     p(strong("Key Features:")),
@@ -1931,41 +1990,38 @@ help_mod_L4_gm <- function(){
       tags$li("Represents initial size, growth rate, and maximum size clearly."),
       tags$li("Commonly applied to plant growth studies, animal development, and population dynamics.")
     ),
+
+    # First Derivative Section
     h2(style = "color: #2E86C1;", "First Derivative"),
     p("The first derivative of the four-parameter logistic model (4PL) describes the rate of change of the response variable (e.g., growth rate) at any given point. It is particularly useful for identifying the inflection point, where the rate of growth is maximal."),
     p("The first derivative is given by:"),
-    p("$$
-    y'(x) = -\\frac{(b_2 - b_1) \\cdot \\exp(b_0 \\cdot (x - b_3)) \\cdot b_0}{(1 + \\exp(b_0 \\cdot (x - b_3)))^2}
-    $$"),
+    p(help_mod_L4_fd()),
     p(strong("Key Features:")),
     tags$ul(
       tags$li("Captures the growth rate at any point on the curve."),
       tags$li("The maximum value of the derivative corresponds to the inflection point."),
       tags$li("Helps in understanding the dynamics of growth over time."),
-      tags$li("Useful for comparing growth rates across different conditions or treatments."),
-      p("This derivative is particularly useful for studying dynamic biological processes, such as plant height growth, where understanding the rate of change is crucial."),
-      h2(style = "color: #2E86C1;", "Second Derivative"),
-      # Description
-      style = "font-family: Arial, sans-serif; line-height: 1.5;",
-      p("The second derivative of the four-parameter logistic model (4PL) provides insight into the curvature of the growth curve, helping to identify points of acceleration or deceleration in growth. This is crucial for understanding how growth dynamics change over time."),
-      p("The second derivative is given by:"),
-      p("$$
-    y''(x) = -\\frac{(b_2 - b_1) \\cdot \\exp(b_0 \\cdot (x - b_3)) \\cdot b_0^2}{(1 + \\exp(b_0 \\cdot (x - b_3)))^2} -
-    \\frac{(b_2 - b_1) \\cdot \\exp(b_0 \\cdot (x - b_3)) \\cdot b_0 \\cdot
-    \\big(2 \\cdot \\exp(b_0 \\cdot (x - b_3)) \\cdot b_0 \\cdot (1 + \\exp(b_0 \\cdot (x - b_3)))\\big)}
-    {(1 + \\exp(b_0 \\cdot (x - b_3)))^4}
-    $$"),
-      p(strong("Key Features:")),
-      tags$ul(
-        tags$li("Describes how the rate of growth changes over time (acceleration or deceleration)."),
-        tags$li("Helps identify regions of maximum acceleration or deceleration in growth."),
-        tags$li("Provides insights into the dynamics of curvature for growth modeling."),
-        tags$li("Useful for fine-tuning growth predictions and analyzing biological phenomena.")
-      ),
-      p("The second derivative is a powerful tool for understanding not just the growth rate but also the changes in growth dynamics over time. It is particularly useful in identifying critical points in biological systems, such as transitions from rapid growth to slower growth phases.")
-    )
+      tags$li("Useful for comparing growth rates across different conditions or treatments.")
+    ),
+
+    # Second Derivative Section
+    h2(style = "color: #2E86C1;", "Second Derivative"),
+    p("The second derivative of the four-parameter logistic model (4PL) provides insight into the curvature of the growth curve, helping to identify points of acceleration or deceleration in growth. This is crucial for understanding how growth dynamics change over time."),
+    p("The second derivative is given by:"),
+    p(help_mod_L4_sd()),
+    p(strong("Key Features:")),
+    tags$ul(
+      tags$li("Describes how the rate of growth changes over time (acceleration or deceleration)."),
+      tags$li("Helps identify regions of maximum acceleration or deceleration in growth."),
+      tags$li("Provides insights into the dynamics of curvature for growth modeling."),
+      tags$li("Useful for fine-tuning growth predictions and analyzing biological phenomena.")
+    ),
+
+    # Conclusion
+    p("The second derivative is a powerful tool for understanding not just the growth rate but also the changes in growth dynamics over time. It is particularly useful in identifying critical points in biological systems, such as transitions from rapid growth to slower growth phases.")
   )
 }
+
 
 
 ######### VON bertalanffy MODEL ############
@@ -2030,7 +2086,7 @@ mod_vonbert <- function(data,
   `%dofut%` <- doFuture::`%dofuture%`
 
   # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows) %dofut% {
+  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
     if (!is.null(sowing_date)) {
       flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
@@ -2257,7 +2313,7 @@ mod_exponential <- function(data,
   `%dofut%` <- doFuture::`%dofuture%`
 
   # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows) %dofut% {
+  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
     if (!is.null(sowing_date)) {
       flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
@@ -2491,7 +2547,7 @@ mod_janoschek <- function(data,
   `%dofut%` <- doFuture::`%dofuture%`
 
   # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows) %dofut% {
+  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
     if (!is.null(sowing_date)) {
       flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
@@ -2712,7 +2768,6 @@ SStransGompertz <- selfStart(
     # Estimate b (scale parameter)
     y_near_start <- y[1] # Initial observed value
     b_init <- -log(y_near_start / A_init) / exp(-c_init * t[1]) # Scale estimation
-    print(c(A = A_init, b = b_init, c = c_init))
     c(A = A_init, b = b_init, c = c_init)
   },
   parameters = c("A", "b", "c")
@@ -2741,7 +2796,7 @@ mod_transgompertz <- function(data,
   `%dofut%` <- doFuture::`%dofuture%`
 
   # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows) %dofut% {
+  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
     if (!is.null(sowing_date)) {
       flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
@@ -2998,7 +3053,7 @@ mod_sinusoidal <- function(data,
   `%dofut%` <- doFuture::`%dofuture%`
 
   # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows) %dofut% {
+  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
     if (!is.null(sowing_date)) {
       flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
@@ -3135,3 +3190,1548 @@ help_mod_sinusoidal <- function() {
     )
   )
 }
+
+############ ASYMPTOTIC MODEL ############
+modfun_asym <- function(x, Asym, R0, lrc) {
+  Asym + (R0 - Asym) * exp(-exp(lrc) * x)
+}
+
+# First derivative of the asymptotic model
+fdfun_asym <- function(x, Asym, R0, lrc) {
+  -((R0 - Asym) * (exp(-exp(lrc) * x) * exp(lrc)))
+}
+
+# Second derivative of the asymptotic model
+sdfun_asym <- function(x, Asym, R0, lrc) {
+  (R0 - Asym) * (exp(-exp(lrc) * x) * exp(lrc) * exp(lrc))
+}
+
+
+mod_asymptotic <- function(data,
+                           flight_date = "date",
+                           predictor = "median.NDVI",
+                           sowing_date = NULL,
+                           parallel = FALSE) {
+  # Prepare data
+  dftemp <-
+    data |>
+    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::group_by(unique_plot) |>
+    tidyr::nest()
+
+  # Parallel or Sequential Plan
+  if (parallel) {
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+  } else {
+    future::plan(future::sequential)
+  }
+  on.exit(future::plan(future::sequential))
+
+  `%dofut%` <- doFuture::`%dofuture%`
+
+  # Fit model for each group
+  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows) %dofut% {
+    df <- as.data.frame(dftemp$data[[i]])
+    tryCatch({
+      if (!is.null(sowing_date)) {
+        flights <- as.POSIXlt(df[[flight_date]])$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+      } else {
+        flights <- as.POSIXlt(df[[flight_date]])$yday + 1
+      }
+
+      fflight <- min(flights)
+      lflight <- max(flights) + 20
+      y <- df |> dplyr::pull(!!rlang::sym(predictor))
+      x <- flights
+
+      # Fit Asymptotic model
+      model <- nls(y ~ SSasymp(x, Asym, R0, lrc),
+                   control = nls.control(maxiter = 1000),
+                   data = data.frame(x, y))
+
+      coefs <- coef(model)
+      gofval <- gof(model, y)
+
+      # Area under curve
+      int1 <- integrate(modfun_asym,
+                        lower = fflight,
+                        upper = lflight,
+                        Asym = coefs[["Asym"]],
+                        R0 = coefs[["R0"]],
+                        lrc = coefs[["lrc"]])
+
+
+      # Return results
+      tibble::tibble(
+        unique_plot = dftemp$unique_plot[i],
+        model = "Asymptotic",
+        asymptote = coefs[["Asym"]],
+        R0 = coefs[["R0"]],
+        lrc = coefs[["lrc"]],
+        auc = int1$value,
+        aic = gofval[[1]],
+        rmse = gofval[[2]],
+        mae = gofval[[3]],
+        parms = list(model = modfun_asym,
+                     modeladj = model,
+                     fd = fdfun_asym,
+                     sd = sdfun_asym,
+                     coefs = list(
+                       Asym = coefs[["Asym"]],
+                       R0 = coefs[["R0"]],
+                       lrc = coefs[["lrc"]]
+                     ),
+                     xmin = fflight,
+                     xmax = lflight)
+      )
+    }, error = function(e) {
+      # Return NA values if model fails
+      tibble::tibble(
+        unique_plot = dftemp$unique_plot[i],
+        model = "Asymptotic",
+        asymptote = NA_real_,
+        R0 = NA_real_,
+        lrc = NA_real_,
+        auc = NA_real_,
+        aic = NA_real_,
+        rmse = NA_real_,
+        mae = NA_real_,
+        parms = NA
+      )
+    })
+  }
+
+  results <- results_list |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+    tidyr::nest(parms = parms)
+
+  return(results)
+}
+
+help_mod_asym_eq <- function() {
+  "$$y(x) = \\text{Asym} + (R_0 - \\text{Asym}) \\cdot e^{-e^{\\text{lrc}} \\cdot x}$$"
+}
+
+help_mod_asym_fd <- function() {
+  "$$y'(x) = -(R_0 - \\text{Asym}) \\cdot e^{-e^{\\text{lrc}} \\cdot x} \\cdot e^{\\text{lrc}}$$"
+}
+
+help_mod_asym_sd <- function() {
+  "$$y''(x) = (R_0 - \\text{Asym}) \\cdot e^{-e^{\\text{lrc}} \\cdot x} \\cdot e^{2 \\cdot \\text{lrc}}$$"
+}
+
+help_mod_asymptotic <- function() {
+  div(
+    style = "font-family: Arial, sans-serif; line-height: 1.5;",
+    h2(style = "color: #2E86C1;", "Asymptotic Growth Model"),
+    p("The asymptotic growth model describes processes that grow quickly at first and then level off asymptotically, such as biological growth or diffusion processes."),
+    p("The equation is given by:"),
+    p(help_mod_asym_eq()),
+    p(strong("Where:")),
+    withMathJax(
+      tags$ul(
+        tags$li("\\(x\\): The time or independent variable."),
+        tags$li("\\(\\text{Asym}\\): The asymptotic value."),
+        tags$li("\\(R_0\\): The initial response value."),
+        tags$li("\\(\\text{lrc}\\): The natural log of the rate constant.")
+      )
+    ),
+    p(strong("Key Features:")),
+    tags$ul(
+      tags$li("Models processes that plateau over time."),
+      tags$li("Captures the transition from rapid growth to stabilization."),
+      tags$li("Applicable to biological systems, chemical reactions, and logistic-type growth.")
+    ),
+    h2(style = "color: #2E86C1;", "First Derivative"),
+    p("The first derivative of the asymptotic model represents the instantaneous rate of change in the response variable."),
+    p("The first derivative is given by:"),
+    p(help_mod_asym_fd()),
+    p(strong("Key Features:")),
+    tags$ul(
+      tags$li("Describes how quickly the process is growing or stabilizing."),
+      tags$li("Useful for analyzing the transition from rapid growth to leveling off."),
+      tags$li("Helps identify points of maximal growth rate.")
+    ),
+    h2(style = "color: #2E86C1;", "Second Derivative"),
+    p("The second derivative of the asymptotic model describes the acceleration or deceleration of growth."),
+    p("The second derivative is given by:"),
+    p(help_mod_asym_sd()),
+    p(strong("Key Features:")),
+    tags$ul(
+      tags$li("Describes the rate at which growth acceleration changes."),
+      tags$li("Helps identify inflection points and patterns in stabilization."),
+      tags$li("Useful for understanding the dynamics of the leveling-off process.")
+    )
+  )
+}
+
+
+########### Asymmetric Gaussian bell-shaped model ###########
+SSagauss <- selfStart(
+  model = function(x, eta, beta, delta, sigma1, sigma2) {
+    # Asymmetric Gaussian bell-shaped curve
+    .expre0 <- (eta - beta)
+    .expre1 <- exp(-((x - delta)^2) / (2 * sigma1^2))
+    .expre2 <- exp(-((x - delta)^2) / (2 * sigma2^2))
+    .value <- ifelse(
+      x < delta,
+      beta + .expre0 * .expre1,
+      beta + .expre0 * .expre2
+    )
+
+    ## Gradient calculations
+    .exp1 <- ifelse(x < delta,
+                    1 - exp(-(x - delta)^2 / (2 * sigma1^2)),
+                    1 - exp(-(x - delta)^2 / (2 * sigma2^2)))
+    .exp2 <- ifelse(x < delta,
+                    exp(-(x - delta)^2 / (2 * sigma1^2)),
+                    exp(-(x - delta)^2 / (2 * sigma2^2)))
+
+    .expr1 <- eta - beta
+    .expr2 <- x - delta
+    .expr4 <- 2 * sigma1^2
+    .expr41 <- 2 * sigma2^2
+    .expr6 <- exp(-.expr2^2 / .expr4)
+    .expr61 <- exp(-.expr2^2 / .expr41)
+    .expr7 <- -(.expr1 * (.expr6 * (2 * .expr2 / .expr4)))
+    .expr8 <- -(.expr1 * (.expr61 * (2 * .expr2 / .expr41)))
+    .exp3 <- ifelse(x < delta, .expr7, .expr8)
+
+    .expr3 <- (x - delta)^2
+    .expr8 <- exp(-.expr3 / .expr4)
+    .exp4 <- ifelse(x < delta,
+                    .expr1 * (.expr8 * (.expr3 * (2 * (2 * sigma1)) / .expr4^2)),
+                    0)
+    .exp5 <- ifelse(x < delta, 0,
+                    .expr1 * (.expr8 * (.expr3 * (2 * (2 * sigma1)) / .expr4^2)))
+
+    ## Combine gradients
+    .grad <- cbind(.exp1, .exp2, .exp3, .exp4, .exp5)
+    colnames(.grad) <- c("eta", "beta", "delta", "sigma1", "sigma2")
+    attr(.value, "gradient") <- .grad
+
+    .value
+  },
+  initial = function(mCall, LHS, data, ...) {
+    # Initialization for self-start
+    xy <- sortedXyData(mCall[["x"]], LHS, data)
+    if (nrow(xy) < 5) {
+      stop("Too few distinct input values to fit an asymmetric Gaussian curve.")
+    }
+    eta <- max(xy[,"y"])
+    beta <- min(xy[,"y"])
+    delta <- NLSstClosestX(xy, eta)
+    sigma1 <- abs((min(xy[,"x"]) - delta) / 2)
+    sigma2 <- abs((max(xy[,"x"]) - delta) / 2)
+    c(eta = eta, beta = beta, delta = delta, sigma1 = sigma1, sigma2 = sigma2)
+  },
+  parameters = c("eta", "beta", "delta", "sigma1", "sigma2")
+)
+
+# Asymmetric Gaussian function
+modfun_agaus <- function(x, beta, eta, delta, sigma1, sigma2) {
+  ifelse(
+    x <= delta,
+    beta + (eta - beta) * exp(-((x - delta)^2) / (2 * sigma1^2)),
+    beta + (eta - beta) * exp(-((x - delta)^2) / (2 * sigma2^2))
+  )
+}
+# First derivative of the asymmetric Gaussian function
+fdfun_agaus <- function(x, beta, eta, delta, sigma1, sigma2) {
+  ifelse(
+    x <= delta,
+    -((eta - beta) * (exp(-((x - delta)^2)/(2 * sigma1^2)) * (2 * (x - delta)/(2 * sigma1^2)))),
+    -((eta - beta) * (exp(-((x - delta)^2)/(2 * sigma2^2)) * (2 * (x - delta)/(2 * sigma2^2))))
+  )
+}
+# Second derivative of the asymmetric Gaussian function
+sdfun_agaus <- function(x, beta, eta, delta, sigma1, sigma2) {
+  ifelse(
+    x <= delta,
+    -((eta - beta) * (exp(-((x - delta)^2)/(2 * sigma1^2)) * (2/(2 *
+                                                                   sigma1^2)) - exp(-((x - delta)^2)/(2 * sigma1^2)) * (2 *
+                                                                                                                          (x - delta)/(2 * sigma1^2)) * (2 * (x - delta)/(2 * sigma1^2)))),
+    -((eta - beta) * (exp(-((x - delta)^2)/(2 * sigma2^2)) * (2/(2 *
+                                                                   sigma2^2)) - exp(-((x - delta)^2)/(2 * sigma2^2)) * (2 *
+                                                                                                                          (x - delta)/(2 * sigma2^2)) * (2 * (x - delta)/(2 * sigma2^2))))
+  )
+}
+
+mod_agauss <- function(data,
+                       flight_date = "date",
+                       predictor = "q90",
+                       sowing_date = NULL,
+                       parallel = FALSE) {
+  # Prepare data
+  dftemp <-
+    data |>
+    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::group_by(unique_plot) |>
+    tidyr::nest()
+
+  # Parallel or Sequential Plan
+  if (parallel) {
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+  } else {
+    future::plan(future::sequential)
+  }
+  on.exit(future::plan(future::sequential))
+
+  `%dofut%` <- doFuture::`%dofuture%`
+
+  # Fit model for each group
+  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows) %dofut% {
+    df <- as.data.frame(dftemp$data[[i]])
+    tryCatch({
+      if (!is.null(sowing_date)) {
+        flights <- as.POSIXlt(df[[flight_date]])$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+      } else {
+        flights <- as.POSIXlt(df[[flight_date]])$yday + 1
+      }
+
+      fflight <- min(flights)
+      lflight <- max(flights) + 20
+      y <- df |> dplyr::pull(!!rlang::sym(predictor))
+      x <- flights
+
+      # Fit Asymptotic model
+      model <- minpack.lm::nlsLM(y ~ SSagauss(x, eta, beta, delta, sigma1, sigma2),
+                                 data = data.frame(x, y))
+      coefs <- coef(model)
+      gofval <- gof(model, y)
+
+      # Area under curve
+      # parameters eta, beta, delta, sigma1, sigma2
+      # integrate
+      int1 <- integrate(modfun_agaus,
+                        lower = fflight,
+                        upper = lflight,
+                        beta = coefs[["beta"]],
+                        eta = coefs[["eta"]],
+                        delta = coefs[["delta"]],
+                        sigma1 = coefs[["sigma1"]],
+                        sigma2 = coefs[["sigma2"]])
+
+
+      # Return results
+      tibble::tibble(
+        unique_plot = dftemp$unique_plot[i],
+        model = "Asymmetric Gaussian",
+        beta = coefs[["beta"]],
+        eta = coefs[["eta"]],
+        delta = coefs[["delta"]],
+        sigma1 = coefs[["sigma1"]],
+        sigma2 = coefs[["sigma2"]],
+        auc = int1$value,
+        aic = gofval[[1]],
+        rmse = gofval[[2]],
+        mae = gofval[[3]],
+        parms = list(model = modfun_agaus,
+                     modeladj = model,
+                     fd = fdfun_agaus,
+                     sd = sdfun_agaus,
+                     coefs = list(
+                       beta = coefs[["beta"]],
+                       eta = coefs[["eta"]],
+                       delta = coefs[["delta"]],
+                       sigma1 = coefs[["sigma1"]],
+                       sigma2 = coefs[["sigma2"]]
+                     ),
+                     xmin = fflight,
+                     xmax = lflight)
+      )
+    }, error = function(e) {
+      # Return NA values if model fails
+      tibble::tibble(
+        unique_plot = dftemp$unique_plot[i],
+        model = "Asymmetric Gaussian",
+        beta = NA_real_,
+        eta = NA_real_,
+        delta = NA_real_,
+        sigma1 = NA_real_,
+        sigma2 = NA_real_,
+        auc = NA_real_,
+        aic = NA_real_,
+        rmse = NA_real_,
+        mae = NA_real_,
+        parms = NA
+      )
+    })
+  }
+
+  results <- results_list |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+    tidyr::nest(parms = parms)
+
+  return(results)
+}
+# Equation of the asymmetric Gaussian function
+help_mod_agaus_eq <- function() {
+  "$$f(x) = \\begin{cases}
+  \\beta + (\\eta - \\beta) \\cdot \\exp\\left(-\\frac{(x - \\delta)^2}{2 \\sigma_1^2}\\right) & \\text{if } x \\leq \\delta, \\\\
+  \\beta + (\\eta - \\beta) \\cdot \\exp\\left(-\\frac{(x - \\delta)^2}{2 \\sigma_2^2}\\right) & \\text{if } x > \\delta.
+  \\end{cases}$$"
+}
+
+# First derivative of the asymmetric Gaussian function
+help_mod_agaus_fd <- function() {
+  "$$f'(x) = \\begin{cases}
+  -\\frac{(x - \\delta)}{\\sigma_1^2} \\cdot (\\eta - \\beta) \\cdot \\exp\\left(-\\frac{(x - \\delta)^2}{2 \\sigma_1^2}\\right) & \\text{if } x \\leq \\delta, \\\\
+  -\\frac{(x - \\delta)}{\\sigma_2^2} \\cdot (\\eta - \\beta) \\cdot \\exp\\left(-\\frac{(x - \\delta)^2}{2 \\sigma_2^2}\\right) & \\text{if } x > \\delta.
+  \\end{cases}$$"
+}
+
+# Second derivative of the asymmetric Gaussian function
+help_mod_agaus_sd <- function() {
+  "$$f''(x) = \\begin{cases}
+  \\frac{(x - \\delta)^2 - \\sigma_1^2}{\\sigma_1^4} \\cdot (\\eta - \\beta) \\cdot \\exp\\left(-\\frac{(x - \\delta)^2}{2 \\sigma_1^2}\\right) & \\text{if } x \\leq \\delta, \\\\
+  \\frac{(x - \\delta)^2 - \\sigma_2^2}{\\sigma_2^4} \\cdot (\\eta - \\beta) \\cdot \\exp\\left(-\\frac{(x - \\delta)^2}{2 \\sigma_2^2}\\right) & \\text{if } x > \\delta.
+  \\end{cases}$$"
+}
+
+# Help function for the asymmetric Gaussian model
+help_mod_asymmetric_gaussian <- function() {
+  div(
+    style = "font-family: Arial, sans-serif; line-height: 1.5;",
+    h2(style = "color: #2E86C1;", "Asymmetric Gaussian Model"),
+    p("The asymmetric Gaussian model describes processes with asymmetric growth and decline phases.
+      It is commonly used for modeling biological, environmental, or temporal data where growth and senescence are not symmetric."),
+    p("The equation is given by:"),
+    p(help_mod_agaus_eq()),
+    p(strong("Where:")),
+    withMathJax(
+      tags$ul(
+        tags$li("\\(x\\): The independent variable, such as time."),
+        tags$li("\\(\\beta\\): The baseline value."),
+        tags$li("\\(\\eta\\): The maximum value."),
+        tags$li("\\(\\delta\\): The point where the maximum value is reached."),
+        tags$li("\\(\\sigma_1\\): Spread parameter for the left side (growth phase)."),
+        tags$li("\\(\\sigma_2\\): Spread parameter for the right side (decline phase).")
+      )
+    ),
+    p(strong("Key Features:")),
+    tags$ul(
+      tags$li("Captures asymmetric growth and senescence processes."),
+      tags$li("Flexible for modeling nonlinear dynamics."),
+      tags$li("Commonly used in plant phenology, water dynamics, and remote sensing.")
+    ),
+    h2(style = "color: #2E86C1;", "First Derivative"),
+    p("The first derivative of the asymmetric Gaussian model represents the rate of change."),
+    p("The first derivative is given by:"),
+    p(help_mod_agaus_fd()),
+    p(strong("Key Features:")),
+    tags$ul(
+      tags$li("Describes the rate of growth or decline."),
+      tags$li("Helps identify critical transition points."),
+      tags$li("Useful for analyzing growth acceleration and deceleration.")
+    ),
+    h2(style = "color: #2E86C1;", "Second Derivative"),
+    p("The second derivative of the asymmetric Gaussian model describes the acceleration or deceleration of the rate of change."),
+    p("The second derivative is given by:"),
+    p(help_mod_agaus_sd()),
+    p(strong("Key Features:")),
+    tags$ul(
+      tags$li("Captures inflection points in growth and senescence."),
+      tags$li("Useful for analyzing transitions between phases."),
+      tags$li("Describes the dynamics of stabilization or rapid change.")
+    )
+  )
+}
+
+############ BETA GROWTH FUNCTION ############
+modfun_beta <- function(x, asym, xm, xe){
+  asym * (1 + (xe - x) / (xe - xm)) * (x / xe)^(xe / (xe - xm))
+}
+# First Derivative of the Beta Growth Model
+fdfun_beta <- function(x, asym, xm, xe) {
+  asym * (1 + (xe - x)/(xe - xm)) * ((x/xe)^((xe/(xe - xm)) - 1) *
+                                       ((xe/(xe - xm)) * (1/xe))) - asym * (1/(xe - xm)) * (x/xe)^(xe/(xe -
+                                                                                                         xm))
+}
+# Second Derivative of the Beta Growth Model
+sdfun_beta <- function(t, asym, xm, xe) {
+  asym * (1 + (xe - x)/(xe - xm)) * ((x/xe)^(((xe/(xe - xm)) -
+                                                1) - 1) * (((xe/(xe - xm)) - 1) * (1/xe)) * ((xe/(xe - xm)) *
+                                                                                               (1/xe))) - asym * (1/(xe - xm)) * ((x/xe)^((xe/(xe - xm)) -
+                                                                                                                                            1) * ((xe/(xe - xm)) * (1/xe))) - asym * (1/(xe - xm)) *
+    ((x/xe)^((xe/(xe - xm)) - 1) * ((xe/(xe - xm)) * (1/xe)))
+}
+
+SSbetagf <- selfStart(
+  model = function(time, w.max, t.e, t.m){
+    # adapted from https://github.com/femiguez/nlraa/blob/master/R/SSbgf.R
+    .expr1 <- t.e / (t.e - t.m)
+    .expr2 <- (time/t.e)^.expr1
+    .expr3 <- (1 + (t.e - time)/(t.e - t.m))
+    .value <- w.max * .expr3 * .expr2
+
+    ## Derivative with respect to w.max
+    ## deriv(~ w.max * (1 + (t.e - time)/(t.e - t.m)) * (time/t.e)^(t.e / (t.e - t.m)),"w.max")
+    .expr2 <- t.e - t.m
+    .expr4 <- 1 + (t.e - time)/.expr2
+    .expr8 <- (time/t.e)^(t.e/.expr2)
+    .expi1 <- .expr4 * .expr8
+    .expi1 <- ifelse(is.nan(.expi1),0,.expi1)
+
+    ## Derivative with respect to t.e
+    .expr1 <- t.e - time
+    .expr5 <- w.max * (1 + .expr1/.expr2)
+    .expr6 <- time/t.e
+    .lexpr6 <- suppressWarnings(log(.expr6))
+    .expr7 <- t.e/.expr2
+    .expr8 <- .expr6^.expr7
+    .expr10 <- 1/.expr2
+    .expr11 <- .expr2^2
+    .expi2 <- w.max * (.expr10 - .expr1/.expr11) * .expr8 + .expr5 * (.expr8 * (.lexpr6 * (.expr10 - t.e/.expr11)) - .expr6^(.expr7 - 1) * (.expr7 * (time/t.e^2)))
+    .expi2 <- ifelse(is.nan(.expi2),0,.expi2)
+
+    ## Derivative with respect to t.m
+    ## deriv(~ w.max * (1 + (t.e - time)/(t.e - t.m)) * (time/t.e)^(t.e / (t.e - t.m)),"t.m")
+    .expr10 <- .expr2^2
+    .expi3 <- w.max * (.expr1/.expr10) * .expr8 + .expr5 * (.expr8 * (.lexpr6 * (t.e/.expr10)))
+    .expi3 <- ifelse(is.nan(.expi3),0,.expi3)
+
+    .actualArgs <- as.list(match.call()[c("w.max", "t.e", "t.m")])
+
+    ##  Gradient
+    if (all(unlist(lapply(.actualArgs, is.name)))) {
+      .grad <- array(0, c(length(.value), 3L), list(NULL, c("w.max", "t.e", "t.m")))
+      .grad[, "w.max"] <- .expi1
+      .grad[, "t.e"] <- .expi2
+      .grad[, "t.m"] <- .expi3
+      dimnames(.grad) <- list(NULL, .actualArgs)
+      attr(.value, "gradient") <- .grad
+    }
+    .value
+  },
+  initial = function(mCall, LHS, data, ...){
+
+    xy <- sortedXyData(mCall[["time"]], LHS, data)
+    if(nrow(xy) < 4){
+      stop("Too few distinct input values to fit a bgf")
+    }
+
+    w.max <- max(xy[,"y"])
+    t.e <- NLSstClosestX(xy, w.max)
+    t.m <- t.e / 2
+    value <- c(w.max, t.e, t.m)
+    names(value) <- mCall[c("w.max","t.e","t.m")]
+    value
+
+  },
+  parameters = c("w.max", "t.e", "t.m")
+)
+
+
+mod_beta <- function(data,
+                     flight_date = "date",
+                     predictor = "median.NDVI",
+                     sowing_date = NULL,
+                     parallel = FALSE) {
+  # Prepare data
+  dftemp <-
+    data |>
+    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::group_by(unique_plot) |>
+    tidyr::nest()
+
+  # Parallel or Sequential Plan
+  if (parallel) {
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+  } else {
+    future::plan(future::sequential)
+  }
+  on.exit(future::plan(future::sequential))
+
+  `%dofut%` <- doFuture::`%dofuture%`
+
+  # Fit model for each group
+  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows) %dofut% {
+    df <- as.data.frame(dftemp$data[[i]])
+    tryCatch({
+      if (!is.null(sowing_date)) {
+        flights <- as.POSIXlt(df[[flight_date]])$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+      } else {
+        flights <- as.POSIXlt(df[[flight_date]])$yday + 1
+      }
+
+      fflight <- min(flights)
+      lflight <- max(flights) + 20
+      y <- df |> dplyr::pull(!!rlang::sym(predictor))
+      x <- flights
+
+      # Fit Asymptotic model
+      model <- minpack.lm::nlsLM(y ~ SSbetagf(x, asym, xe, xm),
+                                 control = nls.control(maxiter = 1000),
+                                 data = data.frame(x, y))
+
+      coefs <- coef(model)
+      gofval <- gof(model, y)
+
+      # Area under curve
+      int1 <- integrate(modfun_beta,
+                        lower = fflight,
+                        upper = lflight,
+                        asym = coefs[["asym"]],
+                        xe = coefs[["xe"]],
+                        xm = coefs[["xm"]])
+
+
+      # Return results
+      tibble::tibble(
+        unique_plot = dftemp$unique_plot[i],
+        model = "Beta Growth",
+        asymptote = coefs[["asym"]],
+        xe = coefs[["xe"]],
+        xm = coefs[["xm"]],
+        auc = int1$value,
+        aic = gofval[[1]],
+        rmse = gofval[[2]],
+        mae = gofval[[3]],
+        parms = list(model = modfun_beta,
+                     modeladj = model,
+                     fd = fdfun_beta,
+                     sd = sdfun_beta,
+                     coefs = list(
+                       asym = coefs[["asym"]],
+                       xe = coefs[["xe"]],
+                       xm = coefs[["xm"]]
+                     ),
+                     xmin = fflight,
+                     xmax = lflight)
+      )
+    }, error = function(e) {
+      # Return NA values if model fails
+      tibble::tibble(
+        unique_plot = dftemp$unique_plot[i],
+        model = "Beta Growth",
+        asymptote = NA_real_,
+        xe = NA_real_,
+        xm = NA_real_,
+        auc = NA_real_,
+        aic = NA_real_,
+        rmse = NA_real_,
+        mae = NA_real_,
+        parms = NA
+      )
+    })
+  }
+
+  results <- results_list |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+    tidyr::nest(parms = parms)
+
+  return(results)
+}
+
+# Beta Growth Model Equation
+help_mod_beta_eq <- function() {
+  "$$f(x) = w_{\\text{max}} \\cdot \\left( 1 + \\frac{t_e - x}{t_e - t_m} \\right) \\cdot \\left( \\frac{x}{t_e} \\right)^{\\frac{t_e}{t_e - t_m}}$$"
+}
+
+# First Derivative of the Beta Growth Model
+help_mod_beta_fd <- function() {
+  "$$f'(x) = w_{\\text{max}} \\cdot \\left( \\frac{x}{t_e} \\right)^{\\frac{t_e}{t_e - t_m} - 1} \\cdot \\left[ \\frac{t_e}{t_e - t_m} \\cdot \\frac{1}{t_e} \\right] - w_{\\text{max}} \\cdot \\frac{1}{t_e - t_m} \\cdot \\left( \\frac{x}{t_e} \\right)^{\\frac{t_e}{t_e - t_m}}$$"
+}
+
+# Second Derivative of the Beta Growth Model
+help_mod_beta_sd <- function() {
+  "$$f''(x) = w_{\\text{max}} \\cdot \\left( \\frac{x}{t_e} \\right)^{\\frac{t_e}{t_e - t_m} - 2} \\cdot \\left( \\frac{t_e}{t_e - t_m} \\cdot \\frac{1}{t_e} \\right)^2 - 2 \\cdot w_{\\text{max}} \\cdot \\frac{1}{t_e - t_m} \\cdot \\left( \\frac{x}{t_e} \\right)^{\\frac{t_e}{t_e - t_m} - 1} \\cdot \\frac{t_e}{t_e - t_m} \\cdot \\frac{1}{t_e}$$"
+}
+
+# Help Documentation for Beta Growth Model
+help_mod_beta <- function() {
+  div(
+    style = "font-family: Arial, sans-serif; line-height: 1.5;",
+    h2(style = "color: #2E86C1;", "Beta Growth Model"),
+    p("The Beta Growth Model is a flexible sigmoid function that describes determinate growth. This model accounts for an initial weight, a maximum weight, and dynamic growth patterns characterized by a rapid growth phase, a slowing phase, and a plateau."),
+    p("The model was proposed in the publication:"),
+    tags$blockquote(
+      "Yin, X., J. Goudriaan, E.A. Lantinga, J. Vos, and H.J. Spiertz. 2003. ",
+      em("A Flexible Sigmoid Function of Determinate Growth."),
+      " Annals of Botany 91(3): 361–371. doi: 10.1093/aob/mcg029."
+    ),
+    p("The equation for the Beta Growth Model is:"),
+    p(help_mod_beta_eq()),
+    p(strong("Where:")),
+    withMathJax(
+      tags$ul(
+        tags$li("\\(x\\): Time or independent variable."),
+        tags$li("\\(w_{\\text{max}}\\): Maximum weight or biomass."),
+        tags$li("\\(t_m\\): Time at which half of the maximum weight is reached."),
+        tags$li("\\(t_e\\): Time at which the weight reaches its maximum.")
+      )
+    ),
+    p(strong("Key Features:")),
+    tags$ul(
+      tags$li("Captures sigmoid-like growth patterns with flexible parameters."),
+      tags$li("Includes a rapid growth phase, followed by deceleration and stabilization."),
+      tags$li("Suitable for modeling biological growth, crop development, and other processes with determinate growth patterns.")
+    ),
+    h2(style = "color: #2E86C1;", "First Derivative"),
+    p("The first derivative of the Beta Growth Model describes the instantaneous rate of growth."),
+    p("The first derivative is given by:"),
+    p(help_mod_beta_fd()),
+    p(strong("Key Features:")),
+    tags$ul(
+      tags$li("Represents the rate of growth at any given time."),
+      tags$li("Identifies the maximum growth rate during the rapid growth phase."),
+      tags$li("Provides insight into the deceleration of growth as the process stabilizes.")
+    ),
+    h2(style = "color: #2E86C1;", "Second Derivative"),
+    p("The second derivative of the Beta Growth Model describes the acceleration or deceleration of growth."),
+    p("The second derivative is given by:"),
+    p(help_mod_beta_sd()),
+    p(strong("Key Features:")),
+    tags$ul(
+      tags$li("Represents the rate at which growth acceleration changes."),
+      tags$li("Helps identify inflection points where growth transitions from acceleration to deceleration."),
+      tags$li("Provides insights into the dynamics of growth stabilization.")
+    ),
+    h2(style = "color: #2E86C1;", "References"),
+    p("YIN, X., J. GOUDRIAAN, E.A. LANTINGA, J. VOS, and H.J. SPIERTZ. 2003. A Flexible Sigmoid Function of Determinate Growth. Annals of Botany 91(3): 361–371. doi: ",
+      a(href = "https://doi.org/10.1093/aob/mcg029",target = "_blank", "10.1093/aob/mcg029"))
+  )
+}
+
+
+############ HILL GROWTH FUNCTION ############
+modfun_hill <- function(x, a, Ka, n) {
+  a / (1 + (Ka / x)^n)
+}
+# First Derivative of the Beta Growth Model
+fdfun_hill <- function(x, a, Ka, n) {
+  a * ((Ka/x)^(n - 1) * (n * (Ka/x^2)))/(1 + (Ka/x)^n)^2
+}
+# Second Derivative of the Beta Growth Model
+sdfun_hill <- function(x, a, Ka, n) {
+  -(a * ((Ka/x)^(n - 1) * (n * (Ka * (2 * x)/(x^2)^2)) + (Ka/x)^((n -
+                                                                    1) - 1) * ((n - 1) * (Ka/x^2)) * (n * (Ka/x^2)))/(1 + (Ka/x)^n)^2 -
+      a * ((Ka/x)^(n - 1) * (n * (Ka/x^2))) * (2 * ((Ka/x)^(n -
+                                                              1) * (n * (Ka/x^2)) * (1 + (Ka/x)^n)))/((1 + (Ka/x)^n)^2)^2)
+}
+
+SShill <- selfStart(
+  model = function(x, Ka, n, a){
+
+    if(any(identical(x, 0))) stop("zero x is not allowed")
+
+    .value <- a / (1 + (Ka/x)^n)
+
+    ## Derivative with respect to Ka
+    ## deriv(~a / (1 + (Ka/x)^n),"Ka")
+    .expr1 <- Ka/x
+    .expr3 <- 1 + .expr1^n
+    .expi1 <- -(a * (.expr1^(n - 1) * (n * (1/x)))/.expr3^2)
+
+    ## Derivative with respect to n
+    ## deriv(~1 / (1 + (Ka/x)^n),"n")
+    .expr2 <- .expr1^n
+    .expi2 <- -(a * (.expr2 * log(.expr1))/.expr3^2)
+
+    ## Derivative with respect to a
+    ## deriv(~1 / (1 + (Ka/x)^n),"a")
+    .expi3 <- 1/.expr3
+
+    .actualArgs <- as.list(match.call()[c("Ka","n","a")])
+
+    ##  Gradient
+    if (all(unlist(lapply(.actualArgs, is.name)))) {
+      .grad <- array(0, c(length(.value), 3L), list(NULL, c("Ka","n","a")))
+      .grad[, "Ka"] <- .expi1
+      .grad[, "n"] <- .expi2
+      .grad[, "a"] <- .expi3
+      dimnames(.grad) <- list(NULL, .actualArgs)
+      attr(.value, "gradient") <- .grad
+    }
+    .value
+  },
+  initial = function(mCall, LHS, data, ...){
+
+    xy <- sortedXyData(mCall[["x"]], LHS, data)
+    if(nrow(xy) < 4){
+      stop("Too few distinct input values to fit a hill3")
+    }
+
+    xy2 <- xy[,"x" > 0]
+    y0 <- xy2[,"y"]/max(xy2[,"y"])
+    y1 <- log(y0/(1 - y0))
+    y2 <- ifelse(is.finite(y1), y1, NA)
+    cfs <- try(coef(lm(y2 ~ log(xy2[,"x"]), na.action = "na.omit")), silent = TRUE)
+
+    if(inherits(cfs, "try-error")){
+      a <- max(xy[,"y"])
+      n <- 1
+      Ka <- mean(xy2[,"x"], na.rm = TRUE)
+    }else{
+      a <- max(xy[,"y"])
+      n <- cfs[2]
+      Ka <- exp(-cfs[1]/n)
+    }
+
+    value <- c(Ka, n, a)
+    names(value) <- mCall[c("Ka","n","a")]
+    value
+  },
+  parameters =  c("Ka","n","a")
+)
+
+
+mod_hill <- function(data,
+                     flight_date = "date",
+                     predictor = "q90",
+                     sowing_date = NULL,
+                     parallel = FALSE) {
+  # Prepare data
+  dftemp <-
+    data |>
+    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::group_by(unique_plot) |>
+    tidyr::nest()
+
+  results_list <- list()
+
+  # Parallel or Sequential Plan
+  if (parallel) {
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+  } else {
+    future::plan(future::sequential)
+  }
+  on.exit(future::plan(future::sequential))
+
+  `%dofut%` <- doFuture::`%dofuture%`
+
+  # Fit model for each group
+  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
+    df <- as.data.frame(dftemp$data[[i]])
+
+    if (!is.null(sowing_date)) {
+      flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+    } else {
+      flights <- as.POSIXlt(df$date)$yday + 1
+    }
+
+    fflight <- min(flights)
+    lflight <- max(flights) + 20
+    y <- df |> dplyr::pull(!!rlang::sym(predictor))
+
+    # Use tryCatch to handle model fitting errors
+    result <- tryCatch({
+
+      model <- try(
+        nls( y ~ SShill(flights, Ka, n, a),
+             data = data.frame(flights, y),
+             control = nls.control(maxiter = 1000)),
+        silent = TRUE
+      )
+
+      if (inherits(model, "try-error")) {
+        model <- suppressWarnings(
+          minpack.lm::nlsLM(y ~ SShill(flights, Ka, n, a),
+                            data = data.frame(flights, y))
+        )
+      }
+
+      coefslog <- coef(model)
+
+      # Goodness of fit
+      gofval <- gof(model, y)
+
+      # Area under curve
+      auc <- integrate(modfun_hill,
+                       lower = fflight,
+                       upper = lflight,
+                       Ka = coefslog[[1]],
+                       n = coefslog[[2]],
+                       a = coefslog[[3]])
+      # critical points
+      fdopt_result <-
+        optimize(fdfun_hill,
+                 Ka = coefslog[[1]],
+                 n = coefslog[[2]],
+                 a = coefslog[[3]],
+                 interval = c(fflight, lflight),
+                 maximum = TRUE)
+
+      # maximum acceleration
+      sdopt_result <-
+        optimize(sdfun_hill,
+                 Ka = coefslog[[1]],
+                 n = coefslog[[2]],
+                 a = coefslog[[3]],
+                 interval = c(fflight, lflight),
+                 maximum = TRUE)
+
+      # maximum deceleration
+      sdopt_result2 <-
+        optimize(sdfun_hill,
+                 Ka = coefslog[[1]],
+                 n = coefslog[[2]],
+                 a = coefslog[[3]],
+                 interval = c(fflight, lflight),
+                 maximum = FALSE)
+
+      # Return results
+      tibble::tibble(
+        unique_plot = dftemp$unique_plot[i],
+        model = "Hill",
+        asymptote = coefslog[[3]],
+        auc = auc$value,
+        xinfp = fdopt_result$maximum,
+        yinfp = fdopt_result$objective,
+        xmace = sdopt_result$maximum,
+        ymace = sdopt_result$objective,
+        xmdes = sdopt_result2$minimum,
+        ymdes = sdopt_result2$objective,
+        aic = gofval$AIC,
+        rmse = gofval$RMSE,
+        mae = gofval$MAE,
+        parms = list(model = modfun_hill,
+                     modeladj = model,
+                     fd = fdfun_hill,
+                     sd = sdfun_hill,
+                     coefs = list(
+                       Ka = coefslog[[1]],
+                       n = coefslog[[2]],
+                       a = coefslog[[3]]
+                     ),
+                     xmin = fflight, xmax = lflight)
+      )
+    }, error = function(e) {
+      # Return NA values if model fitting fails
+      tibble::tibble(
+        unique_plot = dftemp$unique_plot[i],
+        model = "Hill",
+        asymptote = NA_real_,
+        auc = NA_real_,
+        xinfp = NA_real_,
+        yinfp = NA_real_,
+        xmace = NA_real_,
+        ymace = NA_real_,
+        xmdes = NA_real_,
+        ymdes = NA_real_,
+        aic = NA_real_,
+        rmse = NA_real_,
+        mae = NA_real_,
+        parms = NA
+      )
+    })
+
+    result
+  }
+
+  results <-
+    results_list |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+    tidyr::nest(parms = parms)
+
+  return(results)
+}
+
+
+help_mod_hill_eq <- function() {
+  "$$f(x) = \\frac{a}{1 + \\left(\\frac{K_a}{x}\\right)^n}$$"
+}
+
+help_mod_hill_fd <- function() {
+  "$$f'(x) = -a \\cdot \\frac{n \\cdot \\left(\\frac{K_a}{x}\\right)^n \\cdot \\frac{1}{x}}{\\left(1 + \\left(\\frac{K_a}{x}\\right)^n\\right)^2}$$"
+}
+
+help_mod_hill_sd <- function() {
+  "$$f''(x) = -a \\cdot \\frac{n \\cdot \\left(\\frac{K_a}{x}\\right)^n \\cdot \\frac{1}{x^2} \\cdot \\left[(n+1) + 2 \\cdot \\left(\\frac{K_a}{x}\\right)^n\\right]}{\\left(1 + \\left(\\frac{K_a}{x}\\right)^n\\right)^3}$$"
+}
+
+help_mod_hill <- function() {
+  div(
+    style = "font-family: Arial, sans-serif; line-height: 1.5;",
+    h2(style = "color: #2E86C1;", "Hill Function"),
+    p("The Hill Function is widely used to describe cooperative binding processes, dose-response curves, and growth models. It provides a flexible sigmoid curve that captures steep or gradual transitions based on the Hill coefficient \\(n\\)."),
+    p("The equation for the Hill Function is:"),
+    p(help_mod_hill_eq()),
+    p(strong("Where:")),
+    withMathJax(
+      tags$ul(
+        tags$li("\\(x\\): Independent variable (e.g., substrate concentration)."),
+        tags$li("\\(a\\): Maximum response or asymptote."),
+        tags$li("\\(K_a\\): Half-saturation constant, where \\(f(x) = a/2\\)."),
+        tags$li("\\(n\\): Hill coefficient, controlling the steepness of the curve.")
+      )
+    ),
+    p(strong("Key Features:")),
+    tags$ul(
+      tags$li("Models sigmoid-like curves with flexible steepness."),
+      tags$li("Used in biochemical and pharmacological studies."),
+      tags$li("Provides insight into cooperative or inhibitory processes."),
+      tags$li("Normalized to range between \\(0\\) and \\(a\\).")
+    ),
+    h2(style = "color: #2E86C1;", "First Derivative"),
+    p("The first derivative of the Hill Function describes the instantaneous rate of change in the response variable."),
+    p("The first derivative is given by:"),
+    p(help_mod_hill_fd()),
+    p(strong("Key Features:")),
+    tags$ul(
+      tags$li("Indicates how quickly the response is changing at a given \\(x\\)."),
+      tags$li("Helps identify the point of maximal growth or steepest response."),
+      tags$li("Useful in sensitivity analysis for cooperative processes.")
+    ),
+    h2(style = "color: #2E86C1;", "Second Derivative"),
+    p("The second derivative of the Hill Function describes the acceleration or deceleration of growth."),
+    p("The second derivative is given by:"),
+    p(help_mod_hill_sd()),
+    p(strong("Key Features:")),
+    tags$ul(
+      tags$li("Provides insight into the dynamics of sigmoid transitions."),
+      tags$li("Helps identify inflection points where growth accelerates or decelerates."),
+      tags$li("Useful for understanding the steepness and curvature of response.")
+    )
+  )
+}
+
+############ EXPONENTIAL-PLATEAU FUNCTION ############
+# Main Function
+modfun_exponential_plateau <- function(x, a, c, xs) {
+  ifelse(x < xs,
+         a * exp(c * x),                # Before the breakpoint
+         a * exp(c * xs))               # At and after the breakpoint
+}
+
+# First Derivative of the Exponential-Plateau Function
+fdfun_exponential_plateau <- function(x, a, c, xs) {
+  ifelse(x < xs,
+         a * c * exp(c * x),            # Derivative before the breakpoint
+         0)                             # Derivative at and after the breakpoint
+}
+
+# Second Derivative of the Exponential-Plateau Function
+sdfun_exponential_plateau <- function(x, a, c, xs) {
+  ifelse(x < xs,
+         a * c^2 * exp(c * x),          # Second derivative before the breakpoint
+         0)                             # Second derivative at and after the breakpoint
+}
+
+
+SSexpplat <- selfStart(
+  model = function(x, a, c, xs){
+
+    .value <- (x < xs) * a * exp(c * x) + (x >= xs) * (a * exp(c * xs))
+
+    ## Derivative with respect to a, c, xs
+    ## deriv(~ a * exp(c * x), c("a"))
+    .exp1 <- ifelse(x < xs, exp(c * x), exp(c * xs))
+
+    ## Derivative with respect to c
+    ## deriv(~ a * exp(c * x), c("c"))
+    .exp2 <- ifelse(x < xs, a * (exp(c * x) * x), a * (exp(c * xs) * xs))
+
+    ## Derivative with respect to xs
+    ## deriv(~ a * exp(c * xs), c("xs"))
+    .exp3 <- ifelse(x < xs, 0, a * (exp(c * xs) * c))
+
+    .actualArgs <- as.list(match.call()[c("a","c","xs")])
+
+    ##  Gradient
+    if (all(unlist(lapply(.actualArgs, is.name)))) {
+      .grad <- array(0, c(length(.value), 3L), list(NULL, c("a", "c", "xs")))
+      .grad[, "a"] <- .exp1
+      .grad[, "c"] <- .exp2
+      .grad[, "xs"] <- .exp3
+      dimnames(.grad) <- list(NULL, .actualArgs)
+      attr(.value, "gradient") <- .grad
+    }
+    .value
+  },
+  initial = function(mCall, LHS, data, ...){
+
+    xy <- sortedXyData(mCall[["x"]], LHS, data)
+    if(nrow(xy) < 3){
+      stop("Too few distinct input values to fit an exponential-plateau.")
+    }
+
+    if(any(xy[,"y"] < 0)) stop("negative values in y are not allowed.")
+    ## On the log scale
+    xy1 <- xy[1:floor(nrow(xy)/2),]
+    ## Fit to half the data
+    fit <- try(stats::lm(log(xy1[,"y"]) ~ xy1[,"x"]), silent = TRUE)
+
+    if(inherits(fit, "try-error")){
+      ## I don't see any reason why 'fit' should fail..., but in that case...
+      a <- xy1[1, "y"] ## First observation in the sorted data
+      c <- (xy1[nrow(xy1),"y"] - xy1[1,"y"])/(xy1[nrow(xy1),"x"] - xy1[1,"x"]) ## Average slope
+    }else{
+      a <- exp(coef(fit)[1])
+      c <- coef(fit)[2]
+    }
+
+    objfun <- function(cfs){
+      pred <- expfp(xy[,"x"], a=cfs[1], c=cfs[2], xs=cfs[3])
+      ans <- sum((xy[,"y"] - pred)^2)
+      ans
+    }
+    cfs <- c(a,c,mean(xy[,"x"]))
+    op <- try(stats::optim(cfs, objfun, method = "L-BFGS-B",
+                           upper = c(Inf, Inf, max(xy[,"x"])),
+                           lower = c(-Inf, -Inf, min(xy[,"x"]))), silent = TRUE)
+
+    if(!inherits(op, "try-error")){
+      a <- op$par[1]
+      c <- op$par[2]
+      xs <- op$par[3]
+    }else{
+      ## If it fails I use the mean for the breakpoint
+      xs <- mean(xy[,"x"])
+    }
+
+    value <- c(a, c, xs)
+    names(value) <- mCall[c("a","c","xs")]
+    value
+
+  },
+  parameters = c("a", "c", "xs")
+)
+
+
+mod_expplat <- function(data,
+                        flight_date = "date",
+                        predictor = "q90",
+                        sowing_date = NULL,
+                        parallel = FALSE) {
+  # Prepare data
+  dftemp <-
+    data |>
+    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::group_by(unique_plot) |>
+    tidyr::nest()
+
+  results_list <- list()
+
+  # Parallel or Sequential Plan
+  if (parallel) {
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+  } else {
+    future::plan(future::sequential)
+  }
+  on.exit(future::plan(future::sequential))
+
+  `%dofut%` <- doFuture::`%dofuture%`
+
+  # Fit model for each group
+  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
+    df <- as.data.frame(dftemp$data[[i]])
+
+    if (!is.null(sowing_date)) {
+      flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+    } else {
+      flights <- as.POSIXlt(df$date)$yday + 1
+    }
+
+    fflight <- min(flights)
+    lflight <- max(flights) + 20
+    y <- df |> dplyr::pull(!!rlang::sym(predictor))
+
+    # Use tryCatch to handle model fitting errors
+    result <- tryCatch({
+
+      model <- try(
+        nls( y ~ SSexpplat(flights, a, c, xs),
+             data = data.frame(flights, y),
+             control = nls.control(maxiter = 1000)),
+        silent = TRUE
+      )
+
+      if (inherits(model, "try-error")) {
+        model <- suppressWarnings(
+          minpack.lm::nlsLM(y ~ SSexpplat(flights, a, c, xs),
+                            data = data.frame(flights, y))
+        )
+      }
+      asymp <- max(predict(model))
+      coefslog <- coef(model)
+
+      # Goodness of fit
+      gofval <- gof(model, y)
+      # Area under curve
+      auc <- integrate(modfun_exponential_plateau,
+                       lower = fflight,
+                       upper = lflight,
+                       a = coefslog[[1]],
+                       c = coefslog[[2]],
+                       xs = coefslog[[3]])
+
+      # Return results
+      tibble::tibble(
+        unique_plot = dftemp$unique_plot[i],
+        model = "Exponential-Plateau",
+        asymptote = asymp,
+        auc = auc$value,
+        a = coefslog[[1]],
+        c = coefslog[[2]],
+        xs = coefslog[[3]],
+        aic = gofval$AIC,
+        rmse = gofval$RMSE,
+        mae = gofval$MAE,
+        parms = list(model = modfun_exponential_plateau,
+                     modeladj = model,
+                     fd = fdfun_exponential_plateau,
+                     sd = sdfun_exponential_plateau,
+                     coefs = list(
+                       a = coefslog[[1]],
+                       c = coefslog[[2]],
+                       xs = coefslog[[3]]
+                     ),
+                     xmin = fflight, xmax = lflight)
+      )
+    }, error = function(e) {
+      # Return NA values if model fitting fails
+      tibble::tibble(
+        unique_plot = dftemp$unique_plot[i],
+        model = "Exponential-Plateau",
+        asymptote = NA_real_,
+        auc = NA_real_,
+        a = NA_real_,
+        c = NA_real_,
+        xs = NA_real_,
+        aic = NA_real_,
+        rmse = NA_real_,
+        mae = NA_real_,
+        parms = NA
+      )
+    })
+    result
+  }
+
+  results <-
+    results_list |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+    tidyr::nest(parms = parms)
+
+  return(results)
+}
+
+
+help_mod_exponential_plateau_eq <- function() {
+  "$$f(x) = \\begin{cases}
+  a \\cdot e^{c \\cdot x}, & x < x_s \\\\
+  a \\cdot e^{c \\cdot x_s}, & x \\geq x_s
+  \\end{cases}$$"
+}
+
+help_mod_exponential_plateau_fd <- function() {
+  "$$f'(x) = \\begin{cases}
+  a \\cdot c \\cdot e^{c \\cdot x}, & x < x_s \\\\
+  0, & x \\geq x_s
+  \\end{cases}$$"
+}
+
+help_mod_exponential_plateau_sd <- function() {
+  "$$f''(x) = \\begin{cases}
+  a \\cdot c^2 \\cdot e^{c \\cdot x}, & x < x_s \\\\
+  0, & x \\geq x_s
+  \\end{cases}$$"
+}
+
+help_mod_exponential_plateau <- function() {
+  div(
+    style = "font-family: Arial, sans-serif; line-height: 1.5;",
+    h2(style = "color: #2E86C1;", "Exponential-Plateau Function"),
+    p("The Exponential-Plateau Function models growth processes where an exponential increase occurs up to a specified breakpoint \\(x_s\\), after which the response remains constant."),
+    p("The equation for the Exponential-Plateau Function is:"),
+    p(help_mod_exponential_plateau_eq()),
+    p(strong("Where:")),
+    withMathJax(
+      tags$ul(
+        tags$li("\\(x\\): Independent variable (e.g., time or concentration)."),
+        tags$li("\\(a\\): Maximum response or scaling factor."),
+        tags$li("\\(c\\): Growth rate constant."),
+        tags$li("\\(x_s\\): Breakpoint where the plateau begins.")
+      )
+    ),
+    p(strong("Key Features:")),
+    tags$ul(
+      tags$li("Models exponential growth followed by a plateau."),
+      tags$li("Breakpoint \\(x_s\\) defines the transition point."),
+      tags$li("Useful for modeling processes that saturate after initial growth."),
+      tags$li("Allows clear distinction between growth and steady-state regions.")
+    ),
+    h2(style = "color: #2E86C1;", "First Derivative"),
+    p("The first derivative of the Exponential-Plateau Function describes the rate of change in the response variable."),
+    p("The first derivative is given by:"),
+    p(help_mod_exponential_plateau_fd()),
+    p(strong("Key Features:")),
+    tags$ul(
+      tags$li("Indicates the rate of growth before the plateau."),
+      tags$li("Derivative is zero at and after the breakpoint."),
+      tags$li("Highlights the transition from growth to steady state.")
+    ),
+    h2(style = "color: #2E86C1;", "Second Derivative"),
+    p("The second derivative of the Exponential-Plateau Function describes the acceleration or deceleration of growth."),
+    p("The second derivative is given by:"),
+    p(help_mod_exponential_plateau_sd()),
+    p(strong("Key Features:")),
+    tags$ul(
+      tags$li("Indicates the acceleration of growth before the plateau."),
+      tags$li("Second derivative is zero at and after the breakpoint."),
+      tags$li("Provides insights into the dynamics of exponential growth.")
+    ),
+    h2(style = "color: #2E86C1;", "References"),
+    p("Archontoulis, S.V., and F.E. Miguez. 2015. Nonlinear Regression Models and Applications in Agricultural Research. Agronomy Journal 107(2): 786–798. doi: ",
+      a(href = "https://acsess.onlinelibrary.wiley.com/doi/10.2134/agronj2012.0506",target = "_blank", "10.2134/agronj2012.0506"))
+  )
+}
+
+
+############ EXPONENTIAL-LINEAR FUNCTION ############
+# Main Function
+modfun_exponential_linear <- function(t, cm, rm, tb) {
+  (cm / rm) * log(1 + exp(rm * (t - tb)))
+}
+
+# First Derivative of the Exponential-Linear Function
+fdfun_exponential_linear <- function(t, cm, rm, tb) {
+  cm * exp(rm * (t - tb)) / (1 + exp(rm * (t - tb)))
+}
+
+# Second Derivative of the Exponential-Linear Function
+sdfun_exponential_linear <- function(t, cm, rm, tb) {
+  cm * rm * exp(rm * (t - tb)) / (1 + exp(rm * (t - tb)))^2
+}
+
+
+SSexplinear <- selfStart(
+  model =  function(t, cm, rm, tb){
+
+    .expre1 <- cm / rm
+    .expre2 <- rm * (t - tb)
+    .expre3 <- log(1 + exp(.expre2))
+    .value <- .expre1 * .expre3
+
+    ## Derivative with respect to cm
+    ## deriv(~ (cm / rm) * log(1 + exp(rm * (t - tb))), "cm")
+    .expr6 <- suppressWarnings(log(1 + exp(rm * (t - tb))))
+    .exprr6 <- suppressWarnings(1/rm * .expr6)
+    .exp1 <- ifelse(is.nan(.expr6),0,.exprr6)
+
+    ## Derivative with respect to rm
+    ## deriv(~ (cm / rm) * log(1 + exp(rm * (t - tb))), "rm")
+    .expr1 <- cm/rm
+    .expr2 <- t - tb
+    .expr4 <- exp(rm * .expr2)
+    .expr5 <- 1 + .expr4
+    .expr6 <- suppressWarnings(log(1 + exp(rm * (t - tb))))
+    .exprr6 <- suppressWarnings(1/rm * .expr6)
+    .exprrr6 <- suppressWarnings(.expr1 * (.expr4 * .expr2/.expr5) - cm/rm^2 * .expr6)
+    .exp2 <- ifelse(is.nan(.exprrr6), 0, .exprrr6)
+
+    ## Derivative with respect to tb
+    ## deriv(~ (cm / rm) * log(1 + exp(rm * (t - tb))), "tb")
+    .exp3 <- -(.expr1 * (.expr4 * rm/.expr5))
+
+    .actualArgs <- as.list(match.call()[c("cm", "rm", "tb")])
+
+    ##  Gradient
+    if (all(unlist(lapply(.actualArgs, is.name)))) {
+      .grad <- array(0, c(length(.value), 3L), list(NULL, c("cm", "rm", "tb")))
+      .grad[, "cm"] <- .exp1
+      .grad[, "rm"] <- .exp2
+      .grad[, "tb"] <- .exp3
+      dimnames(.grad) <- list(NULL, .actualArgs)
+      attr(.value, "gradient") <- .grad
+    }
+    .value
+  },
+  initial = function(mCall, LHS, data, ...){
+
+    xy <- sortedXyData(mCall[["t"]], LHS, data)
+    if(nrow(xy) < 4){
+      stop("Too few distinct input values to fit a explin function.")
+    }
+
+    ## First phase is exponential and the second phase is linear
+    cm <- coef(lm(y ~ x, data = xy))[2]
+    y2 <- xy[,"y"]/max(xy[,"y"])
+    rm <- coef(lm(y2 ~ xy[,"x"]))[2]
+    tb <- floor(max(xy[,"x"])/2)
+
+    value <- c(cm, rm, tb)
+    names(value) <- mCall[c("cm","rm","tb")]
+    value
+
+  },
+  parameters =  c("cm", "rm", "tb")
+)
+
+
+mod_explinear <- function(data,
+                          flight_date = "date",
+                          predictor = "q90",
+                          sowing_date = NULL,
+                          parallel = FALSE) {
+  # Prepare data
+  dftemp <-
+    data |>
+    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::group_by(unique_plot) |>
+    tidyr::nest()
+
+  results_list <- list()
+
+  # Parallel or Sequential Plan
+  if (parallel) {
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+  } else {
+    future::plan(future::sequential)
+  }
+  on.exit(future::plan(future::sequential))
+
+  `%dofut%` <- doFuture::`%dofuture%`
+
+  # Fit model for each group
+  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
+    df <- as.data.frame(dftemp$data[[i]])
+
+    if (!is.null(sowing_date)) {
+      flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+    } else {
+      flights <- as.POSIXlt(df$date)$yday + 1
+    }
+
+    fflight <- min(flights)
+    lflight <- max(flights) + 20
+    y <- df |> dplyr::pull(!!rlang::sym(predictor))
+
+    # Use tryCatch to handle model fitting errors
+    result <- tryCatch({
+
+      model <- try(
+        nls( y ~ SSexplinear(flights, cm, rm, tb),
+             data = data.frame(flights, y),
+             control = nls.control(maxiter = 1000)),
+        silent = TRUE
+      )
+
+      if (inherits(model, "try-error")) {
+        model <- suppressWarnings(
+          minpack.lm::nlsLM(y ~ SSexplinear(flights, cm, rm, tb),
+                            data = data.frame(flights, y))
+        )
+      }
+      coefslog <- coef(model)
+
+      # Goodness of fit
+      gofval <- gof(model, y)
+      # Area under curve
+
+      # Return results
+      tibble::tibble(
+        unique_plot = dftemp$unique_plot[i],
+        model = "Exponential-Linear",
+        cm = coefslog[[1]],
+        rm = coefslog[[2]],
+        tb = coefslog[[3]],
+        aic = gofval$AIC,
+        rmse = gofval$RMSE,
+        mae = gofval$MAE,
+        parms = list(model = modfun_exponential_linear,
+                     modeladj = model,
+                     fd = fdfun_exponential_linear,
+                     sd = sdfun_exponential_linear,
+                     coefs = list(
+                       cm = coefslog[[1]],
+                       rm = coefslog[[2]],
+                       tb = coefslog[[3]]
+                     ),
+                     xmin = fflight, xmax = lflight)
+      )
+    }, error = function(e) {
+      # Return NA values if model fitting fails
+      tibble::tibble(
+        unique_plot = dftemp$unique_plot[i],
+        model = "Exponential-Linear",
+        cm = NA_real_,
+        rm = NA_real_,
+        tb = NA_real_,
+        aic = NA_real_,
+        rmse = NA_real_,
+        mae = NA_real_,
+        parms = NA
+      )
+    })
+    result
+  }
+
+  results <-
+    results_list |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+    tidyr::nest(parms = parms)
+
+  return(results)
+}
+
+
+help_mod_exponential_linear_eq <- function() {
+  "$$f(t) = \\frac{c_m}{r_m} \\cdot \\log(1 + \\exp(r_m \\cdot (t - t_b)))$$"
+}
+
+help_mod_exponential_linear_fd <- function() {
+  "$$f'(t) = c_m \\cdot \\frac{\\exp(r_m \\cdot (t - t_b))}{1 + \\exp(r_m \\cdot (t - t_b))}$$"
+}
+
+help_mod_exponential_linear_sd <- function() {
+  "$$f''(t) = c_m \\cdot r_m \\cdot \\frac{\\exp(r_m \\cdot (t - t_b))}{\\left(1 + \\exp(r_m \\cdot (t - t_b))\\right)^2}$$"
+}
+
+help_mod_exponential_linear <- function() {
+  div(
+    style = "font-family: Arial, sans-serif; line-height: 1.5;",
+    h2(style = "color: #2E86C1;", "Exponential-Linear Growth Function"),
+    p("The Exponential-Linear Growth Function models growth processes that start exponentially and transition smoothly into a linear phase at a specified time \\(t_b\\)."),
+    p("The equation for the Exponential-Linear Growth Function is:"),
+    p(help_mod_exponential_linear_eq()),
+    p(strong("Where:")),
+    withMathJax(
+      tags$ul(
+        tags$li("\\(t\\): Independent variable (e.g., time or age)."),
+        tags$li("\\(c_m\\): Maximum growth rate during the linear phase."),
+        tags$li("\\(r_m\\): Maximum growth rate during the exponential phase."),
+        tags$li("\\(t_b\\): Time at which the transition occurs.")
+      )
+    ),
+    p(strong("Key Features:")),
+    tags$ul(
+      tags$li("Combines exponential growth and linear growth in a single model."),
+      tags$li("Transition from exponential to linear growth happens at \\(t_b\\)."),
+      tags$li("Useful for modeling biological or physical processes with distinct growth phases.")
+    ),
+    h2(style = "color: #2E86C1;", "First Derivative"),
+    p("The first derivative of the Exponential-Linear Growth Function describes the instantaneous rate of growth."),
+    p("The first derivative is given by:"),
+    p(help_mod_exponential_linear_fd()),
+    p(strong("Key Features:")),
+    tags$ul(
+      tags$li("Indicates the growth rate at any time \\(t\\)."),
+      tags$li("Shows a peak growth rate during the exponential phase."),
+      tags$li("Useful for determining when the system transitions to a linear phase.")
+    ),
+    h2(style = "color: #2E86C1;", "Second Derivative"),
+    p("The second derivative of the Exponential-Linear Growth Function describes the acceleration or deceleration of growth."),
+    p("The second derivative is given by:"),
+    p(help_mod_exponential_linear_sd()),
+    p(strong("Key Features:")),
+    tags$ul(
+      tags$li("Indicates acceleration during the exponential phase."),
+      tags$li("Becomes zero during the linear phase."),
+      tags$li("Provides insights into the dynamics of the transition between growth phases.")
+    ),
+    h2(style = "color: #2E86C1;", "References"),
+    p("Goudriaan, J., and J.L. Monteith. 1990. A Mathematical Function for Crop Growth Based on Light Interception and Leaf Area Expansion. Annals of Botany 66(6): 695–701. doi: ",
+      a(href = "https://doi.org/10.1093/oxfordjournals.aob.a088084",target = "_blank", "10.1093/oxfordjournals.aob.a088084"))
+  )
+}
+
+
+

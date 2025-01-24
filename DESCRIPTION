@@ -52,13 +52,13 @@ Imports:
     utils,
     waiter
 Suggests:
-    drc,
     fields,
     histoslider,
     leaflet.extras2,
     leafem,
     leafsync,
     magick,
+    minpack.lm,
     rintrojs,
     segmented,
     shinycssloaders,

@@ -868,3 +868,20 @@ check_mosaic_layers <- function(mosaic, finalindex, r, g, b, re, nir, tir, swir)
                type = "error")
   }
 }
+# Function to round numeric columns in a data frame
+round_cols <- function(df, digits = 2) {
+  # Check if the input is a data frame
+  if (!is.data.frame(df)) stop("Input must be a data frame.")
+
+  # Apply rounding to numeric columns only
+  df[] <- lapply(df, function(col) {
+    if (is.numeric(col)) {
+      round(col, digits = digits)
+    } else {
+      col
+    }
+  })
+
+  return(df)
+}
+

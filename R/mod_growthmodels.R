@@ -36,9 +36,10 @@ mod_growthmodels_ui <- function(id) {
             ns("growthmodel"),
             label = "Growth Model",
             choices = list(
-              Sigmoid = c("Logistic 3P", "Logistic 4P", "Gompertz", "Trans-Gompertz", "Weibull"),
-              Exponential = c("Von Bertalanffy", "Exponential", "Janoschek"),
-              Sinusoidal = c("Sinusoidal")
+              Sigmoid = c("Logistic 3P", "Logistic 4P", "Gompertz", "Trans-Gompertz", "Weibull", "Beta growth", "Hill"),
+              Exponential = c("Von Bertalanffy", "Exponential", "Janoschek", "Asymptotic", "Exponential-Plateau", "Expolinear"),
+              Peak = c("Asymmetric Gaussian", ""),
+              Cyclical = c("Sinusoidal", "")
             ),
             options = list(
               `actions-box` = TRUE,
@@ -308,6 +309,24 @@ mod_growthmodels_server <- function(id, dfs){
             collapsible = TRUE,
             help_mod_weibull()
           ),
+          box(
+            title = "Beta growth",
+            status = "primary",
+            width = 12,
+            solidHeader = TRUE,
+            collapsed = TRUE,
+            collapsible = TRUE,
+            help_mod_beta()
+          ),
+          box(
+            title = "Hill Growth Model",
+            status = "primary",
+            width = 12,
+            solidHeader = TRUE,
+            collapsed = TRUE,
+            collapsible = TRUE,
+            help_mod_hill()
+          ),
           h2("Exponential"),
           box(
             title = "Von Bertalanffy Growth Model",
@@ -336,7 +355,34 @@ mod_growthmodels_server <- function(id, dfs){
             collapsible = TRUE,
             help_mod_janoschek()
           ),
-          h2("Sinusoidal"),
+          box(
+            title = "Asymptotic curve",
+            status = "primary",
+            width = 12,
+            solidHeader = TRUE,
+            collapsed = TRUE,
+            collapsible = TRUE,
+            help_mod_asymptotic()
+          ),
+          box(
+            title = "Exponential-Plateau",
+            status = "primary",
+            width = 12,
+            solidHeader = TRUE,
+            collapsed = TRUE,
+            collapsible = TRUE,
+            help_mod_exponential_plateau()
+          ),
+          box(
+            title = "Expolinear",
+            status = "primary",
+            width = 12,
+            solidHeader = TRUE,
+            collapsed = TRUE,
+            collapsible = TRUE,
+            help_mod_exponential_linear()
+          ),
+          h2("Cyclical"),
           box(
             title = "Sinusoidal Growth Model",
             status = "primary",
@@ -345,6 +391,16 @@ mod_growthmodels_server <- function(id, dfs){
             collapsed = TRUE,
             collapsible = TRUE,
             help_mod_sinusoidal()
+          ),
+          h2("Peak-Based"),
+          box(
+            title = "Asymmetric Gaussian Model",
+            status = "primary",
+            width = 12,
+            solidHeader = TRUE,
+            collapsed = TRUE,
+            collapsible = TRUE,
+            help_mod_asymmetric_gaussian()
           ),
           footer = NULL,
           easyClose = TRUE,
@@ -399,10 +455,18 @@ mod_growthmodels_server <- function(id, dfs){
 
 
 
+    models <- reactiveVal()
+
     observeEvent(input$predictmat, {
 
       req(dfactive$df)
       req(input$traittomodel)
+
+      req(dfactive$df)
+      dftomodel <-
+        dfactive$df |>
+        sf::st_drop_geometry() |>
+        as.data.frame()
 
       waiter_show(
         html = tagList(
@@ -412,315 +476,355 @@ mod_growthmodels_server <- function(id, dfs){
         color = "#228B227F"
       )
 
-
-      # summary results
-      models <- reactive({
-        req(dfactive$df)
-        dftomodel <-
-          dfactive$df |>
-          sf::st_drop_geometry() |>
-          as.data.frame()
-
-        purrr::map(input$growthmodel, ~{
-          switch(
-            .x,
-            "Logistic 3P" = mod_logistic_3P(dftomodel,
-                                            predictor = input$traittomodel,
-                                            sowing_date = min(dftomodel$date),
-                                            parallel = input$parallel),
-            "Logistic 4P" = mod_logistic_4P(dftomodel,
-                                            predictor = input$traittomodel,
-                                            sowing_date = min(dftomodel$date),
-                                            parallel = input$parallel),
-            "Gompertz" = mod_gompertz(dftomodel,
-                                      predictor = input$traittomodel,
-                                      sowing_date = min(dftomodel$date),
-                                      parallel = input$parallel),
-            "Weibull" = mod_weibull(dftomodel,
+      purrr::map(input$growthmodel, ~{
+        switch(
+          .x,
+          "Logistic 3P" = mod_logistic_3P(dftomodel,
+                                          predictor = input$traittomodel,
+                                          sowing_date = min(dftomodel$date),
+                                          parallel = input$parallel),
+          "Logistic 4P" = mod_logistic_4P(dftomodel,
+                                          predictor = input$traittomodel,
+                                          sowing_date = min(dftomodel$date),
+                                          parallel = input$parallel),
+          "Gompertz" = mod_gompertz(dftomodel,
                                     predictor = input$traittomodel,
                                     sowing_date = min(dftomodel$date),
                                     parallel = input$parallel),
-            "Von Bertalanffy" = mod_vonbert(dftomodel,
-                                            predictor = input$traittomodel,
-                                            sowing_date = min(dftomodel$date),
-                                            parallel = input$parallel),
-            "Exponential" = mod_exponential(dftomodel,
-                                            predictor = input$traittomodel,
-                                            sowing_date = min(dftomodel$date),
-                                            parallel = input$parallel),
-            "Janoschek" = mod_janoschek(dftomodel,
+          "Weibull" = mod_weibull(dftomodel,
+                                  predictor = input$traittomodel,
+                                  sowing_date = min(dftomodel$date),
+                                  parallel = input$parallel),
+          "Von Bertalanffy" = mod_vonbert(dftomodel,
+                                          predictor = input$traittomodel,
+                                          sowing_date = min(dftomodel$date),
+                                          parallel = input$parallel),
+          "Exponential" = mod_exponential(dftomodel,
+                                          predictor = input$traittomodel,
+                                          sowing_date = min(dftomodel$date),
+                                          parallel = input$parallel),
+          "Janoschek" = mod_janoschek(dftomodel,
+                                      predictor = input$traittomodel,
+                                      sowing_date = min(dftomodel$date),
+                                      parallel = input$parallel),
+          "Trans-Gompertz" = mod_transgompertz(dftomodel,
+                                               predictor = input$traittomodel,
+                                               sowing_date = min(dftomodel$date),
+                                               parallel = input$parallel),
+          "Sinusoidal" = mod_sinusoidal(dftomodel,
                                         predictor = input$traittomodel,
                                         sowing_date = min(dftomodel$date),
                                         parallel = input$parallel),
-            "Trans-Gompertz" = mod_transgompertz(dftomodel,
-                                                 predictor = input$traittomodel,
-                                                 sowing_date = min(dftomodel$date),
-                                                 parallel = input$parallel),
-            "Sinusoidal" = mod_sinusoidal(dftomodel,
-                                          predictor = input$traittomodel,
-                                          sowing_date = min(dftomodel$date),
-                                          parallel = input$parallel)
-          )
-        }) |>
-          purrr::map_dfr(~.x)
-      })
-
-
-      observe({
-        req(models())
-        dfs[[input$saveto]] <- create_reactval(input$saveto, models() |> dplyr::select(-parms))
-        waiter_hide()
-        sendSweetAlert(
-          session = session,
-          title = "Growth Models Fitted Successfully!",
-          text = "The canopy height model time series has been analyzed. Explore the results in the tabs to gain insights from your data.",
-          type = "success"
+          "Asymptotic" = mod_asymptotic(dftomodel,
+                                        predictor = input$traittomodel,
+                                        sowing_date = min(dftomodel$date),
+                                        parallel = input$parallel),
+          "Asymmetric Gaussian" = mod_agauss(dftomodel,
+                                             predictor = input$traittomodel,
+                                             sowing_date = min(dftomodel$date),
+                                             parallel = input$parallel),
+          "Beta growth" = mod_beta(dftomodel,
+                                   predictor = input$traittomodel,
+                                   sowing_date = min(dftomodel$date),
+                                   parallel = input$parallel),
+          "Hill" = mod_hill(dftomodel,
+                            predictor = input$traittomodel,
+                            sowing_date = min(dftomodel$date),
+                            parallel = input$parallel),
+          "Exponential-Plateau" = mod_expplat(dftomodel,
+                                              predictor = input$traittomodel,
+                                              sowing_date = min(dftomodel$date),
+                                              parallel = input$parallel),
+          "Expolinear" = mod_explinear(dftomodel,
+                                               predictor = input$traittomodel,
+                                               sowing_date = min(dftomodel$date),
+                                               parallel = input$parallel)
         )
-      })
+      }) |>
+        purrr::map_dfr(~.x) |>
+        models()
+    })
 
-      output$summaryresults <- reactable::renderReactable({
-        req(models())
-        models() |>
-          dplyr::select(-parms) |>
-          roundcols(digits = 3) |>
-          render_reactable()
-      })
+    observe({
+      req(models())
+      dfs[[input$saveto]] <- create_reactval(input$saveto, models() |> dplyr::select(-parms))
 
-      observe({
-        req(models())
-        levels <- sort(unique(dfactive$df[["unique_plot"]]))
-        updatePickerInput(session, "fittedmodel",
-                          choices = levels,
-                          selected = levels[[1]])
-      })
+      nplots <- nrow(models())
+      converged <- nrow(models() |> dplyr::filter(!is.na(aic)))
+      notconverged <- nplots - converged
+      convergencerate <- round(converged / nplots * 100, 2)
 
+      content <- tags$span(
+        tags$h1(icon("info"), "Summary", style = "color: orange;"),
+        tags$p("Growth Models Fitted Successfully. The results are ready for further analysis in the 'Datasets' module.",
+               style = "margin-top: 10px;"),
+        icon("grip"), tags$b("Number of predictions: "), paste0(nplots), tags$br(),
+        icon("circle-check"), tags$b("Converged Models: "), paste0(converged), tags$br(),
+        icon("circle-xmark"), tags$b("Not Converged Models: "), paste0(notconverged), tags$br(),
+        icon("chart-bar"), tags$b("Convergence Rate: "), paste0(convergencerate, "%"), tags$br()
+      )
+      waiter_hide()
+      show_alert(
+        title = NULL,
+        text = div(content, style = "text-align: left; line-height: 1.5;"),
+        html = TRUE,
+        width = 720,
+        type = "success"
+      )
+    })
+
+
+    output$summaryresults <- reactable::renderReactable({
+      req(models())
+      models() |>
+        dplyr::select(-parms) |>
+        roundcols(digits = 3) |>
+        render_reactable()
+    })
+
+    observe({
+      req(models())
+      levels <- sort(unique(dfactive$df[["unique_plot"]]))
+      updatePickerInput(session, "fittedmodel",
+                        choices = levels,
+                        selected = levels[[1]])
+    })
+
+    observe({
       updatePickerInput(session, "plotunique",
                         choices = sort(unique(dfactive$df[["unique_plot"]])),
                         selected = sort(unique(dfactive$df[["unique_plot"]]))[1])
+    })
+    observe({
       updatePickerInput(session, "growthmodelmult",
                         choices = sort(unique(models()[["model"]])),
                         selected = sort(unique(models()[["model"]]))[1])
+    })
+    observe({
       updatePickerInput(session, "plotmultiple",
                         choices = sort(unique(dfactive$df[["unique_plot"]])),
                         selected = sort(unique(dfactive$df[["unique_plot"]]))[1])
+    })
+    observe({
       updatePickerInput(session, "growthmodelunique",
                         choices = sort(unique(models()[["model"]])),
                         selected = sort(unique(models()[["model"]]))[1])
-
-      observe({
-        colorlevels <- reactiveVal(c())
-        req(models())
-        if(input$modelorplot == 'One model, multiple plots'){
-
-          req(input$plotmultiple, input$growthmodelunique)
-
-          dfpars <-
-            models() |>
-            dplyr::filter(unique_plot %in% input$plotmultiple,
-                          model == input$growthmodelunique)
-
-          dfplot <-
-            dfactive$df |>
-            dplyr::filter(unique_plot %in% input$plotmultiple) |>
-            dplyr::select(dplyr::all_of(c("unique_plot", "date", input$traittomodel))) |>
-            dplyr::mutate(date = as.integer(difftime(date, min(date), units = "days")) + 1) |>
-            setNames(c("color", "doy", "vindex"))
+    })
 
 
-          colorlevels(dfpars$unique_plot)
+    observe({
+      colorlevels <- reactiveVal(c())
+      req(models())
+      if(input$modelorplot == 'One model, multiple plots'){
 
-          pmod <-
-            ggplot() +
-            geom_point(aes(x = doy, y = vindex, color = color),
-                       data = dfplot,
-                       size = 3) +
-            lapply(1:nrow(dfpars), function(i) {
-              geom_function(fun = get_data_info(dfpars, i, "model"),
-                            args = get_data_info(dfpars, i, "coefs"),
-                            aes(colour = colorlevels()[[i]]),
-                            n = 501,
-                            linewidth = 1.5)
+        req(input$plotmultiple, input$growthmodelunique)
 
-            }) +
-            labs(x = "Days after first flight",
-                 y = input$traittomodel,
-                 color = "") +
-            theme_bw(base_size = 24) +
-            theme(panel.grid.minor = element_blank(),
-                  legend.position = "bottom")
+        dfpars <-
+          models() |>
+          dplyr::filter(unique_plot %in% input$plotmultiple,
+                        model == input$growthmodelunique)
 
-        } else if(input$modelorplot == 'One plot, multiple models'){
+        dfplot <-
+          dfactive$df |>
+          dplyr::filter(unique_plot %in% input$plotmultiple) |>
+          dplyr::select(dplyr::all_of(c("unique_plot", "date", input$traittomodel))) |>
+          dplyr::mutate(date = as.integer(difftime(date, min(date), units = "days")) + 1) |>
+          setNames(c("color", "doy", "vindex"))
 
 
-          req(input$plotunique, input$growthmodelmult)
+        colorlevels(dfpars$unique_plot)
 
-          dfpars <-
-            models() |>
-            dplyr::filter(unique_plot  == input$plotunique,
-                          model %in% input$growthmodelmult)
-
-          dfplot <-
-            dfactive$df |>
-            dplyr::filter(unique_plot == input$plotunique) |>
-            dplyr::select(dplyr::all_of(c("unique_plot", "date", input$traittomodel))) |>
-            dplyr::mutate(date = as.integer(difftime(date, min(date), units = "days")) + 1) |>
-            setNames(c("color", "doy", "vindex"))
-
-          colorlevels(dfpars$model)
-
-          pmod <-
-            ggplot() +
-            geom_point(aes(x = doy, y = vindex),
-                       data = dfplot,
-                       size = 3) +
-            lapply(1:nrow(dfpars), function(i) {
-              geom_function(fun = get_data_info(dfpars, i, "model"),
-                            args = get_data_info(dfpars, i, "coefs"),
-                            aes(colour = colorlevels()[[i]]),
-                            n = 501,
-                            linewidth = 1.5)
-
-            }) +
-            labs(x = "Days after first flight",
-                 y = input$traittomodel,
-                 color = "") +
-            theme_bw(base_size = 24) +
-            theme(panel.grid.minor = element_blank(),
-                  legend.position = "bottom")
-
-        }
-
-        output$fittedplot <- renderPlot({
-          pmod
-        })
-
-
-        # first derivative
-        pfd <-
+        pmod <-
           ggplot() +
+          geom_point(aes(x = doy, y = vindex, color = color),
+                     data = dfplot,
+                     size = 3) +
           lapply(1:nrow(dfpars), function(i) {
-            geom_function(fun = get_data_info(dfpars, i, "fd"),
+            geom_function(fun = get_data_info(dfpars, i, "model"),
                           args = get_data_info(dfpars, i, "coefs"),
                           aes(colour = colorlevels()[[i]]),
-                          xlim = c(get_data_info(dfpars, i, "xmin"), get_data_info(dfpars, i, "xmax")),
                           n = 501,
-                          linewidth = 1)
+                          linewidth = 1.5)
 
           }) +
-          labs(
-            color = NULL,
-            x = "Days after first flight",
-            y = "1st Derivative (Units/Day)"
-          ) +
+          labs(x = "Days after first flight",
+               y = input$traittomodel,
+               color = "") +
           theme_bw(base_size = 24) +
           theme(panel.grid.minor = element_blank(),
                 legend.position = "bottom")
 
+      } else if(input$modelorplot == 'One plot, multiple models'){
 
-        output$fderivate <- renderPlot({
-          pfd
-        })
 
-        # second derivative
-        psd <-
+        req(input$plotunique, input$growthmodelmult)
+
+        dfpars <-
+          models() |>
+          dplyr::filter(unique_plot  == input$plotunique,
+                        model %in% input$growthmodelmult)
+
+        dfplot <-
+          dfactive$df |>
+          dplyr::filter(unique_plot == input$plotunique) |>
+          dplyr::select(dplyr::all_of(c("unique_plot", "date", input$traittomodel))) |>
+          dplyr::mutate(date = as.integer(difftime(date, min(date), units = "days")) + 1) |>
+          setNames(c("color", "doy", "vindex"))
+
+        colorlevels(dfpars$model)
+
+        pmod <-
           ggplot() +
+          geom_point(aes(x = doy, y = vindex),
+                     data = dfplot,
+                     size = 3) +
           lapply(1:nrow(dfpars), function(i) {
-            geom_function(fun = get_data_info(dfpars, i, "sd"),
+            geom_function(fun = get_data_info(dfpars, i, "model"),
                           args = get_data_info(dfpars, i, "coefs"),
                           aes(colour = colorlevels()[[i]]),
-                          xlim = c(get_data_info(dfpars, i, "xmin"), get_data_info(dfpars, i, "xmax")),
                           n = 501,
-                          linewidth = 1)
+                          linewidth = 1.5)
 
           }) +
-          labs(
-            color = NULL,
-            x = "Days after first flight",
-            y = "2nd Derivative (Units/Day²)"
-          ) +
+          labs(x = "Days after first flight",
+               y = input$traittomodel,
+               color = "") +
           theme_bw(base_size = 24) +
           theme(panel.grid.minor = element_blank(),
                 legend.position = "bottom")
 
-        output$sderivate <- renderPlot({
-          psd
-        })
+      }
 
-
-        # summary results
-        output$summaryplot <- reactable::renderReactable({
-          models() |>
-            dplyr::select(-parms) |>
-            dplyr::group_by(unique_plot) |>
-            dplyr::summarise(
-              across(
-                c(asymptote, auc, xinfp, aic, rmse, mae),
-                list(
-                  mean = ~mean(., na.rm = TRUE),
-                  min = ~min(., na.rm = TRUE),
-                  max = ~max(., na.rm = TRUE),
-                  n = ~sum(!is.na(.))
-                )
-              )
-            ) |>
-            round_cols(digits = 3) |>
-            render_reactable()
-        })
-
-        output$summarymodel <- reactable::renderReactable({
-          models() |>
-            dplyr::select(-parms) |>
-            dplyr::group_by(model) |>
-            dplyr::summarise(
-              across(
-                c(asymptote, auc, xinfp, aic, rmse, mae),
-                list(
-                  mean = ~mean(., na.rm = TRUE),
-                  min = ~min(., na.rm = TRUE),
-                  max = ~max(., na.rm = TRUE),
-                  n = ~sum(!is.na(.))
-                )
-              )
-            ) |>
-            round_cols(digits = 3) |>
-            render_reactable()
-        })
-
+      output$fittedplot <- renderPlot({
+        pmod
       })
 
 
-      observeEvent(input$savetoglobalenv, {
-        req(models())
-        tf <- tempfile(pattern = "plimanshiny_output", fileext = ".RData")
-        plimanshiny_growth_models <- models()
-        save(plimanshiny_growth_models, file = tf)
-        ask_confirmation(
-          inputId = "myconfirmation",
-          type = "warning",
-          title = "Close the App?",
-          text = glue::glue("The results were saved in a temporary file ({basename(tf)}).
+      # first derivative
+      pfd <-
+        ggplot() +
+        lapply(1:nrow(dfpars), function(i) {
+          geom_function(fun = get_data_info(dfpars, i, "fd"),
+                        args = get_data_info(dfpars, i, "coefs"),
+                        aes(colour = colorlevels()[[i]]),
+                        xlim = c(get_data_info(dfpars, i, "xmin"), get_data_info(dfpars, i, "xmax")),
+                        n = 501,
+                        linewidth = 1)
+
+        }) +
+        labs(
+          color = NULL,
+          x = "Days after first flight",
+          y = "1st Derivative (Units/Day)"
+        ) +
+        theme_bw(base_size = 24) +
+        theme(panel.grid.minor = element_blank(),
+              legend.position = "bottom")
+
+
+      output$fderivate <- renderPlot({
+        pfd
+      })
+
+      # second derivative
+      psd <-
+        ggplot() +
+        lapply(1:nrow(dfpars), function(i) {
+          geom_function(fun = get_data_info(dfpars, i, "sd"),
+                        args = get_data_info(dfpars, i, "coefs"),
+                        aes(colour = colorlevels()[[i]]),
+                        xlim = c(get_data_info(dfpars, i, "xmin"), get_data_info(dfpars, i, "xmax")),
+                        n = 501,
+                        linewidth = 1)
+
+        }) +
+        labs(
+          color = NULL,
+          x = "Days after first flight",
+          y = "2nd Derivative (Units/Day²)"
+        ) +
+        theme_bw(base_size = 24) +
+        theme(panel.grid.minor = element_blank(),
+              legend.position = "bottom")
+
+      output$sderivate <- renderPlot({
+        psd
+      })
+
+    })
+
+
+    # summary results
+    output$summaryplot <- reactable::renderReactable({
+      req(models())
+      models() |>
+        dplyr::select(-parms) |>
+        dplyr::group_by(unique_plot) |>
+        dplyr::summarise(
+          across(
+            where(is.numeric),
+            list(
+              mean = ~mean(., na.rm = TRUE),
+              min = ~min(., na.rm = TRUE),
+              max = ~max(., na.rm = TRUE),
+              n = ~sum(!is.na(.))
+            )
+          )
+        ) |>
+        round_cols(digits = 3) |>
+        render_reactable()
+    })
+
+    output$summarymodel <- reactable::renderReactable({
+      req(models())
+      models() |>
+        dplyr::select(-parms) |>
+        dplyr::group_by(model) |>
+        dplyr::summarise(
+          across(
+            where(is.numeric),
+            list(
+              mean = ~mean(., na.rm = TRUE),
+              min = ~min(., na.rm = TRUE),
+              max = ~max(., na.rm = TRUE),
+              n = ~sum(!is.na(.))
+            )
+          )
+        ) |>
+        round_cols(digits = 3) |>
+        render_reactable()
+    })
+
+
+    observeEvent(input$savetoglobalenv, {
+      req(models())
+      tf <- tempfile(pattern = "plimanshiny_output", fileext = ".RData")
+      plimanshiny_growth_models <- models()
+      save(plimanshiny_growth_models, file = tf)
+      ask_confirmation(
+        inputId = "myconfirmation",
+        type = "warning",
+        title = "Close the App?",
+        text = glue::glue("The results were saved in a temporary file ({basename(tf)}).
               To access the created object, you need first to stop the App and run
               get_plimanshiny_results()
               to load the list into your R environment.
               Do you really want to close the app now?"),
-          btn_labels = c("Nope", "Yep"),
-          btn_colors = c("#FE642E", "#04B404")
-        )
-      })
-
-      observe({
-        if (!is.null(input$myconfirmation)) {
-          if (input$myconfirmation) {
-            stopApp()
-          } else {
-            return()
-          }
-        }
-      })
-
-
-
+        btn_labels = c("Nope", "Yep"),
+        btn_colors = c("#FE642E", "#04B404")
+      )
     })
+
+    observe({
+      if (!is.null(input$myconfirmation)) {
+        if (input$myconfirmation) {
+          stopApp()
+        } else {
+          return()
+        }
+      }
+    })
+
   })
 }
 

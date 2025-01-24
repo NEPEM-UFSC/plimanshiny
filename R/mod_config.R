@@ -50,7 +50,7 @@ mod_config_ui <- function(id){
       enable_module(mod_id = "plantmat",
                     mod_name = "Plant Maturity",
                     description = "Nonlinear models for predicting plant maturity",
-                    deps = c("drc", "segmented"),
+                    deps = c("minpack.lm", "segmented"),
                     ns = ns),
       enable_module(mod_id = "plantmeas",
                     mod_name = "Plant measures",
@@ -60,7 +60,7 @@ mod_config_ui <- function(id){
       enable_module(mod_id = "growthmodels",
                     mod_name = "Growth Models",
                     description = "Nonlinear models for growth curves",
-                    deps = "drc",
+                    deps = "minpack.lm",
                     ns = ns),
       hl(),
       h5("Features"),
@@ -169,7 +169,7 @@ mod_config_server <- function(id, settings){
     # load all
     observeEvent(input$enableall, {
       if (input$enableall) {
-        pkgs <- c("fields", "drc", "segmented", "magick", "shinycssloaders",
+        pkgs <- c("fields", "minpack.lm", "segmented", "magick", "shinycssloaders",
                   "leafsync", "histoslider", "tidyterra", "rintrojs",
                   "sparkline", "leaflet.extras2", "lwgeom", "leafem")
         check_and_install_dependencies(pkgs, ns, input, "enableall")
@@ -223,8 +223,8 @@ mod_config_server <- function(id, settings){
     observe_dependency("geostats", c("fields"), ns, input)
     observe_dependency("check_geostats", c("fields"), ns, input)
 
-    observe_dependency("plantmat", c("drc", "segmented"), ns, input)
-    observe_dependency("check_plantmat", c("drc", "segmented"), ns, input)
+    observe_dependency("plantmat", c("minpack.lm", "segmented"), ns, input)
+    observe_dependency("check_plantmat", c("minpack.lm", "segmented"), ns, input)
 
     observe_dependency("plantmeas", c("fields"), ns, input)
     observe_dependency("check_plantmeas", c("fields"), ns, input)
@@ -256,8 +256,8 @@ mod_config_server <- function(id, settings){
     observe_dependency("plotinfo", c("lwgeom"), ns, input)
     observe_dependency("check_plotinfo", c("lwgeom"), ns, input)
 
-    observe_dependency("growthmodels", c("drc"), ns, input)
-    observe_dependency("check_growthmodels", c("drc"), ns, input)
+    observe_dependency("growthmodels", c("minpack.lm"), ns, input)
+    observe_dependency("check_growthmodels", c("minpack.lm"), ns, input)
 
     observe_dependency("overlayindex", c("leafem"), ns, input)
     observe_dependency("check_overlayindex", c("leafem"), ns, input)

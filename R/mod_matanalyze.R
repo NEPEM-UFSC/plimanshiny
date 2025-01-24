@@ -428,7 +428,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
     })
 
 
-
+    modl <- reactiveVal()
     observeEvent(input$predictmat, {
       req(dfactive$df)
       req(input$vegetindex)
@@ -441,28 +441,31 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
         color = "#228B227F"
       )
 
-      modl <- reactive({
+      # modl <- reactive({
         if(input$method == "Logistic Model L3"){
           # modl <-
           dfactive$df |>
             mod_L3(predictor = input$vegetindex,
                    flight_date = input$flightdate,
                    sowing_date = input$sowing,
-                   parallel = input$parallel)
+                   parallel = input$parallel) |>
+            modl()
         } else if(input$method == "Logistic Model L4"){
           # modl <-
           dfactive$df |>
             mod_L4(predictor = input$vegetindex,
                    flight_date = input$flightdate,
                    sowing_date = input$sowing,
-                   parallel = input$parallel)
+                   parallel = input$parallel) |>
+            modl()
         } else if(input$method == "Logistic Model L5"){
           # modl <-
           dfactive$df |>
             mod_L5(predictor = input$vegetindex,
                    flight_date = input$flightdate,
                    sowing_date = input$sowing,
-                   parallel = input$parallel)
+                   parallel = input$parallel) |>
+            modl()
         } else if(input$method == "LOESS (Volpato et al., 2021)"){
           # modl <-
           dfactive$df |>
@@ -471,14 +474,16 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
                       sowing_date = input$sowing,
                       threshold = input$thresh,
                       span = input$span,
-                      parallel = input$parallel)
+                      parallel = input$parallel) |>
+            modl()
 
         } else if(input$method == "Segmented Regression"){
           dfactive$df |>
             mod_segmented2(predictor = input$vegetindex,
                            flight_date = input$flightdate,
                            sowing_date = input$sowing,
-                           parallel = input$parallel)
+                           parallel = input$parallel) |>
+            modl()
 
         } else if(input$method == "Segmented Regression (Volpato et al., 2021)"){
           # modl <-
@@ -487,7 +492,8 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
                           flight_date = input$flightdate,
                           sowing_date = input$sowing,
                           threshold = input$thresh,
-                          parallel = input$parallel)
+                          parallel = input$parallel) |>
+            modl()
         }
       })
 
@@ -498,22 +504,43 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
 
       observe({
         req(modl())
-        sendSweetAlert(
-          session = session,
-          title = "Prediction done",
-          text = "The predictions have been made and are now available for further analysis in the 'Datasets' module.",
+        nplots <- nrow(modl())
+        converged <- nrow(modl() |> dplyr::filter(!is.na(maturity)))
+        notconverged <- nplots - converged
+        convergencerate <- round(converged / nplots * 100, 2)
+
+        content <- tags$span(
+          tags$h1(icon("info"), "Prediction Summary", style = "color: orange;"),
+          tags$p("The predictions have been successfully completed and are ready for further analysis in the 'Datasets' module.",
+                 style = "margin-top: 10px;"),
+          icon("grip"), tags$b("Number of plots: "), paste0(nplots), tags$br(),
+          icon("circle-check"), tags$b("Converged Models: "), paste0(converged), tags$br(),
+          icon("circle-xmark"), tags$b("Not Converged Models: "), paste0(notconverged), tags$br(),
+          icon("chart-bar"), tags$b("Convergence Rate: "), paste0(convergencerate, "%"), tags$br()
+        )
+
+        show_alert(
+          title = NULL,
+          text = div(content, style = "text-align: left; line-height: 1.5;"),
+          html = TRUE,
+          width = 720,
           type = "success"
         )
       })
+      waiter_hide()
+
+
 
 
       observe({
+        req(modl())
         updateSelectInput(session, "plotattribute",
                           choices = colnames(modl()),
                           selected = "q90")
       })
 
       observe({
+        req(modl())
         updatePickerInput(session, "histotraits",
                           choices = colnames(modl()),
                           selected = NA)
@@ -535,6 +562,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
       # Plot the histograms
       output$histograms <- renderPlotly({
         req(input$histotraits)
+        req(modl())
 
         dfhist <-
           modl() |>
@@ -566,6 +594,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
 
 
       observe({
+        req(modl())
         # if threshold is not used
         # models L3, L4 and L5
         if(input$usethresh){
@@ -577,7 +606,6 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
             dplyr::mutate(doy = as.POSIXlt(doy)$yday + 1 -  (as.POSIXlt(input$sowing)$yday + 1)) |>
             dplyr::filter(!!dplyr::sym("unique_plot") %in% input$fittedmodel)
 
-          req(modl())
 
           dfpars <-
             modl() |>
@@ -601,6 +629,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
           waiter_hide()
         } else if(!input$usethresh){
           req(input$fittedmodel)
+          req(modl())
 
           dfplot <-
             dfactive$df |>
@@ -684,7 +713,6 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
               })
             } else{
               output$fittedplot <- renderPlot({
-
                 ggplot() +
                   geom_point(aes(x = doy, y = vindex),
                              data = dfplot) +
@@ -716,9 +744,6 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
 
 
 
-
-
-
       # Explore the results Map
       output$map <- renderLeaflet({
         req(shapefile[[input$shapefiletoexplore]]$data)
@@ -739,7 +764,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
         }
 
       })
-    })
+    # })
   })
 }
 
