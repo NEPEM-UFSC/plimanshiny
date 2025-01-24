@@ -397,7 +397,8 @@ mod_timeseriesinput_server <- function(id, shapefile, mosaiclist, r, g, b, re, n
         if(length(input_file_selected$paths$datapath) != 0){
           filenames <- file_name(input_file_selected$paths$datapath)
           filedir$dir <- file_dir(input_file_selected$paths$datapath)
-          date_match <- regmatches(filenames, regexpr("(\\d{8})|((\\d{2}-\\d{2}-\\d{4})|(\\d{4}-\\d{2}-\\d{2}))", filenames))
+          date_match <- regmatches(filenames, regexpr("(\\d{8})|((\\d{2}-\\d{2}-\\d{4})|(\\d{4}-\\d{2}-\\d{2}))|(\\d{8})|((\\d{2}_\\d{2}_\\d{4})|(\\d{4}_\\d{2}_\\d{2}))", filenames))
+          date_match <- gsub("_", "-", date_match)
           dates <- try(as.Date(date_match, tryFormats =  date_format(date_match)[[1]]))
           if(inherits(dates, "try-error") | length(dates) == 0){
             sendSweetAlert(

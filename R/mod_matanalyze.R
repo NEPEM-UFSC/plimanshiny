@@ -66,7 +66,7 @@ mod_matanalyze_ui <- function(id){
           conditionalPanel(
             condition = "input.usethresh == true", ns = ns,
             pickerInput(
-              ns("method"),
+              ns("methodthresh"),
               label = "Method for prediction",
               choices = c("LOESS (Volpato et al., 2021)",
                           "Segmented Regression (Volpato et al., 2021)")
@@ -77,7 +77,7 @@ mod_matanalyze_ui <- function(id){
               value = 0
             ),
             conditionalPanel(
-              condition = "input.method == 'LOESS (Volpato et al., 2021)'", ns = ns,
+              condition = "input.methodthresh == 'LOESS (Volpato et al., 2021)'", ns = ns,
               numericInput(
                 ns("span"),
                 label = "Span",
@@ -442,7 +442,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
       )
 
       # modl <- reactive({
-        if(input$method == "Logistic Model L3"){
+        if(input$method == "Logistic Model L3" & !input$usethresh){
           # modl <-
           dfactive$df |>
             mod_L3(predictor = input$vegetindex,
@@ -450,7 +450,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
                    sowing_date = input$sowing,
                    parallel = input$parallel) |>
             modl()
-        } else if(input$method == "Logistic Model L4"){
+        } else if(input$method == "Logistic Model L4" & !input$usethresh){
           # modl <-
           dfactive$df |>
             mod_L4(predictor = input$vegetindex,
@@ -458,7 +458,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
                    sowing_date = input$sowing,
                    parallel = input$parallel) |>
             modl()
-        } else if(input$method == "Logistic Model L5"){
+        } else if(input$method == "Logistic Model L5" & !input$usethresh){
           # modl <-
           dfactive$df |>
             mod_L5(predictor = input$vegetindex,
@@ -466,7 +466,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
                    sowing_date = input$sowing,
                    parallel = input$parallel) |>
             modl()
-        } else if(input$method == "LOESS (Volpato et al., 2021)"){
+        } else if(input$methodthresh == "LOESS (Volpato et al., 2021)" & input$usethresh){
           # modl <-
           dfactive$df |>
             mod_loess(predictor = input$vegetindex,
@@ -477,7 +477,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
                       parallel = input$parallel) |>
             modl()
 
-        } else if(input$method == "Segmented Regression"){
+        } else if(input$method == "Segmented Regression" & !input$usethresh){
           dfactive$df |>
             mod_segmented2(predictor = input$vegetindex,
                            flight_date = input$flightdate,
@@ -485,7 +485,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
                            parallel = input$parallel) |>
             modl()
 
-        } else if(input$method == "Segmented Regression (Volpato et al., 2021)"){
+        } else if(input$methodthresh == "Segmented Regression (Volpato et al., 2021)" & input$usethresh){
           # modl <-
           dfactive$df |>
             mod_segmented(predictor = input$vegetindex,
@@ -593,6 +593,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
       })
 
 
+
       observe({
         req(modl())
         # if threshold is not used
@@ -660,9 +661,9 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
                   ggplot() +
                   geom_point(aes(x = doy, y = vindex),
                              data = dfplot) +
-                  stat_function(fun = dfpars$parms[[1]][[1]]$model,
-                                xlim = c(dfpars$parms[[1]][[1]]$xmin, dfpars$parms[[1]][[1]]$xmax),
-                                args = dfpars$parms[[1]][[1]]$coefs) +
+                  geom_function(fun = get_data_info(dfpars, 1, "model"),
+                                args = get_data_info(dfpars, 1, "coefs"),
+                                xlim = c(get_data_info(dfpars, 1, "xmin"), get_data_info(dfpars, 1, "xmax"))) +
                   geom_ribbon(data = df_int,
                               aes(x = flights,
                                   ymin = min(y),
@@ -680,9 +681,9 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
 
                 fd <-
                   ggplot() +
-                  stat_function(fun = dfpars$parms[[1]][[1]]$fd,
-                                xlim = c(dfpars$parms[[1]][[1]]$xmin, dfpars$parms[[1]][[1]]$xmax),
-                                args = dfpars$parms[[1]][[1]]$coefs) +
+                  geom_function(fun = get_data_info(dfpars, 1, "fd"),
+                                args = get_data_info(dfpars, 1, "coefs"),
+                                xlim = c(get_data_info(dfpars, 1, "xmin"), get_data_info(dfpars, 1, "xmax"))) +
                   labs(x = "Days after sowing",
                        y = "First derivative") +
                   geom_vline(aes(xintercept = dfpars$heading), color = "red") +
@@ -692,9 +693,9 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
                 #
                 sd <-
                   ggplot() +
-                  stat_function(fun = dfpars$parms[[1]][[1]]$sd,
-                                xlim = c(dfpars$parms[[1]][[1]]$xmin, dfpars$parms[[1]][[1]]$xmax),
-                                args = dfpars$parms[[1]][[1]]$coefs) +
+                  geom_function(fun = get_data_info(dfpars, 1, "sd"),
+                                args = get_data_info(dfpars, 1, "coefs"),
+                                xlim = c(get_data_info(dfpars, 1, "xmin"), get_data_info(dfpars, 1, "xmax"))) +
                   labs(x =  "Days after sowing",
                        y = "Second derivative") +
                   geom_vline(aes(xintercept = dfpars$heading), color = "red") +

@@ -39,8 +39,13 @@ sdfun_L3 <- function(x, b0, b1, b2) {
                                                  (1/b2) * (1 + exp((b1 - x)/b2))))/((1 + exp((b1 - x)/b2))^2)^2)
 }
 
-mod_L3 <- function(data, flight_date = "date", predictor = "median.NDVI", sowing_date = NULL, parallel = FALSE) {
-  dftemp <- data |>
+mod_L3 <- function(data,
+                   flight_date = "date",
+                   predictor = "median.NGRDI",
+                   sowing_date = NULL,
+                   parallel = FALSE) {
+  dftemp <-
+    data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
     dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
     dplyr::group_by(unique_plot) |>
@@ -89,21 +94,20 @@ mod_L3 <- function(data, flight_date = "date", predictor = "median.NDVI", sowing
       b2 <- coefslog["scal"]
 
       # Critical points
-      inflec <- optimise(fdfun_L3, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, maximum = FALSE)
-      cp1 <- optimise(sdfun_L3, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, maximum = FALSE)
-      cp2 <- optimise(sdfun_L3, interval = c(fflight, lflight), b0 = b0, b1 = b1, b2 = b2, maximum = TRUE)
+      xseq <- seq(fflight, lflight, length.out = 5000)
+      cp1 <- xseq[which.min(sdfun_L3(xseq, b0, b1, b2))]
+      cp2 <- xseq[which.max(sdfun_L3(xseq, b0, b1, b2))]
 
-      xfd <- seq(min(flights), ceiling(inflec$minimum), length.out = 500)
-      yfd <- fdfun_L3(xfd, b0, b1, b2)
+      xfd <- seq(min(flights), ceiling(cp1), length.out = 500)
+      yfd <- sdfun_L3(xfd, b0, b1, b2)
 
       dfreg <- data.frame(x = c(min(xfd), max(xfd)), y = c(max(yfd), min(yfd)))
       regmod <- lm(y ~ x, data = dfreg)
       predline <- predict(regmod, newdata = data.frame(x = xfd))
       head <- xfd[which.max(abs(yfd - predline))]
 
-      maturation <- cp2$maximum
       int1 <- integrate(modfun_L3, lower = fflight, upper = lflight, b0 = b0, b1 = b1, b2 = b2)
-      int2 <- integrate(modfun_L3, lower = head, upper = cp2$maximum, b0 = b0, b1 = b1, b2 = b2)
+      int2 <- integrate(modfun_L3, lower = head, upper = cp2, b0 = b0, b1 = b1, b2 = b2)
       int3 <- integrate(modfun_L3, lower = fflight, upper = head, b0 = b0, b1 = b1, b2 = b2)
 
       dplyr::tibble(
@@ -112,9 +116,9 @@ mod_L3 <- function(data, flight_date = "date", predictor = "median.NDVI", sowing
         b1 = b1,
         b2 = b2,
         heading = head,
-        inflection = inflec$minimum,
-        maturity = maturation,
-        repr_period = cp2$maximum - head,
+        inflection = b1,
+        maturity = cp2,
+        repr_period = cp2 - head,
         auc = int1$value,
         auc_vege_period = int3$value,
         auc_repr_period = int2$value,
@@ -146,7 +150,6 @@ mod_L3 <- function(data, flight_date = "date", predictor = "median.NDVI", sowing
       )
     })
   }
-
   results <- results_list |>
     tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
