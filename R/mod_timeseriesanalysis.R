@@ -927,7 +927,7 @@ mod_timeseriesanalysis_server <- function(id, shapefile, mosaiclist, r, g, b, re
       ##### Show the results #######
       updateSelectInput(session, "plotattribute",
                         choices = names(result_plot),
-                        selected = ifelse("individual" %in% colnames(result_plot), colnames(result_plot)[6], colnames(result_plot)[5]))
+                        selected = ifelse("individual" %in% colnames(result_plot), colnames(result_plot)[9], colnames(result_plot)[8]))
 
       # overview plot
       output$timeserieoverview <- renderPlotly({

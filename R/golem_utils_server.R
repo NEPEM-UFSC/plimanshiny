@@ -749,7 +749,7 @@ show_licence <- function(ns) {
         br(),
         hl(),
         h2("Copyright"),
-        "Copyright (C) 2024 - Núcleo de Estudos e Pesquisas em Experimentação e Melhoramento Vegetal - ",
+        "Copyright (C) 2025 - Núcleo de Estudos e Pesquisas em Experimentação e Melhoramento Vegetal - ",
         tags$a(href="https://nepemufsc.com", "nepemufsc.com"),
         br(),
       ),

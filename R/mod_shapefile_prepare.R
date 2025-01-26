@@ -354,17 +354,17 @@ mod_shapefile_prepare_ui <- function(id){
             ),
             conditionalPanel(
               condition = "input.editplotsimpo == true", ns = ns,
-                       prettyCheckbox(
-                         inputId = ns("editdoneimpo"),
-                         label = "Edition finished!",
-                         value = FALSE,
-                         status = "info",
-                         icon = icon("thumbs-up"),
-                         plain = TRUE,
-                         outline = TRUE,
-                         animation = "rotate"
-                       ),
-                       br()
+              prettyCheckbox(
+                inputId = ns("editdoneimpo"),
+                label = "Edition finished!",
+                value = FALSE,
+                status = "info",
+                icon = icon("thumbs-up"),
+                plain = TRUE,
+                outline = TRUE,
+                animation = "rotate"
+              ),
+              br()
             )
           ),
           selectInput(ns("shapefiletoanalyze"),
@@ -1040,9 +1040,9 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
       hei <- reactiveValues()
       req(shapefile$shapefileplot)
       if(input$plotinfo | input$plotinfo2){
-        updateSelectInput(session, "uniqueidinfo",
-                          choices = 1:nrow(shapefile$shapefileplot),
-                          selected = 1)
+        updateSelectizeInput(session, "uniqueidinfo",
+                             choices = 1:nrow(shapefile$shapefileplot),
+                             server = TRUE)
         output$plotinfop <- renderPlot({
           shpinfo <- shapefile$shapefileplot[input$uniqueidinfo, ]
           npoints <- sf::st_coordinates(shpinfo) |> nrow()
@@ -1092,9 +1092,9 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
                           smooth = TRUE,
                           maxcell = 2e6)
             }
-            shapefile_plot(shpinfo, add = TRUE, col = adjustcolor("salmon", 0.7))
+            shapefile_plot(shpinfo, add = TRUE, col = adjustcolor("salmon", 0.4))
           } else{
-            shapefile_plot(shpinfo, col = adjustcolor("salmon", 0.7))
+            shapefile_plot(shpinfo, col = adjustcolor("salmon", 0.4))
           }
           wid$val <- ifelse(npoints > 5, "-", paste0(round(measures$width, 3), " m"))
           hei$val <- ifelse(npoints > 5, "-", paste0(round(measures$height, 3), " m"))
@@ -1198,10 +1198,11 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
               col_7(
                 fluidRow(
                   col_8(
-                    selectInput(ns("uniqueidinfo"),
-                                label = "Unique id",
-                                choices = NULL,
-                                width = "100%")
+                    selectizeInput(ns("uniqueidinfo"),
+                                   label = "Unique id",
+                                   choices = NULL,
+                                   options = list(maxOptions = 50000),
+                                   width = "100%")
                   ),
                   col_4(
                     selectInput(

@@ -349,10 +349,10 @@ mod_graphicalexploration_server <- function(id, dfs, shapefile) {
       p <- ggplot(dfactive$df, aes(x = .data[[vars()[1]]]))
 
       if (length(group_vars()) > 0) {
-        p <- ggplot(dfactive$df, aes(y = .data[[vars()[1]]], x = .data[[group_vars()[1]]]))
+        p <- ggplot(dfactive$df, aes(y = .data[[vars()[1]]], x = .data[[group_vars()[1]]], group = .data[[group_vars()[1]]]))
       }
       if (length(color_vars()) > 0) {
-        p <- p + aes(color = .data[[color_vars()[1]]])
+        p <- p + aes(color = .data[[color_vars()[1]]], group = .data[[color_vars()[1]]])
       }
 
       if (length(group_vars()) > 0) {
