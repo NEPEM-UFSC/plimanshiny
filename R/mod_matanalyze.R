@@ -101,6 +101,15 @@ mod_matanalyze_ui <- function(id){
             ns("predictmat"),
             label = "Predict!",
             icon = icon("check")
+          ),
+          hl(),
+          actionButton(
+            inputId = ns("savetoglobalenv"),
+            label = "Save a temporary file",
+            icon = icon("share-from-square"),
+            status = "success",
+            gradient = TRUE,
+            flat = TRUE
           )
         )
       ),
@@ -496,10 +505,40 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
             modl()
         }
       })
-
+ # send to dataset
       observe({
         req(modl())
         dfs[[input$saveto]] <- create_reactval(input$saveto, modl() |> dplyr::select(-parms))
+      })
+
+      # Save to a temp file
+      observeEvent(input$savetoglobalenv, {
+        req(modl())
+        tf <- tempfile(pattern = "plimanshiny_output", fileext = ".RData")
+        plimanshiny_growth_models <- modl()
+        save(plimanshiny_growth_models, file = tf)
+        ask_confirmation(
+          inputId = "myconfirmation",
+          type = "warning",
+          title = "Close the App?",
+          text = glue::glue("The results were saved in a temporary file ({basename(tf)}).
+              To access the created object, you need first to stop the App and run
+              get_plimanshiny_results()
+              to load the list into your R environment.
+              Do you really want to close the app now?"),
+          btn_labels = c("Nope", "Yep"),
+          btn_colors = c("#FE642E", "#04B404")
+        )
+      })
+
+      observe({
+        if (!is.null(input$myconfirmation)) {
+          if (input$myconfirmation) {
+            stopApp()
+          } else {
+            return()
+          }
+        }
       })
 
       observe({

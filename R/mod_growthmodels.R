@@ -73,7 +73,6 @@ mod_growthmodels_ui <- function(id) {
             icon = icon("share-from-square"),
             status = "success",
             gradient = TRUE,
-            width = "150px",
             flat = TRUE
           )
         )
