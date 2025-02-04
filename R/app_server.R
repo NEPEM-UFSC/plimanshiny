@@ -25,12 +25,13 @@ app_server <- function(input, output, session) {
   mosaiclist <- reactiveValues()
   imgdata <- reactiveValues()
   dfs <- reactiveValues()
-
   mod_config_server("config_1", settings)
   mod_home_server("home_1", settings)
 
   # Tracking module initialization
   module_loaded <- reactiveValues()
+
+
 
   observeEvent(input$tabshome, {
     # Datasets
@@ -75,6 +76,12 @@ app_server <- function(input, output, session) {
       mod_shapefile_prepare_server("shapefile_prepare_1", mosaic_data, basemap, shapefile, activemosaic, r, g, b, settings)
     }
 
+    if(input$tabshome == "shapefilenative" && is.null(module_loaded$shapefilenative)){
+      module_loaded$shapefilenative <- TRUE
+      mod_shapefilenative_server("shpnative", r, g, b, shapefile)
+    }
+
+
     # Manipulation
     if(input$tabshome == "mosaicmanipula" && is.null(module_loaded$mosaicmanipula)){
       module_loaded$mosaicmanipula <- TRUE
@@ -91,7 +98,6 @@ app_server <- function(input, output, session) {
       mod_cropbatch_server("cropbatch_1", shapefile, mosaiclist, settings)
     }
 
-    # Vegetation Index Calculation
     if(input$tabshome == "mosaicindex" && is.null(module_loaded$mosaicindex)){
       module_loaded$mosaicindex <- TRUE
       mod_indexes_server("indexes_1", mosaic_data, r, g, b, re, nir, swir, tir, basemap, index, shapefile, settings, quantiles)

@@ -21,7 +21,7 @@ app_ui <- function(request) {
           href = "https://nepemufsc.com",
           target = "_blank", "@NEPEM"
         ),
-        right = "2024"
+        right = "2025"
       ),
       controlbar = dashboardControlbar(
         skinSelector()
@@ -109,7 +109,14 @@ app_ui <- function(request) {
           bs4SidebarMenuItem(
             text = "Shapefile",
             tabName = "shapefileimport",
-            icon = shiny::icon("draw-polygon")
+            icon = shiny::icon("draw-polygon"),
+            condition = "input['config_1-shapefileleaflet'] === true"
+          ),
+          bs4SidebarMenuItem(
+            text = "Shapefile",
+            tabName = "shapefilenative",
+            icon = shiny::icon("draw-polygon"),
+            condition = "input['config_1-shapefileleaflet'] === false"
           ),
           bs4SidebarMenuItem(
             text = "Manipulate",
@@ -324,6 +331,10 @@ app_ui <- function(request) {
           bs4TabItem(
             tabName = "shapefileimport",
             mod_shapefile_prepare_ui("shapefile_prepare_1")
+          ),
+          bs4TabItem(
+            tabName = "shapefilenative",
+            mod_shapefilenative_ui("shpnative")
           ),
           bs4TabItem(
             tabName = "mosaicindex",

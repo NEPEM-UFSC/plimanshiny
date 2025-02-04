@@ -725,3 +725,131 @@ drag_ui <- function(id,
     ", ns("dropzone"), ns("dropped_item"), ns("removed_item"), explosion_time * 1000)))
   )
 }
+canvas_with_actions_ui <- function(id){
+  ns <- NS(id)
+  tagList(
+    tags$head(
+      tags$style(HTML("
+        #rasterCanvas {
+          margin-top: 20px;
+          border: 1px solid #ddd;
+          box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.3);
+        }
+      ")),
+      tags$script(HTML(sprintf("
+        let canvas, ctx, drawing = false;
+        let rectStartX, rectStartY, rectEndX, rectEndY;
+        let selectedPoints = [];
+        let rasterImage = null;
+        let canvasWidth = 1280;
+        let canvasHeight = 720;
+
+        function initCanvas() {
+          canvas = document.getElementById('%s');
+          ctx = canvas.getContext('2d');
+          canvas.width = canvasWidth;
+          canvas.height = canvasHeight;
+
+          canvas.addEventListener('mousedown', handleMouseDown);
+          canvas.addEventListener('mousemove', handleMouseMove);
+          canvas.addEventListener('mouseup', handleMouseUp);
+          canvas.addEventListener('dblclick', handleDoubleClick);
+        }
+
+        function adjustCanvasSize(width, height) {
+          canvasWidth = width;
+          canvasHeight = height;
+          canvas.width = canvasWidth;
+          canvas.height = canvasHeight;
+          Shiny.setInputValue('%s', { width: canvasWidth, height: canvasHeight }, { priority: 'event' });
+          drawCanvas();
+        }
+
+        function handleMouseDown(e) {
+          const rect = canvas.getBoundingClientRect();
+          rectStartX = e.clientX - rect.left;
+          rectStartY = e.clientY - rect.top;
+          timeoutID = setTimeout(() => {
+            drawPoint(rectStartX, rectStartY);
+            selectedPoints.push({ x: rectStartX, y: rectStartY });
+            Shiny.setInputValue('%s', [rectStartX, rectStartY]);
+          }, 1000);
+          drawing = true;
+        }
+
+        function handleMouseMove(e) {
+          if (!drawing) return;
+          clearTimeout(timeoutID);
+          const rect = canvas.getBoundingClientRect();
+          rectEndX = e.clientX - rect.left;
+          rectEndY = e.clientY - rect.top;
+          drawCanvas();
+          drawRectangle(rectStartX, rectStartY, rectEndX, rectEndY);
+        }
+
+        function handleMouseUp() {
+          clearTimeout(timeoutID);
+          drawing = false;
+          Shiny.setInputValue('%s', {
+            startX: Math.min(rectStartX, rectEndX),
+            startY: Math.min(rectStartY, rectEndY),
+            endX: rectEndX,
+            endY: rectEndY,
+            width: Math.abs(rectEndX - rectStartX),
+            height: Math.abs(rectEndY - rectStartY)
+          });
+          rectStartX = rectStartY = rectEndX = rectEndY = 0;
+        }
+
+        function drawPoint(x, y) {
+          if (!ctx) return;
+          ctx.strokeStyle = 'red';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(x, y, 10, 0, 2 * Math.PI);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(x - 10, y);
+          ctx.lineTo(x + 10, y);
+          ctx.moveTo(x, y - 10);
+          ctx.lineTo(x, y + 10);
+          ctx.stroke();
+        }
+
+        function drawRectangle(x1, y1, x2, y2) {
+          ctx.strokeStyle = 'red';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+        }
+
+        function drawCanvas() {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          drawRaster();
+        }
+
+        function drawRaster() {
+          if (rasterImage) {
+            ctx.drawImage(rasterImage, 0, 0, canvas.width, canvas.height);
+          }
+        }
+
+        Shiny.addCustomMessageHandler('updateTiles', function(data) {
+          rasterImage = new Image();
+          rasterImage.src = 'data:image/png;base64,' + data.img;
+          rasterImage.onload = drawCanvas;
+        });
+
+        Shiny.addCustomMessageHandler('adjustCanvasSize', function(data) {
+          adjustCanvasSize(data.width, data.height);
+        });
+
+        function handleDoubleClick() {
+          Shiny.setInputValue('%s', new Date().getTime());
+        }
+
+        window.addEventListener('load', initCanvas);
+      ", ns("rasterCanvas"), ns("canvas_size"), ns("picked_point"), ns("drawn_rectangle"), ns("reset_view"))))
+    ),
+    tags$canvas(id = ns("rasterCanvas"))
+  )
+}

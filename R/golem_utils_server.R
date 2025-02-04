@@ -210,7 +210,7 @@ mosaic_info <- function(mo){
     icon("border-all"),tags$b("Number of rows: "), paste0(terra::nrow(mo)), tags$br(),
     icon("layer-group"),tags$b("Number of layers: "), paste0(terra::nlyr(mo), " (",paste0(names(mo), collapse = ", ") , ")"), tags$br(),
     icon("ruler-combined"),tags$b("Resolution: "), paste0(paste(round(terra::res(mo), 8), collapse = ", "), " (x, y)"), tags$br(),
-    icon("ruler-combined"),tags$b("Extend: "), paste0(sub("^ext\\((.*)\\)$", "\\1", paste0(round(terra::ext(mo), 2))), " (xmin, xmax, ymin, ymax)"), tags$br(),
+    icon("ruler-combined"),tags$b("Extend: "), paste0(sub("^ext\\((.*)\\)$", "\\1", paste(terra::ext(mo))), " (xmin, xmax, ymin, ymax)"), tags$br(),
     icon("earth-americas"),tags$b("CRS: "), paste0(crsname), tags$br(),
     icon("database"),tags$b("Data Type: "), paste0(dt), tags$br()
   )
@@ -883,4 +883,38 @@ round_cols <- function(df, digits = 2) {
   })
 
   return(df)
+}
+adjust_canvas <- function(raster){
+  nrows <- nrow(raster)
+  ncols <- ncol(raster)
+  aspect_ratio <- ncols / nrows
+  # Limit canvas width and height
+  max_width <- 1100
+  max_height <- 710
+  if (aspect_ratio > 1) {
+    # Width is the limiting factor
+    width <- min(max_width, max_height * aspect_ratio)
+    height <- width / aspect_ratio
+  } else {
+    # Height is the limiting factor
+    height <- min(max_height, max_width / aspect_ratio)
+    width <- height * aspect_ratio
+  }
+  return(c(width, height))
+}
+check_and_plot <- function(mosaic, r = 1, g = 2, b = 3){
+  if(terra::nlyr(mosaic) < 3){
+    terra::plot(mosaic[[1]],
+                col = pliman::custom_palette(c("darkred",  "yellow", "darkgreen"), n = 100),
+                maxcell = 1e6,
+                mar = 0,
+                smooth = TRUE)
+  } else{
+    a <- try(plotRGB(mosaic, smooth = TRUE, r = r, g = g, b = b))
+    if (inherits(a, "try-error")) {
+      plotRGB(mosaic, smooth = TRUE, r = r, g = g, b = b, stretch = "lin")
+    } else{
+      plotRGB(mosaic, smooth = TRUE, r = r, g = g, b = b)
+    }
+  }
 }

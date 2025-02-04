@@ -69,6 +69,7 @@ golem::add_module(name = "growthmodels")
 golem::add_module(name = "vectorize")
 golem::add_module(name = "growthmodelscurves")
 golem::add_module(name = "graphicalexploration")
+golem::add_module(name = "shapefilenative")
 
 ## Add packages
 usethis::use_package("shiny")

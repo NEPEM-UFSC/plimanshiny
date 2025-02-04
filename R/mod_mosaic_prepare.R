@@ -200,14 +200,27 @@ mod_mosaic_prepare_ui <- function(id){
             techniques to enhance the image visualization."
           ),
           prettyCheckbox(
-            inputId = ns("intmap"),
-            label = "Create an interative base map?",
-            value = TRUE,
+            inputId = ns("showlegend"),
+            label = "Show plot legend?",
+            value = FALSE,
             icon = icon("check"),
             status = "success",
             animation = "rotate"
           ) |>
             add_help(step = 6,
+                     intro = "Enable this option to display the legend.
+                     To crop the raster accurately, disable this option to
+                     ensure the canvas area matches the raster's extents
+                     without additional padding."),
+          prettyCheckbox(
+            inputId = ns("intmap"),
+            label = "Create leaflet map?",
+            value = FALSE,
+            icon = icon("check"),
+            status = "success",
+            animation = "rotate"
+          ) |>
+            add_help(step = 7,
                      intro = "Enable this option to create an interactive basemap.
                    Depending on the size of the mosaic and the `maxpixel` value
                    set in the configuration, this process might take a while."),
@@ -218,40 +231,49 @@ mod_mosaic_prepare_ui <- function(id){
                         label = "How to plot",
                         choices = NULL)
           ),
-          conditionalPanel(
-            condition = "input.intmap == false", ns = ns,
-            sliderInput(
-              ns("gammacorr"),
-              label = "Gamma correction",
-              min = -5,
-              max = 5,
-              value = 1,
-              step = 0.1
-            )
-          )
         ),
         tabPanel(
           title = "Download",
           mod_download_mosaic_ui(ns("downloadmosaic")) |>
-            add_help(step = 7,
+            add_help(step = 8,
                      intro = "Download the active mosaic.")
         )
       )
     ),
     col_9(
-      bs4Card(
-        width = 12,
-        height = "780px",
-        title = "Mosaic view",
-        color = "success",
-        status = "success",
-        maximizable = TRUE,
-        conditionalPanel(
-          condition = "(input.showmosaic == 'rgb' | input.showmosaic == 'bands' | input.showmosaic == 'hist') & input.intmap == false", ns = ns,
+      conditionalPanel(
+        condition = "input.showmosaic == 'rgb' & input.intmap == false", ns = ns,
+        bs4Card(
+          width = 12,
+          height = "740px",
+          title = "Plimanshiny viewer",
+          color = "success",
+          status = "success",
+          maximizable = TRUE,
+          plimanshiny_viewer_ui(ns("mosaic_viewer"))
+        )
+      ),
+      conditionalPanel(
+        condition = "(input.showmosaic == 'bands' | input.showmosaic == 'hist') & input.intmap == false", ns = ns,
+        bs4Card(
+          width = 12,
+          height = "760px",
+          title = "Mosaic band view",
+          color = "success",
+          status = "success",
+          maximizable = TRUE,
           plotOutput(ns("mosaic_plot"), height = "740px") |> add_spinner()
-        ),
-        conditionalPanel(
-          condition = "input.intmap == true", ns = ns,
+        )
+      ),
+      conditionalPanel(
+        condition = "input.intmap == true", ns = ns,
+        bs4Card(
+          width = 12,
+          height = "760px",
+          title = "Leaflet view",
+          color = "success",
+          status = "success",
+          maximizable = TRUE,
           leafletOutput(ns("mosaic_mapview"), height = "740px") |> add_spinner()
         )
       )
@@ -413,44 +435,38 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
     })
     observeEvent(input$mosaicinfomosaic, {
       req(mosaic_data[[input$mosaictoanalyze]]$data)
+      print(mosaic_data[[input$mosaictoanalyze]]$data)
       mosaic_info(mosaic_data[[input$mosaictoanalyze]]$data)
     })
 
     output$mosaic_plot <- renderPlot({
       req(input$mosaictoanalyze)
-      if (input$showmosaic == "rgb") {
-        if(nlyr(mosaic_data[[input$mosaictoanalyze]]$data) < 3){
-          show_alert("Ops, too few bands",
-                     text = "The current mosaic has too few bands and an RGB image cannot be rendered. Plotting a raster image",
-                     type = "warning")
-          terra::plot(mosaic_data[[input$mosaictoanalyze]]$data)
-        } else{
-          if(input$stretch == "none"){
-            terra::plotRGB(
-              mosaic_data[[input$mosaictoanalyze]]$data ^input$gammacorr,
-              r = suppressWarnings(as.numeric(r$r)),
-              g = suppressWarnings(as.numeric(g$g)),
-              b = suppressWarnings(as.numeric(b$b)),
-              maxcell = 1e6
-            )
-
-          } else{
-            terra::plotRGB(
-              mosaic_data[[input$mosaictoanalyze]]$data ^ input$gammacorr,
-              r = suppressWarnings(as.numeric(r$r)),
-              g = suppressWarnings(as.numeric(g$g)),
-              b = suppressWarnings(as.numeric(b$b)),
-              stretch = input$stretch,
-              maxcell = 1e6
-            )
-          }
-        }
-      } else if (input$showmosaic == "bands") {
+      if (input$showmosaic == "bands") {
         terra::plot(mosaic_data[[input$mosaictoanalyze]]$data)
-      } else {
+      }
+      if(input$showmosaic == "hist"){
         terra::hist(mosaic_data[[input$mosaictoanalyze]]$data)
       }
       removeNotification(id = "importmosaic")
+    })
+
+
+
+
+    observe({
+      if(!input$intmap & input$showmosaic == "rgb"){
+        req(input$mosaictoanalyze)
+        req(mosaic_data[[input$mosaictoanalyze]]$data)
+        # print(r$r)
+        plimanshiny_viewer_server("mosaic_viewer",
+                                  mosaic_data[[input$mosaictoanalyze]]$data,
+                                  r = reactive({ suppressWarnings(as.numeric(r$r)) }),
+                                  g = reactive({ suppressWarnings(as.numeric(g$g)) }),
+                                  b = reactive({ suppressWarnings(as.numeric(b$b)) }),
+                                  usemargin = reactive({input$showlegend})
+        )
+        removeNotification(id = "importmosaic")
+      }
     })
 
     #

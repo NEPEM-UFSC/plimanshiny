@@ -114,6 +114,11 @@ mod_config_ui <- function(id){
                     description = "Allows to overlay vegetation indexes above a true color (RGB) map in the 'Index' module.",
                     deps = "leafem",
                     ns = ns),
+      enable_module(mod_id = "shapefileleaflet",
+                    mod_name = "Build shapefile using leaflet rendering.",
+                    description = "Enables shapefile creation using Leaflet's rendering tools. When disabled, the shapefile will be generated through a native approach, utilizing rectangle drawings to perform zoom-in operations.",
+                    deps = "base64enc",
+                    ns = ns),
 
       hl(),
       actionButton(ns("save_btn"), label = tagList(icon("save"), "Save Settings"), class = "btn btn-primary"),
@@ -146,7 +151,8 @@ mod_config_server <- function(id, settings){
                              plotinfo = FALSE,
                              license = FALSE,
                              growthmodels = FALSE,
-                             overlayindex = FALSE)
+                             overlayindex = FALSE,
+                             shapefileleaflet = FALSE)
     saveRDS(default_settings, settings_file_default)
 
 
@@ -171,7 +177,7 @@ mod_config_server <- function(id, settings){
       if (input$enableall) {
         pkgs <- c("fields", "minpack.lm", "segmented", "magick", "shinycssloaders",
                   "leafsync", "histoslider", "tidyterra", "rintrojs",
-                  "sparkline", "leaflet.extras2", "lwgeom", "leafem")
+                  "sparkline", "leaflet.extras2", "lwgeom", "leafem", "terra")
         check_and_install_dependencies(pkgs, ns, input, "enableall")
         settings(lapply(default_settings, \(x){x = TRUE}))
       }
@@ -194,6 +200,7 @@ mod_config_server <- function(id, settings){
       updatePrettySwitch(session = session, inputId = "plotinfo", value = settings()$plotinfo)
       updatePrettySwitch(session = session, inputId = "growthmodels", value = settings()$growthmodels)
       updatePrettySwitch(session = session, inputId = "overlayindex", value = settings()$overlayindex)
+      updatePrettySwitch(session = session, inputId = "shapefileleaflet", value = settings()$shapefileleaflet)
     })
 
     # Reactively save the settings whenever the switch is changed
@@ -212,6 +219,7 @@ mod_config_server <- function(id, settings){
                                plotinfo = input$plotinfo,
                                growthmodels = input$growthmodels,
                                overlayindex = input$overlayindex,
+                               shapefileleaflet = input$shapefileleaflet,
                                license = TRUE)
       settings(current_settings)  # Update global reactive settings
       saveRDS(current_settings, settings_file_user)
@@ -261,6 +269,9 @@ mod_config_server <- function(id, settings){
 
     observe_dependency("overlayindex", c("leafem"), ns, input)
     observe_dependency("check_overlayindex", c("leafem"), ns, input)
+
+    observe_dependency("shapefileleaflet", c("base64enc"), ns, input)
+    observe_dependency("check_shapefileleaflet", c("base64enc"), ns, input)
 
     # Option to reset to default settings
     observeEvent(input$reset_btn, {
