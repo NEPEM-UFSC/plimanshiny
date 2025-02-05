@@ -78,7 +78,7 @@ app_server <- function(input, output, session) {
 
     if(input$tabshome == "shapefilenative" && is.null(module_loaded$shapefilenative)){
       module_loaded$shapefilenative <- TRUE
-      mod_shapefilenative_server("shpnative", r, g, b, shapefile)
+      mod_shapefilenative_server("shpnative", mosaic_data,  r, g, b, activemosaic, shapefile)
     }
 
 
