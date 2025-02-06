@@ -210,7 +210,7 @@ app_server <- function(input, output, session) {
     }
     if(input$tabshome == "gcp" && is.null(module_loaded$gcp)){
       module_loaded$gcp <- TRUE
-      mod_georeference_server("georef_ui", mosaic_data = mosaic_data, r, g, b)
+      mod_georeference_server("georef_ui", mosaic_data = mosaic_data, r, g, b, dfs)
     }
 
   })

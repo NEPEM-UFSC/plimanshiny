@@ -70,6 +70,7 @@ golem::add_module(name = "vectorize")
 golem::add_module(name = "growthmodelscurves")
 golem::add_module(name = "graphicalexploration")
 golem::add_module(name = "shapefilenative")
+golem::add_module(name = "georeference")
 
 ## Add packages
 usethis::use_package("shiny")

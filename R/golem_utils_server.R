@@ -918,3 +918,34 @@ check_and_plot <- function(mosaic, r = 1, g = 2, b = 3){
     }
   }
 }
+guess_coordinate_type <- function(coords) {
+  x <- coords[1, 1]
+  y <- coords[1, 2]
+  if (x >= -180 && x <= 180 && y >= -90 && y <= 90) {
+    return("lat/lon")
+  }
+  if (x >= 160000 && x <= 834000 && y >= 0 && y <= 10000000) {
+    return("UTM")
+  }
+  return("unknown")
+}
+# Convert UTM coordinates to pixel and line
+convert_to_pixel_line <- function(utm_point, xmin, x_res, ymax, y_res) {
+  pixel <- (utm_point[1] - xmin) / x_res
+  line <- (ymax - utm_point[2]) / y_res
+  return(round(c(pixel, line)))
+}
+to_utm <- function(latlon){
+  colnames(latlon) <- c("X", "Y")
+  lat <- latlon[, 2][1]
+  lon <- latlon[, 1][1]
+  utm_zone <- floor((lon + 180) / 6) + 1
+  epsg_code <- ifelse(lat >= 0, 32600 + utm_zone, 32700 + utm_zone)
+
+  # Convert gps_coords to UTM
+  gps_sf <- sf::st_as_sf(as.data.frame(latlon), coords = c("X", "Y"), crs = 4326)
+  utmcoords <-
+  sf::st_transform(gps_sf, crs = epsg_code) |>
+    sf::st_coordinates()
+  return(list(utm  = utmcoords, epsg = epsg_code))
+}

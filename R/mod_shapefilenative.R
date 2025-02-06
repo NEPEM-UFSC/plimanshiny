@@ -679,6 +679,22 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                   )
                 }
               }
+              # Combine created shapes and temporary shape
+              alreadybuilt <- dplyr::bind_rows(reactiveValuesToList(createdshape), .id = "block")
+              if (nrow(alreadybuilt) > 0) {
+                shptoplot <- dplyr::bind_rows(alreadybuilt, tmpshape$tmp |> dplyr::mutate(block = "block_temp"))
+              } else {
+                shptoplot <- tmpshape$tmp
+              }
+              # Extract number from plot ID for plotting
+              shptoplot <- shptoplot |> extract_number(plot_id)
+              plot(shptoplot[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "red", lwd = 3)
+
+              # Add text labels at centroids if enabled
+              if (input$showplotid) {
+                centrs <- suppressMessages(sf::st_centroid(shptoplot) |> sf::st_coordinates())
+                text(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col = "black", cex = 1)
+              }
 
             }, error = function(e) {
               message("An error occurred during plotting: ", e$message)
@@ -933,6 +949,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                   crop_to_shape_ext = FALSE,
                   verbose = FALSE
                 )[[1]]
+          shapefile[["shapefileplot"]] <- tmpshape$tmp
         })
 
 
@@ -1260,6 +1277,22 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                     cex = 1
                   )
                 }
+              }
+              # Combine created shapes and temporary shape
+              alreadybuilt <- dplyr::bind_rows(reactiveValuesToList(createdshape), .id = "block")
+              if (nrow(alreadybuilt) > 0) {
+                shptoplot <- dplyr::bind_rows(alreadybuilt, tmpshape$tmp |> dplyr::mutate(block = "block_temp"))
+              } else {
+                shptoplot <- tmpshape$tmp
+              }
+              # Extract number from plot ID for plotting
+              shptoplot <- shptoplot |> extract_number(plot_id)
+              plot(shptoplot[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "red", lwd = 3)
+
+              # Add text labels at centroids if enabled
+              if (input$showplotid) {
+                centrs <- suppressMessages(sf::st_centroid(shptoplot) |> sf::st_coordinates())
+                text(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col = "black", cex = 1)
               }
 
             }, error = function(e) {

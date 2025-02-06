@@ -26,31 +26,37 @@ mod_georeference_ui <- function(id) {
                      label = "Mosaic to be georeferenced",
                      choices = NULL
                    ),
-                   shinyFilesButton(
-                     id = ns("cpointinput"),
-                     label = "Import control points (GPS)",
-                     title = "Shapefile",
-                     buttonType = "primary",
-                     multiple = TRUE,
-                     icon = icon("magnifying-glass")
+                   pickerInput(
+                     ns("dfgcp"),
+                     label = "Control points (GPS)",
+                     choices = NULL
                    ),
-                   textInput(
-                     ns("filemosaicpath"),
-                     label = "Chosen file(s)",
-                     value = "",
-                     width = "100%"
-                   ),
-                   conditionalPanel(
-                     condition = "input.filemosaicpath != ''",
-                     ns = ns,
-                     fluidRow(
-                       actionBttn(
-                         ns("importshapefile"),
-                         label = "Import control points",
-                         icon = icon("file-import"),
-                         color = "primary"
+                   fluidRow(
+                     col_4(
+                       pickerInput(
+                         ns("lat"),
+                         label = "Lat",
+                         choices = NULL
                        )
+                     ),
+                     col_4(
+                       pickerInput(
+                         ns("lon"),
+                         label = "Lon",
+                         choices = NULL
+                       )
+                     ),
+                     pickerInput(
+                       ns("alt"),
+                       label = "Alt",
+                       choices = NULL
                      )
+                   ),
+                   actionBttn(
+                     ns("doneconfigpoints"),
+                     label = "Selection finished",
+                     style = "pill",
+                     color = "success"
                    ),
                    numericInput(ns("epsgcode"),
                                 label = "EPSG code (use 'Toolbox > UTM Zone selector')",
@@ -237,17 +243,21 @@ mod_georeference_ui <- function(id) {
 #' georeference Server Functions
 #'
 #' @noRd
-mod_georeference_server <- function(id, mosaic_data, r, g, b){
+mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
-
     mosaitoshape <- reactiveVal()
+    dftemp <- reactiveVal()
+    control_points <- reactiveVal()
+    has_control_points <- reactiveVal(FALSE)
+    cpoints <- reactiveVal()
+
     observe({
       req(mosaic_data)
       updateSelectInput(session, "mosaic_to_georef", choices = c(setdiff(names(mosaic_data), "mosaic")),
                         selected = names(mosaic_data)[1])
-      req(input$mosaic_to_georef)
     })
+
     observe({
       updateTextInput(session, "new_cropped", value = paste0(input$mosaic_to_georef, "_cropped"))
     })
@@ -256,42 +266,78 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b){
         mosaitoshape(mosaic_data[[input$mosaic_to_georef]]$data)
       }
     })
-    # mosaitoshape <- reactiveVal(mosaic_data)
+
     observe({
-      req(mosaitoshape())
-      control_points <- reactiveVal()
-      has_control_points <- reactiveVal(FALSE)
-      pathshape <- reactiveValues(file = NULL)
-      observe({
-        shinyFileChoose(input, "cpointinput",
-                        root = getVolumes()(),
-                        filetypes = c("csv",  "txt", "json", "kml"),
-                        session = session)
-        if(!is.null(input$cpointinput)){
-          pathshape$file <- parseFilePaths(getVolumes()(), input$cpointinput)
-          if(length(pathshape$file$datapath) != 0){
-            updateTextInput(session, "filemosaicpath", value = paste0(pathshape$file$datapath, collapse = ", "))
-          }
-        }
-      })
+      updatePickerInput(session, "dfgcp",
+                        choices = c("none", names(dfs)))
+    })
+    observe({
+      updatePickerInput(session, "dfgcp",
+                        choices = c("none", names(dfs)))
+    })
 
-      observe({
-        volumes <- c("R Installation" = R.home(), getVolumes()())
-        shinyDirChoose(input, "outfolder",
-                       roots = volumes,
-                       session = session,
-                       restrictions = system.file(package = "base"))
-        diroutput <- parseDirPath(volumes, input$outfolder)
-        req(diroutput)
-        updateTextInput(session, "outdir", value = diroutput)
-      })
+    observeEvent(input$dfgcp, {
+      req(input$dfgcp)
+      dftemp(dfs[[input$dfgcp]]$data)
+    })
 
-      observeEvent(input$importshapefile, {
-        if(length(pathshape$file$datapath) != 0){
-          control_points(read.csv(pathshape$file$datapath))
+
+    observe({
+      updatePickerInput(session, "lat", choices = colnames(dftemp()))
+    })
+    observe({
+      updatePickerInput(session, "lon", choices = colnames(dftemp()))
+    })
+    observe({
+      updatePickerInput(session, "alt", choices = c("NA", colnames(dftemp())))
+    })
+
+    # select the points
+    observe({
+      req(input$lat)
+      req(input$lon)
+      cpoints(dftemp() |> dplyr::select(dplyr::any_of(c(input$lon, input$lat, input$alt))))
+      control_points(cpoints())
+    })
+
+    observeEvent(input$doneconfigpoints, {
+      control_points(NULL)
+      if(ncol(cpoints()) > 1){
+        if(guess_coordinate_type(cpoints()) == "lat/lon"){
+          utmpoints <- to_utm(as.matrix(cpoints()[, 1:2]))
+          control_points(as.data.frame(utmpoints$utm))
+          updateNumericInput(session, "epsgcode", value = utmpoints$epsg)
+          has_control_points(TRUE)
+          # message alert that the points were converted to UTM
+          showNotification(
+            ui = tagList(
+              tags$i(class = "fa fa-check"), "Control points converted to UTM"
+            ),
+            type = "message",
+            duration = 5000,  # Remains until manually removed
+            id = "georef"
+          )
+        } else{
+          control_points(as.data.frame(cpoints()))
           has_control_points(TRUE)
         }
-      })
+      }
+    })
+
+    observe({
+      volumes <- c(getVolumes()())
+      shinyDirChoose(input, "outfolder",
+                     roots = volumes,
+                     session = session,
+                     restrictions = system.file(package = "base"))
+      diroutput <- parseDirPath(volumes, input$outfolder)
+      req(diroutput)
+      updateTextInput(session, "outdir", value = diroutput)
+    })
+
+    observe({
+
+
 
       output$points_table <- DT::renderDT({
         req(control_points())
@@ -327,12 +373,13 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b){
         control_points(control_points() |> dplyr::slice(-row_id))
       })
 
+      req(mosaitoshape())
       original_image_path <- file.path(tempdir(), "originalimage.png")
       basepolygon <- file.path(tempdir(), "imagewithpolygon.png")
       current_extent <- reactiveVal()
       observe({
         req(mosaitoshape())
-        current_extent(mosaitoshape())
+        current_extent(ext(mosaitoshape()))
       })
       polygeom <- reactiveVal()
       points <- reactiveValues(data = list())
@@ -393,6 +440,9 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b){
       })
 
 
+
+
+
       observeEvent(input$drawn_rectangle_geor, {
         rect <- input$drawn_rectangle_geor
         req(rect$startX)
@@ -421,24 +471,19 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b){
             file.remove(tfc)
           }
         })
+
         if(terra::nlyr(mosaitoshape()) < 3){
           cropped_ras <- crop(mosaitoshape(), ext(xmin, xmax, ymin, ymax))
           sizes <- adjust_canvas(cropped_ras)
           wid(sizes[[1]])
           hei(sizes[[2]])
           png(tfc, width = wid(), height = hei())
-          # print(marg())
           terra::plot(cropped_ras,
                       col = pliman::custom_palette(c("darkred",  "yellow", "darkgreen"), n = 100),
                       maxcell = 1e6,
                       smooth = TRUE,
                       legend = "bottomleft",
                       mar = 0)
-          points(x = control_points()[, 1],
-                 y = control_points()[, 2],
-                 cex = 4,
-                 pch = 13,
-                 col = "black")
           dev.off()
         } else{
           trycrop <-
@@ -504,19 +549,22 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b){
               )
 
             }
-            points(x = control_points()[, 1],
-                   y = control_points()[, 2],
-                   cex = 4,
-                   pch = 13,
-                   col = "black")
-            text(
-              x = control_points()[, 1],
-              y = control_points()[, 2],  # You can adjust the offset if needed
-              labels = 1:nrow(control_points()),
-              col = "black",
-              cex = 2,
-              pos = 3
-            )
+            if(has_control_points()){
+              points(x = control_points()[, 1],
+                     y = control_points()[, 2],
+                     cex = 4,
+                     pch = 13,
+                     col = "black")
+              text(
+                x = control_points()[, 1],
+                y = control_points()[, 2],  # You can adjust the offset if needed
+                labels = 1:nrow(control_points()),
+                col = "black",
+                cex = 2,
+                pos = 3
+              )
+            }
+
 
 
           }, error = function(e) {
@@ -538,6 +586,11 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b){
           height = as.integer(hei())
         ))
       })
+
+
+
+
+
 
       # Handle point selection input
       observeEvent(input$picked_point_geor, {
@@ -660,6 +713,21 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b){
             cex = 2,
             pos = 3
           )
+          if(has_control_points()){
+            points(x = control_points()[, 1],
+                   y = control_points()[, 2],
+                   cex = 4,
+                   pch = 13,
+                   col = "black")
+            text(
+              x = control_points()[, 1],
+              y = control_points()[, 2],  # You can adjust the offset if needed
+              labels = 1:nrow(control_points()),
+              col = "black",
+              cex = 2,
+              pos = 3
+            )
+          }
         }, error = function(e) {
           message("An error occurred during plotting: ", e$message)
         }, finally = {
@@ -735,6 +803,21 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b){
               cex = 2,
               pos = 3
             )
+            if(has_control_points()){
+              points(x = control_points()[, 1],
+                     y = control_points()[, 2],
+                     cex = 4,
+                     pch = 13,
+                     col = "black")
+              text(
+                x = control_points()[, 1],
+                y = control_points()[, 2],  # You can adjust the offset if needed
+                labels = 1:nrow(control_points()),
+                col = "black",
+                cex = 2,
+                pos = 3
+              )
+            }
 
           }, error = function(e) {
             # Handle the error (you can log it, notify the user, etc.)
@@ -758,7 +841,15 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b){
         ))
       })
 
-      ######################################## GEORREFERENCE THE MOSAIC ########################
+
+
+
+
+
+
+
+
+      ########################################### GEORREFERENCE THE MOSAIC #################################
       observeEvent(input$georreference, {
         points_field <- do.call(rbind, points$data)[, 1:2]
         points_gps <- control_points()
@@ -780,28 +871,32 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b){
         } else {
           utm_crs <- paste0("EPSG:", input$epsgcode)
         }
-        if (guess_coordinate_type(points_gps) == "lat/lon") {
-          # If gps_coords are in lat/lon, compute the UTM EPSG code
-          utmcoords <- to_utm(points_gps)
-          points_gps <- utmcoords$coords |> as.data.frame()
-          utm_crs <- utmcoords$epsg
-        } else {
-          utm_crs <- paste0("EPSG:", input$epsgcode)
+        # alert if req(input$epsgcode) is null
+        if(is.na(input$epsgcode)){
+          sendSweetAlert(
+            session = session,
+            title = "Oops!",
+            text = "Please provide the EPSG code for the UTM projection.",
+            type = "error"
+          )
+          return()
         }
-        req(input$epsgcode)
 
         # Define mosaic metadata
-        mosext <- terra::ext(mosaitoshape())
-        mosres  <- terra::res(mosaitoshape())
+        xmin <- terra::xmin(mosaitoshape())
+        ymax <- terra::ymax(mosaitoshape())
+        mosres <- terra::res(mosaitoshape())
         # Apply conversion to all control points
-        points_field <- t(apply(points_field, 1, convert_to_pixel_line, mosext[1], mosres[1], mosext[4], mosres[2]))
+        points_field <- t(apply(points_field, 1, convert_to_pixel_line, xmin, mosres[1], ymax, mosres[2]))
         # Validate control points and GPS coordinates
         if (nrow(points_field) != nrow(points_gps)) {
-          stop("The number of control points and GPS coordinates must match.")
-        }
-
-        if (nrow(points_field) < 3) {
-          stop("At least 3 control points are required for georeferencing.")
+          sendSweetAlert(
+            session = session,
+            title = "Oops!",
+            text = "The number of control points and GPS coordinates must match.",
+            type = "error"
+          )
+          return()
         }
 
         # Prepare GDAL control points arguments
@@ -816,26 +911,53 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b){
           )
         )
 
-        # Step 1: Apply gdal_translate to add control points
+        vals <- terra::spatSample(mosaitoshape(), 5000)
+        min_val <- min(vals)
+        max_val <- max(vals)
+        if (all(vals == floor(vals))) {
+          # Values are integers
+          if (min_val >= 0 && max_val <= 255) {
+            data_type <- "Byte"
+          } else if (min_val >= -128 && max_val <= 127) {
+            data_type <- "Int8"
+          } else if (min_val >= 0 && max_val <= 65535) {
+            data_type <- "UInt16"
+          } else if (min_val >= -32768 && max_val <= 32767) {
+            data_type <- "Int16"
+          } else if (min_val >= 0 && max_val <= 4294967295) {
+            data_type <- "UInt32"
+          } else if (min_val >= -2147483648 && max_val <= 2147483647) {
+            data_type <- "Int32"
+          } else {
+            data_type <- "Int64" # Default for large integers
+          }
+        } else {
+          if (max_val < 3.4e38 && min_val > -3.4e38) {
+            data_type <- "Float32"
+          } else {
+            data_type <- "Float64"
+          }
+        }
+
         temp_output <- tempfile(fileext = ".tif")
         gdal_utils(
           util = "translate",
           source = terra::sources(mosaitoshape()),
           destination = temp_output,
-          options = c(gcp_args, "-a_srs", utm_crs, "-of", "GTiff")
+          options = c(gcp_args, "-a_srs", utm_crs, "-ot", data_type, "-of",  "GTiff")
         )
 
         gdal_utils(
           util = "warp",
           source = temp_output,
           destination = paste0(input$outdir, "/", input$newname, ".tif"),
-          options = c("-t_srs", utm_crs, "-r", "nearest", "-of", "GTiff")
+          options = c("-t_srs", utm_crs, "-r", "near", "-co", "COMPRESS=DEFLATE", "-of", "GTiff")
         )
+
         removeNotification("georefe")
 
       })
     })
-
   })
 }
 #
