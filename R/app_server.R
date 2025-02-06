@@ -208,6 +208,11 @@ app_server <- function(input, output, session) {
       module_loaded$growthcurves <- TRUE
       mod_growthmodelscurves_server("growthmodelscurves_1")
     }
+    if(input$tabshome == "gcp" && is.null(module_loaded$gcp)){
+      module_loaded$gcp <- TRUE
+      mod_georeference_server("georef_ui", mosaic_data = mosaic_data, r, g, b)
+    }
+
   })
 }
 

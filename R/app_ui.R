@@ -255,17 +255,22 @@ app_ui <- function(request) {
             bs4SidebarMenuSubItem(
               text = "UTM zone selector",
               tabName = "utmzonesel",
-              icon = shiny::icon("earth-americas", verify_fa = FALSE)
+              icon = shiny::icon("globe", verify_fa = FALSE)
+            ),
+            bs4SidebarMenuSubItem(
+              text = "Ground Control Points",
+              tabName = "gcp",
+              icon = shiny::icon("map-location-dot", verify_fa = FALSE)
             ),
             bs4SidebarMenuSubItem(
               text = "Geometric measurements",
               tabName = "geometricmeasures",
-              icon = shiny::icon("earth-americas", verify_fa = FALSE)
+              icon = shiny::icon("ruler", verify_fa = FALSE)
             ),
             bs4SidebarMenuSubItem(
               text = "Growth curves",
               tabName = "growthcurves",
-              icon = shiny::icon("earth-americas", verify_fa = FALSE)
+              icon = shiny::icon("chart-line", verify_fa = FALSE)
             )
           ),
           ### Settings
@@ -427,6 +432,10 @@ app_ui <- function(request) {
           bs4TabItem(
             tabName = "utmzonesel",
             mod_utmzonesel_ui("utmzonesel_1")
+          ),
+          bs4TabItem(
+            tabName = "gcp",
+            mod_georeference_ui("georef_ui")
           ),
           bs4TabItem(
             tabName = "geometricmeasures",

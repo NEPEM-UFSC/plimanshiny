@@ -524,332 +524,153 @@ make_action_button <- function(tag, inputId = NULL) {
 
 
 
-# Define the drag_ui function with customizable colors for numeric and character variables
-drag_ui <- function(id,
-                    label = "Drag-and-Drop Area",
-                    numeric_color = "#b2f2b2",
-                    character_color = "#b2d9f2",
-                    animation_time = 0.3,
-                    animation_time_drag = 1.5,
-                    explosion_time = 0.5,
-                    scale_factor = 1.3,  # Scale factor for bounce effect
-                    dropzone_bg = "#f9f9f9",
-                    dropzone_shadow = "0px 4px 6px rgba(0, 0, 0, 0.15)",
-                    draggable_bg = "#e1e1e1",
-                    draggable_shadow = "0px 4px 6px rgba(0, 0, 0, 0.15)",
-                    dropzone_width = "600px",
-                    dropzone_height = "100px") {
 
-  ns <- NS(id)
+plimanshiny_canvas_output <- function(prefix = "geor", ns = identity) {
+  # Create namespaced IDs
+  ids <- function(x) ns(paste0(x, "_", prefix))
 
-  tagList(
-    tags$style(HTML(sprintf("
-      .drag-container {
-        display: flex;
-        flex-direction: column;
-        justify-content: flex-start;
-        margin-bottom: 10px;
-        align-items: flex-start;
-      }
-      .dropzone {
-        padding: 10px;
-        text-align: center;
-        background-color: %1$s !important;
-        border-radius: 15px;
-        width: %12$s;
-        height: %13$s;
-        margin-bottom: 10px;
-        box-shadow: %2$s;
-      }
-      .draggable {
-        cursor: move;
-        padding: 5px;
-        margin: 1px;
-        background-color: %3$s;
-        border: 1px solid #aaa;
-        display: inline-block;
-        border-radius: 15px;
-        box-shadow: %4$s;
-      }
-      /* Add transition to dropped elements */
-      .draggable.dropped {
-        transition: transform %5$ss ease, opacity %5$ss ease;
-        transform: scale(%6$s);
-        opacity: 1;
-      }
-      .numeric-var {
-        background-color: %7$s;
-        box-shadow: %8$s;
-      }
-      .character-var {
-        background-color: %9$s;
-        box-shadow: %10$s;
-      }
-      .remove-btn {
-        cursor: pointer;
-        color: red;
-        margin-left: 10px;
-        font-weight: bold;
-      }
-      /* Flex container for draggable items */
-      .flex-draggable-container {
-        display: flex;
-        flex-direction: row;
-        flex-wrap: wrap;
-        gap: 5px;
-        margin-bottom: 5px;
-        align-items: center;
-      }
-      /* Bounce Effect with Scale for dragging */
-      @keyframes bounce-scale {
-        0%% {
-          transform: scale(%6$s) translateY(0);
-        }
-        25%% {
-          transform: scale(%6$s) translateY(-5px);
-        }
-        50%% {
-          transform: scale(%6$s) translateY(0);
-        }
-        75%% {
-          transform: scale(%6$s) translateY(-5px);
-        }
-        100%% {
-          transform: scale(%6$s) translateY(0);
-        }
-      }
-      .dragging {
-        animation: bounce-scale %14$ss infinite;
-      }
-      /* Zoom Effect for removal */
-      @keyframes zoom-out {
-        0%% {
-          transform: scale(1);
-          opacity: 1;
-        }
-        25%% {
-          transform: scale(1.5);
-          opacity: 0.75;
-        }
-        37%% {
-          transform: scale(1.75);
-          opacity: 0.60;
-        }
-        50%% {
-          transform: scale(2);
-          opacity: 0.5;
-        }
-        75%% {
-          transform: scale(1.5);
-          opacity: 0.4;
-        }
-        85%% {
-          transform: scale(1);
-          opacity: 0.2;
-        }
-        95%% {
-          transform: scale(0.5);
-          opacity: 0.25;
-        }
-        100%% {
-          transform: scale(0);
-          opacity: 0;
-        }
-      }
-      .exploding {
-        animation: zoom-out %11$ss forwards;
-      }
-    ", dropzone_bg, dropzone_shadow, draggable_bg, draggable_shadow, animation_time,
-                            scale_factor, numeric_color, draggable_shadow,
-                            character_color, draggable_shadow, explosion_time,
-                            dropzone_width, dropzone_height, animation_time_drag))),
+  # JavaScript template with {{PREFIX}} placeholder
+  js_template <- "
+    let canvas_{{PREFIX}}, ctx_{{PREFIX}}, drawing_{{PREFIX}} = false;
+    let rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}}, rectEndX_{{PREFIX}}, rectEndY_{{PREFIX}};
+    let selectedPoints_{{PREFIX}} = [];
+    let rasterImage_{{PREFIX}} = null;
+    let canvas_{{PREFIX}}Width = 1280;
+    let canvas_{{PREFIX}}Height = 720;
 
-    fluidRow(
-      div(class = "flex-draggable-container", # Flex container to arrange items side by side
-          uiOutput(ns("draggables_ui"))  # Render draggables dynamically
-      )
-    ),
+    function initcanvas_{{PREFIX}}() {
+      canvas_{{PREFIX}} = document.getElementById('%s');
+      ctx_{{PREFIX}} = canvas_{{PREFIX}}.getContext('2d');
+      canvas_{{PREFIX}}.width = canvas_{{PREFIX}}Width;
+      canvas_{{PREFIX}}.height = canvas_{{PREFIX}}Height;
 
-    fluidRow(
-      div(class = "drag-container",
-          div(id = ns("dropzone"), class = "dropzone", label, style = "text-align: left;")
-      )
-    ),
+      canvas_{{PREFIX}}.addEventListener('mousedown', handleMouseDown_{{PREFIX}});
+      canvas_{{PREFIX}}.addEventListener('mousemove', handleMouseMove_{{PREFIX}});
+      canvas_{{PREFIX}}.addEventListener('mouseup', handleMouseUp_{{PREFIX}});
+      canvas_{{PREFIX}}.addEventListener('dblclick', handleDoubleClick_{{PREFIX}});
+    }
 
-    # JavaScript to handle drag-and-drop with bounce-scale and zoom-out effects
-    tags$script(HTML(sprintf("
-      var dragged;
-      document.addEventListener('dragstart', function(event) {
-        dragged = event.target;
-        dragged.classList.add('dragging');  // Add bounce-scale effect when dragging
+    function adjustcanvas_{{PREFIX}}Size(width, height) {
+      canvas_{{PREFIX}}Width = width;
+      canvas_{{PREFIX}}Height = height;
+      canvas_{{PREFIX}}.width = canvas_{{PREFIX}}Width;
+      canvas_{{PREFIX}}.height = canvas_{{PREFIX}}Height;
+      Shiny.setInputValue('%s', { width: canvas_{{PREFIX}}Width, height: canvas_{{PREFIX}}Height }, { priority: 'event' });
+      drawcanvas_{{PREFIX}}();
+    }
+
+    function handleMouseDown_{{PREFIX}}(e) {
+      const rect = canvas_{{PREFIX}}.getBoundingClientRect();
+      rectStartX_{{PREFIX}} = e.clientX - rect.left;
+      rectStartY_{{PREFIX}} = e.clientY - rect.top;
+      timeoutID = setTimeout(() => {
+        drawPoint_{{PREFIX}}(rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}});
+        selectedPoints_{{PREFIX}}.push({ x: rectStartX_{{PREFIX}}, y: rectStartY_{{PREFIX}} });
+        Shiny.setInputValue('%s', [rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}}]);
+      }, 1000);
+      drawing_{{PREFIX}} = true;
+    }
+
+    function handleMouseMove_{{PREFIX}}(e) {
+      if (!drawing_{{PREFIX}}) return;
+      clearTimeout(timeoutID);
+      const rect = canvas_{{PREFIX}}.getBoundingClientRect();
+      rectEndX_{{PREFIX}} = e.clientX - rect.left;
+      rectEndY_{{PREFIX}} = e.clientY - rect.top;
+      drawcanvas_{{PREFIX}}();
+      drawRectangle_{{PREFIX}}(rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}}, rectEndX_{{PREFIX}}, rectEndY_{{PREFIX}});
+    }
+
+    function handleMouseUp_{{PREFIX}}() {
+      clearTimeout(timeoutID);
+      drawing_{{PREFIX}} = false;
+      Shiny.setInputValue('%s', {
+        startX: Math.min(rectStartX_{{PREFIX}}, rectEndX_{{PREFIX}}),
+        startY: Math.min(rectStartY_{{PREFIX}}, rectEndY_{{PREFIX}}),
+        endX: rectEndX_{{PREFIX}},
+        endY: rectEndY_{{PREFIX}},
+        width: Math.abs(rectEndX_{{PREFIX}} - rectStartX_{{PREFIX}}),
+        height: Math.abs(rectEndY_{{PREFIX}} - rectStartY_{{PREFIX}})
       });
+      rectStartX_{{PREFIX}} = rectStartY_{{PREFIX}} = rectEndX_{{PREFIX}} = rectEndY_{{PREFIX}} = 0;
+    }
 
-      document.addEventListener('dragend', function(event) {
-        dragged.classList.remove('dragging');  // Remove bounce-scale effect when dragging stops
-      });
+    function drawPoint_{{PREFIX}}(x, y) {
+      if (!ctx_{{PREFIX}}) return;
+      ctx_{{PREFIX}}.strokeStyle = 'red';
+      ctx_{{PREFIX}}.lineWidth = 2;
+      ctx_{{PREFIX}}.beginPath();
+      ctx_{{PREFIX}}.arc(x, y, 10, 0, 2 * Math.PI);
+      ctx_{{PREFIX}}.stroke();
+      ctx_{{PREFIX}}.beginPath();
+      ctx_{{PREFIX}}.moveTo(x - 10, y);
+      ctx_{{PREFIX}}.lineTo(x + 10, y);
+      ctx_{{PREFIX}}.moveTo(x, y - 10);
+      ctx_{{PREFIX}}.lineTo(x, y + 10);
+      ctx_{{PREFIX}}.stroke();
+    }
 
-      // Prevent default behavior (Prevent file from being opened)
-      document.addEventListener('dragover', function(event) {
-        event.preventDefault();
-      });
+    function drawRectangle_{{PREFIX}}(x1, y1, x2, y2) {
+      ctx_{{PREFIX}}.strokeStyle = 'red';
+      ctx_{{PREFIX}}.lineWidth = 2;
+      ctx_{{PREFIX}}.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    }
 
-      // Handle the drop event
-      document.addEventListener('drop', function(event) {
-        event.preventDefault();
-        var zoneId = event.target.id;
+    function drawcanvas_{{PREFIX}}() {
+      ctx_{{PREFIX}}.clearRect(0, 0, canvas_{{PREFIX}}.width, canvas_{{PREFIX}}.height);
+      drawRaster_{{PREFIX}}();
+    }
 
-        if (zoneId === '%s' && dragged.classList.contains('draggable')) {
-          var newItem = document.createElement('div');
-          newItem.className = 'draggable';
-          newItem.innerHTML = dragged.innerHTML + '<span class=\"remove-btn\">&#10005;</span>';
-          newItem.setAttribute('draggable', 'false');  // Disable dragging after adding
-          event.target.appendChild(newItem);
+    function drawRaster_{{PREFIX}}() {
+      if (rasterImage_{{PREFIX}}) {
+        ctx_{{PREFIX}}.drawImage(rasterImage_{{PREFIX}}, 0, 0, canvas_{{PREFIX}}.width, canvas_{{PREFIX}}.height);
+      }
+    }
 
-          // Notify Shiny server about dropped item
-          Shiny.setInputValue('%s', dragged.innerText.trim(), {priority: 'event'});
+    Shiny.addCustomMessageHandler('updateTiles_{{PREFIX}}', function(data) {
+      rasterImage_{{PREFIX}} = new Image();
+      rasterImage_{{PREFIX}}.src = 'data:image/png;base64,' + data.img;
+      rasterImage_{{PREFIX}}.onload = drawcanvas_{{PREFIX}};
+    });
 
-          // Add event listener to remove the dropped item
-          newItem.querySelector('.remove-btn').addEventListener('click', function() {
-            var parent = this.parentElement;
-            parent.classList.add('exploding');  // Trigger zoom-out animation on removal
-            setTimeout(function() {
-              parent.remove();  // Remove item after zoom-out animation
-              // Notify Shiny server about removed item
-              Shiny.setInputValue('%s', newItem.innerText.replace('✕', '').trim(), {priority: 'event'});
-            }, %d);
-          });
+    Shiny.addCustomMessageHandler('adjustcanvas_{{PREFIX}}Size', function(data) {
+      adjustcanvas_{{PREFIX}}Size(data.width, data.height);
+    });
 
-          dragged.remove();  // Remove the original dragged item
-        }
-      });
-    ", ns("dropzone"), ns("dropped_item"), ns("removed_item"), explosion_time * 1000)))
-  )
-}
-canvas_with_actions_ui <- function(id){
-  ns <- NS(id)
+    function handleDoubleClick_{{PREFIX}}() {
+      Shiny.setInputValue('%s', new Date().getTime());
+    }
+
+    window.addEventListener('load', initcanvas_{{PREFIX}});
+Shiny.setInputValue('drawn_rectangle_geor', {
+  startX: Math.min(rectStartX_geor, rectEndX_geor),
+  startY: Math.min(rectStartY_geor, rectEndY_geor),
+  endX: rectEndX_geor,
+  endY: rectEndY_geor
+});
+
+
+  "
+
+  # Replace {{PREFIX}} with the actual prefix
+  js_code <- gsub("\\{\\{PREFIX\\}\\}", prefix, js_template)
+
+  # Insert dynamic IDs using sprintf for remaining placeholders
+  js_code <- sprintf(js_code, ids("rastercanvas"), ids("canvas_size"),
+                     ids("picked_point"), ids("drawn_rectangle"), ids("reset_view"))
+
   tagList(
     tags$head(
-      tags$style(HTML("
-        #rasterCanvas {
+      tags$style(HTML(sprintf(
+        "#%s {
           margin-top: 20px;
           border: 1px solid #ddd;
           box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.3);
-        }
-      ")),
-      tags$script(HTML(sprintf("
-        let canvas, ctx, drawing = false;
-        let rectStartX, rectStartY, rectEndX, rectEndY;
-        let selectedPoints = [];
-        let rasterImage = null;
-        let canvasWidth = 1280;
-        let canvasHeight = 720;
-
-        function initCanvas() {
-          canvas = document.getElementById('%s');
-          ctx = canvas.getContext('2d');
-          canvas.width = canvasWidth;
-          canvas.height = canvasHeight;
-
-          canvas.addEventListener('mousedown', handleMouseDown);
-          canvas.addEventListener('mousemove', handleMouseMove);
-          canvas.addEventListener('mouseup', handleMouseUp);
-          canvas.addEventListener('dblclick', handleDoubleClick);
-        }
-
-        function adjustCanvasSize(width, height) {
-          canvasWidth = width;
-          canvasHeight = height;
-          canvas.width = canvasWidth;
-          canvas.height = canvasHeight;
-          Shiny.setInputValue('%s', { width: canvasWidth, height: canvasHeight }, { priority: 'event' });
-          drawCanvas();
-        }
-
-        function handleMouseDown(e) {
-          const rect = canvas.getBoundingClientRect();
-          rectStartX = e.clientX - rect.left;
-          rectStartY = e.clientY - rect.top;
-          timeoutID = setTimeout(() => {
-            drawPoint(rectStartX, rectStartY);
-            selectedPoints.push({ x: rectStartX, y: rectStartY });
-            Shiny.setInputValue('%s', [rectStartX, rectStartY]);
-          }, 1000);
-          drawing = true;
-        }
-
-        function handleMouseMove(e) {
-          if (!drawing) return;
-          clearTimeout(timeoutID);
-          const rect = canvas.getBoundingClientRect();
-          rectEndX = e.clientX - rect.left;
-          rectEndY = e.clientY - rect.top;
-          drawCanvas();
-          drawRectangle(rectStartX, rectStartY, rectEndX, rectEndY);
-        }
-
-        function handleMouseUp() {
-          clearTimeout(timeoutID);
-          drawing = false;
-          Shiny.setInputValue('%s', {
-            startX: Math.min(rectStartX, rectEndX),
-            startY: Math.min(rectStartY, rectEndY),
-            endX: rectEndX,
-            endY: rectEndY,
-            width: Math.abs(rectEndX - rectStartX),
-            height: Math.abs(rectEndY - rectStartY)
-          });
-          rectStartX = rectStartY = rectEndX = rectEndY = 0;
-        }
-
-        function drawPoint(x, y) {
-          if (!ctx) return;
-          ctx.strokeStyle = 'red';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(x, y, 10, 0, 2 * Math.PI);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.moveTo(x - 10, y);
-          ctx.lineTo(x + 10, y);
-          ctx.moveTo(x, y - 10);
-          ctx.lineTo(x, y + 10);
-          ctx.stroke();
-        }
-
-        function drawRectangle(x1, y1, x2, y2) {
-          ctx.strokeStyle = 'red';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-        }
-
-        function drawCanvas() {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          drawRaster();
-        }
-
-        function drawRaster() {
-          if (rasterImage) {
-            ctx.drawImage(rasterImage, 0, 0, canvas.width, canvas.height);
-          }
-        }
-
-        Shiny.addCustomMessageHandler('updateTiles', function(data) {
-          rasterImage = new Image();
-          rasterImage.src = 'data:image/png;base64,' + data.img;
-          rasterImage.onload = drawCanvas;
-        });
-
-        Shiny.addCustomMessageHandler('adjustCanvasSize', function(data) {
-          adjustCanvasSize(data.width, data.height);
-        });
-
-        function handleDoubleClick() {
-          Shiny.setInputValue('%s', new Date().getTime());
-        }
-
-        window.addEventListener('load', initCanvas);
-      ", ns("rasterCanvas"), ns("canvas_size"), ns("picked_point"), ns("drawn_rectangle"), ns("reset_view"))))
+        }", ids("rastercanvas")
+      ))),
+      tags$script(HTML(js_code))
     ),
-    tags$canvas(id = ns("rasterCanvas"))
+    tags$canvas(id = ids("rastercanvas"))
   )
 }
+

@@ -435,7 +435,6 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
     })
     observeEvent(input$mosaicinfomosaic, {
       req(mosaic_data[[input$mosaictoanalyze]]$data)
-      print(mosaic_data[[input$mosaictoanalyze]]$data)
       mosaic_info(mosaic_data[[input$mosaictoanalyze]]$data)
     })
 

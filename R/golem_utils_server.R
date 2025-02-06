@@ -889,8 +889,8 @@ adjust_canvas <- function(raster){
   ncols <- ncol(raster)
   aspect_ratio <- ncols / nrows
   # Limit canvas width and height
-  max_width <- 1100
-  max_height <- 710
+  max_width <- 1200
+  max_height <- 720
   if (aspect_ratio > 1) {
     # Width is the limiting factor
     width <- min(max_width, max_height * aspect_ratio)

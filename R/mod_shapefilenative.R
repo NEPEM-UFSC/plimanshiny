@@ -13,31 +13,13 @@ mod_shapefilenative_ui <- function(id) {
     fluidRow(
       col_3(
         bs4TabCard(
-          id = "tabsshape",
+          id = ns("tabsshape"),
           width = 12,
           collapsible = FALSE,
           status = "success",
-          selected = "Control Points",
+          selected = "Plots",
           solidHeader = FALSE,
           type = "tabs",
-          tabPanel("Control Points",
-                   DT::dataTableOutput(ns("points_table")),
-                   conditionalPanel(
-                     condition = sprintf("output['%s']", ns("show_panel")),
-                     actionBttn(ns("editiondone"), "Edition Done", style = "pill", color = "success"),
-                   ),
-                   conditionalPanel(
-                     condition = sprintf("output['%s']", ns("show_panel2")),
-                     actionBttn(
-                       ns("clearpoints"),
-                       label = "Clear points",
-                       icon = icon("trash"),
-                       color = "danger",
-                       style = "jelly"
-                     )
-                   ),
-
-          ),
           tabPanel(
             title = "Plots",
             fluidRow(
@@ -326,6 +308,24 @@ mod_shapefilenative_ui <- function(id) {
                         label = "Active Shapefile",
                         choices = NULL)
           ),
+          tabPanel("Control Points",
+                   DT::dataTableOutput(ns("points_table")),
+                   conditionalPanel(
+                     condition = sprintf("output['%s']", ns("show_panel")),
+                     actionBttn(ns("editiondone"), "Edition Done", style = "pill", color = "success"),
+                   ),
+                   conditionalPanel(
+                     condition = sprintf("output['%s']", ns("show_panel2")),
+                     actionBttn(
+                       ns("clearpoints"),
+                       label = "Clear points",
+                       icon = icon("trash"),
+                       color = "danger",
+                       style = "jelly"
+                     )
+                   ),
+
+          ),
           tabPanel(
             title = "Download",
             mod_download_shapefile_ui(ns("downloadshapefile2"), label = "Download")
@@ -334,143 +334,144 @@ mod_shapefilenative_ui <- function(id) {
         )
       ),
       col_9(
-        bs4TabCard(
-          id = "tabsshape2",
-          width = 12,
-          collapsible = FALSE,
-          status = "success",
-          selected = "Pliman viewer",
-          solidHeader = FALSE,
-          type = "tabs",
-          tabPanel("Pliman viewer",
-
-                   tagList(
-                     tags$head(
-                       tags$style(HTML("
-        #rasterCanvas {
-          margin-top: 20px;
-          border: 1px solid #ddd;
-          box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.3);
-        }
-      ")),
-                       tags$script(HTML(sprintf("
-        let canvas, ctx, drawing = false;
-        let rectStartX, rectStartY, rectEndX, rectEndY;
-        let selectedPoints = [];
-        let rasterImage = null;
-        let canvasWidth = 1280;
-        let canvasHeight = 720;
-
-        function initCanvas() {
-          canvas = document.getElementById('%s');
-          ctx = canvas.getContext('2d');
-          canvas.width = canvasWidth;
-          canvas.height = canvasHeight;
-
-          canvas.addEventListener('mousedown', handleMouseDown);
-          canvas.addEventListener('mousemove', handleMouseMove);
-          canvas.addEventListener('mouseup', handleMouseUp);
-          canvas.addEventListener('dblclick', handleDoubleClick);
-        }
-
-        function adjustCanvasSize(width, height) {
-          canvasWidth = width;
-          canvasHeight = height;
-          canvas.width = canvasWidth;
-          canvas.height = canvasHeight;
-          Shiny.setInputValue('%s', { width: canvasWidth, height: canvasHeight }, { priority: 'event' });
-          drawCanvas();
-        }
-
-        function handleMouseDown(e) {
-          const rect = canvas.getBoundingClientRect();
-          rectStartX = e.clientX - rect.left;
-          rectStartY = e.clientY - rect.top;
-          timeoutID = setTimeout(() => {
-            drawPoint(rectStartX, rectStartY);
-            selectedPoints.push({ x: rectStartX, y: rectStartY });
-            Shiny.setInputValue('%s', [rectStartX, rectStartY]);
-          }, 1000);
-          drawing = true;
-        }
-
-        function handleMouseMove(e) {
-          if (!drawing) return;
-          clearTimeout(timeoutID);
-          const rect = canvas.getBoundingClientRect();
-          rectEndX = e.clientX - rect.left;
-          rectEndY = e.clientY - rect.top;
-          drawCanvas();
-          drawRectangle(rectStartX, rectStartY, rectEndX, rectEndY);
-        }
-
-        function handleMouseUp() {
-          clearTimeout(timeoutID);
-          drawing = false;
-          Shiny.setInputValue('%s', {
-            startX: Math.min(rectStartX, rectEndX),
-            startY: Math.min(rectStartY, rectEndY),
-            endX: rectEndX,
-            endY: rectEndY,
-            width: Math.abs(rectEndX - rectStartX),
-            height: Math.abs(rectEndY - rectStartY)
-          });
-          rectStartX = rectStartY = rectEndX = rectEndY = 0;
-        }
-
-        function drawPoint(x, y) {
-          if (!ctx) return;
-          ctx.strokeStyle = 'red';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(x, y, 10, 0, 2 * Math.PI);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.moveTo(x - 10, y);
-          ctx.lineTo(x + 10, y);
-          ctx.moveTo(x, y - 10);
-          ctx.lineTo(x, y + 10);
-          ctx.stroke();
-        }
-
-        function drawRectangle(x1, y1, x2, y2) {
-          ctx.strokeStyle = 'red';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-        }
-
-        function drawCanvas() {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          drawRaster();
-        }
-
-        function drawRaster() {
-          if (rasterImage) {
-            ctx.drawImage(rasterImage, 0, 0, canvas.width, canvas.height);
-          }
-        }
-
-        Shiny.addCustomMessageHandler('updateTiles', function(data) {
-          rasterImage = new Image();
-          rasterImage.src = 'data:image/png;base64,' + data.img;
-          rasterImage.onload = drawCanvas;
-        });
-
-        Shiny.addCustomMessageHandler('adjustCanvasSize', function(data) {
-          adjustCanvasSize(data.width, data.height);
-        });
-
-        function handleDoubleClick() {
-          Shiny.setInputValue('%s', new Date().getTime());
-        }
-
-        window.addEventListener('load', initCanvas);
-      ", ns("rasterCanvas"), ns("canvas_size"), ns("picked_point"), ns("drawn_rectangle"), ns("reset_view"))))
-                     ),
-                     tags$canvas(id = ns("rasterCanvas"))
-                   )
-          )
-        )
+        plimanshiny_canvas_output(prefix = "shp", ns = ns)
+        #   bs4TabCard(
+        #     id = "tabsshape2",
+        #     width = 12,
+        #     collapsible = FALSE,
+        #     status = "success",
+        #     selected = "Pliman viewer",
+        #     solidHeader = FALSE,
+        #     type = "tabs",
+        #     tabPanel("Pliman viewer",
+        #
+        #              tagList(
+        #                tags$head(
+        #                  tags$style(HTML("
+        #   #rasterCanvas {
+        #     margin-top: 20px;
+        #     border: 1px solid #ddd;
+        #     box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.3);
+        #   }
+        # ")),
+        #                  tags$script(HTML(sprintf("
+        #   let canvas, ctx, drawing = false;
+        #   let rectStartX, rectStartY, rectEndX, rectEndY;
+        #   let selectedPoints = [];
+        #   let rasterImage = null;
+        #   let canvasWidth = 1280;
+        #   let canvasHeight = 720;
+        #
+        #   function initCanvas() {
+        #     canvas = document.getElementById('%s');
+        #     ctx = canvas.getContext('2d');
+        #     canvas.width = canvasWidth;
+        #     canvas.height = canvasHeight;
+        #
+        #     canvas.addEventListener('mousedown', handleMouseDown);
+        #     canvas.addEventListener('mousemove', handleMouseMove);
+        #     canvas.addEventListener('mouseup', handleMouseUp);
+        #     canvas.addEventListener('dblclick', handleDoubleClick);
+        #   }
+        #
+        #   function adjustcanvas_shpSize(width, height) {
+        #     canvasWidth = width;
+        #     canvasHeight = height;
+        #     canvas.width = canvasWidth;
+        #     canvas.height = canvasHeight;
+        #     Shiny.setInputValue('%s', { width: canvasWidth, height: canvasHeight }, { priority: 'event' });
+        #     drawCanvas();
+        #   }
+        #
+        #   function handleMouseDown(e) {
+        #     const rect = canvas.getBoundingClientRect();
+        #     rectStartX = e.clientX - rect.left;
+        #     rectStartY = e.clientY - rect.top;
+        #     timeoutID = setTimeout(() => {
+        #       drawPoint(rectStartX, rectStartY);
+        #       selectedPoints.push({ x: rectStartX, y: rectStartY });
+        #       Shiny.setInputValue('%s', [rectStartX, rectStartY]);
+        #     }, 1000);
+        #     drawing = true;
+        #   }
+        #
+        #   function handleMouseMove(e) {
+        #     if (!drawing) return;
+        #     clearTimeout(timeoutID);
+        #     const rect = canvas.getBoundingClientRect();
+        #     rectEndX = e.clientX - rect.left;
+        #     rectEndY = e.clientY - rect.top;
+        #     drawCanvas();
+        #     drawRectangle(rectStartX, rectStartY, rectEndX, rectEndY);
+        #   }
+        #
+        #   function handleMouseUp() {
+        #     clearTimeout(timeoutID);
+        #     drawing = false;
+        #     Shiny.setInputValue('%s', {
+        #       startX: Math.min(rectStartX, rectEndX),
+        #       startY: Math.min(rectStartY, rectEndY),
+        #       endX: rectEndX,
+        #       endY: rectEndY,
+        #       width: Math.abs(rectEndX - rectStartX),
+        #       height: Math.abs(rectEndY - rectStartY)
+        #     });
+        #     rectStartX = rectStartY = rectEndX = rectEndY = 0;
+        #   }
+        #
+        #   function drawPoint(x, y) {
+        #     if (!ctx) return;
+        #     ctx.strokeStyle = 'red';
+        #     ctx.lineWidth = 2;
+        #     ctx.beginPath();
+        #     ctx.arc(x, y, 10, 0, 2 * Math.PI);
+        #     ctx.stroke();
+        #     ctx.beginPath();
+        #     ctx.moveTo(x - 10, y);
+        #     ctx.lineTo(x + 10, y);
+        #     ctx.moveTo(x, y - 10);
+        #     ctx.lineTo(x, y + 10);
+        #     ctx.stroke();
+        #   }
+        #
+        #   function drawRectangle(x1, y1, x2, y2) {
+        #     ctx.strokeStyle = 'red';
+        #     ctx.lineWidth = 2;
+        #     ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+        #   }
+        #
+        #   function drawCanvas() {
+        #     ctx.clearRect(0, 0, canvas.width, canvas.height);
+        #     drawRaster();
+        #   }
+        #
+        #   function drawRaster() {
+        #     if (rasterImage) {
+        #       ctx.drawImage(rasterImage, 0, 0, canvas.width, canvas.height);
+        #     }
+        #   }
+        #
+        #   Shiny.addCustomMessageHandler('updateTiles_shp', function(data) {
+        #     rasterImage = new Image();
+        #     rasterImage.src = 'data:image/png;base64,' + data.img;
+        #     rasterImage.onload = drawCanvas;
+        #   });
+        #
+        #   Shiny.addCustomMessageHandler('adjustcanvas_shpSize', function(data) {
+        #     adjustcanvas_shpSize(data.width, data.height);
+        #   });
+        #
+        #   function handleDoubleClick() {
+        #     Shiny.setInputValue('%s', new Date().getTime());
+        #   }
+        #
+        #   window.addEventListener('load', initCanvas);
+        # ", ns("rasterCanvas"), ns("canvas_size"), ns("picked_point_shp"), ns("drawn_rectangle_shp"), ns("reset_view_shp"))))
+        #                ),
+        #                tags$canvas(id = ns("rasterCanvas"))
+        #              )
+        #     )
+        #   )
 
 
       )
@@ -484,6 +485,13 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     mosaitoshape <- reactiveVal()
+    observe({
+      if(input$shapetype == "Import"){
+        hideTab(inputId = "tabsshape", target = "Control Points")
+      } else{
+        showTab(inputId = "tabsshape", target = "Control Points")
+      }
+    })
     observe({
       if (input$shapetype == "Build") {
         observe({
@@ -500,6 +508,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
         polygeom <- reactiveVal()
         createdshape <- reactiveValues()
         tmpshape <- reactiveValues()
+        nblock <- reactiveVal(0)
 
         # Reactive value to store the current cropped extent
         current_extent <- reactiveVal(ext(mosaitoshape()))
@@ -513,7 +522,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           widori(sizes[[1]])
           heiori(sizes[[2]])
           # Send the adjusted canvas size to the client
-          session$sendCustomMessage("adjustCanvasSize", list(
+          session$sendCustomMessage("adjustcanvas_shpSize", list(
             width = as.integer(widori()),
             height = as.integer(heiori())
           ))
@@ -532,14 +541,14 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           })
 
           current_extent(ext(mosaitoshape()))
-          session$sendCustomMessage("updateTiles", list(
+          session$sendCustomMessage("updateTiles_shp", list(
             img = base64enc::base64encode(original_image_path)
           ))
         })
 
         # Handle rectangle drawing and cropping
-        observeEvent(input$drawn_rectangle, {
-          rect <- input$drawn_rectangle
+        observeEvent(input$drawn_rectangle_shp, {
+          rect <- input$drawn_rectangle_shp
           req(rect$startX)
           if(rect$startX == rect$endX | rect$startY == rect$endY){
             return(NULL)
@@ -549,12 +558,12 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           xmax_val <- terra::xmax(current_extent())
           ymin_val <- terra::ymin(current_extent())
           ymax_val <- terra::ymax(current_extent())
-          fact_canva_rast_x <- input$canvas_size$width / (xmax_val - xmin_val)
-          fact_canva_rast_y <- input$canvas_size$height / (ymax_val - ymin_val)
+          fact_canva_rast_x <- input$canvas_size_shp$width / (xmax_val - xmin_val)
+          fact_canva_rast_y <- input$canvas_size_shp$height / (ymax_val - ymin_val)
           xmin <- xmin_val + rect$startX / fact_canva_rast_x
           xmax <- xmin_val + rect$endX / fact_canva_rast_x
-          ymin <- ymin_val + (input$canvas_size$height - rect$endY) / fact_canva_rast_y
-          ymax <- ymin_val + (input$canvas_size$height - rect$startY) / fact_canva_rast_y
+          ymin <- ymin_val + (input$canvas_size_shp$height - rect$endY) / fact_canva_rast_y
+          ymax <- ymin_val + (input$canvas_size_shp$height - rect$startY) / fact_canva_rast_y
           current_extent(ext(c(xmin, xmax, ymin, ymax)))  # Update the extent
           xrange <- abs(xmax - xmin)
           originalres <- res(mosaitoshape())[[1]]
@@ -677,15 +686,15 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
               dev.off()
             })
 
-            session$sendCustomMessage("updateTiles", list(
+            session$sendCustomMessage("updateTiles_shp", list(
               img = base64enc::base64encode(cropped_image_path)
             ))
           } else{
-            session$sendCustomMessage("updateTiles", list(
+            session$sendCustomMessage("updateTiles_shp", list(
               img = base64enc::base64encode(tfc)
             ))
           }
-          session$sendCustomMessage("adjustCanvasSize", list(
+          session$sendCustomMessage("adjustcanvas_shpSize", list(
             width = as.integer(wid()),
             height = as.integer(hei())
           ))
@@ -698,15 +707,15 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
 
         # Handle point selection input
-        observeEvent(input$picked_point, {
-          point <- input$picked_point
+        observeEvent(input$picked_point_shp, {
+          point <- input$picked_point_shp
           req(point)
           xmin_val <- terra::xmin(current_extent())
           xmax_val <- terra::xmax(current_extent())
           ymin_val <- terra::ymin(current_extent())
           ymax_val <- terra::ymax(current_extent())
-          canvas_width <- input$canvas_size$width
-          canvas_height <- input$canvas_size$height
+          canvas_width <- input$canvas_size_shp$width
+          canvas_height <- input$canvas_size_shp$height
           x_canvas <- point[1]
           y_canvas <- point[2]
           x_raster <- xmin_val + (x_canvas / canvas_width) * (xmax_val- xmin_val)
@@ -825,11 +834,11 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
 
           # Send the cropped image to the client
-          session$sendCustomMessage("updateTiles", list(
+          session$sendCustomMessage("updateTiles_shp", list(
             img = base64enc::base64encode(cropped_image_path)
           ))
           # Send the adjusted canvas size to the client
-          session$sendCustomMessage("adjustCanvasSize", list(
+          session$sendCustomMessage("adjustcanvas_shpSize", list(
             width = as.integer(wid()),
             height = as.integer(hei())
           ))
@@ -852,11 +861,11 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
         observeEvent(input$clearpoints, {
           points$data <- list()
           polygeom(NULL)
-          session$sendCustomMessage("updateTiles", list(
+          session$sendCustomMessage("updateTiles_shp", list(
             img = base64enc::base64encode(original_image_path)
           ))
           # Send the adjusted canvas size to the client
-          session$sendCustomMessage("adjustCanvasSize", list(
+          session$sendCustomMessage("adjustcanvas_shpSize", list(
             width = widori(),
             height = heiori()
           ))
@@ -864,65 +873,96 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
 
 
+
         ########## CREATE SHAPEFILES ############
+        # Define reactive values globally
+        tmpshape <- reactiveValues(tmp = NULL)
+        createdshape <- reactiveValues()
+        nblock <- reactiveVal(0)
+
+        # 1. Shape Creation Logic (no nested observers)
         observeEvent(input$createupdate2, {
-          if(length(points$data) < 2){
+            if(length(points$data) < 2){
+              sendSweetAlert(
+                session = session,
+                title = "No control points available",
+                text = "You need to insert at least three points to build a shapefile.",
+                type = "error"
+              )
+              return(NULL)
+            }
+            showNotification(
+              ui = tagList(
+                tags$i(class = "fa fa-spinner fa-spin"), " Building plots at lightning speed..."
+              ),
+              type = "message",
+              duration = NULL,  # Remains until manually removed
+              id = "buildingplot"
+            )
+            pdata <- isolate(do.call(rbind, points$data))
+            contrpoints <- sf::st_as_sf(vect(as.matrix(rbind(pdata, pdata[1, ])[, 1:2]), type = "polygon"))
+            sf::st_crs(contrpoints) <- sf::st_crs(mosaitoshape())
+            # # create the shapes
+            nr <- input$nrows |> chrv2numv()
+            nc <- input$ncols |> chrv2numv()
+            pw <- input$plot_width |> chrv2numv()
+            ph <- input$plot_height |> chrv2numv()
+            t1 <- nr == 1
+            t2 <- nc == 1
+            ps <- any(t2 & t1 == TRUE)
+            if(length(ph) == 0 | ps){
+              ph <- NULL
+            }
+            if(length(pw) == 0 | ps){
+              pw <- NULL
+            }
+          # Build shape and store it temporarily
+          tmpshape$tmp <-
+                shapefile_build(
+                  basemap = FALSE,
+                  mosaitoshape(),
+                  controlpoints = contrpoints,
+                  nrow = nr,
+                  ncol = nc,
+                  layout = input$plotlayout,
+                  serpentine = input$serpentine,
+                  buffer_col = input$buffercol |> chrv2numv(),
+                  buffer_row = input$buffercol |> chrv2numv(),
+                  plot_width = pw,
+                  plot_height = ph,
+                  crop_to_shape_ext = FALSE,
+                  verbose = FALSE
+                )[[1]]
+        })
+
+
+        # 2. Handle Block Completion and Save Shapes
+        observeEvent(input$doneblock, {
+          if(input$buildblocks){
+            req(tmpshape$tmp)
+
+            nblock(nblock() + 1)
+            block_name <- paste0("B", sprintf("%02d", nblock()))
+            createdshape[[block_name]] <- tmpshape$tmp
+
+            output$nblocksdone <- renderText({
+              glue::glue("Built blocks: {nblock()}")
+            })
+
             sendSweetAlert(
               session = session,
-              title = "No control points available",
-              text = "You need to insert at least three points to build a shapefile.",
-              type = "error"
+              title = "Block built",
+              text = "The shapes in the current block have been built. Use the 'Draw polygon' tool to create another block.",
+              type = "info"
             )
-            return(NULL)
           }
-          showNotification(
-            ui = tagList(
-              tags$i(class = "fa fa-spinner fa-spin"), " Building plots at lightning speed..."
-            ),
-            type = "message",
-            duration = NULL,  # Remains until manually removed
-            id = "buildingplot"
-          )
-          pdata <- isolate(do.call(rbind, points$data))
-          contrpoints <- sf::st_as_sf(vect(as.matrix(rbind(pdata, pdata[1, ])[, 1:2]), type = "polygon"))
-          sf::st_crs(contrpoints) <- sf::st_crs(mosaitoshape())
-          # # create the shapes
-          nr <- input$nrows |> chrv2numv()
-          nc <- input$ncols |> chrv2numv()
-          pw <- input$plot_width |> chrv2numv()
-          ph <- input$plot_height |> chrv2numv()
-          t1 <- nr == 1
-          t2 <- nc == 1
-          ps <- any(t2 & t1 == TRUE)
-          if(length(ph) == 0 | ps){
-            ph <- NULL
-          }
-          if(length(pw) == 0 | ps){
-            pw <- NULL
-          }
-          shpt <-
-            shapefile_build(
-              basemap = FALSE,
-              mosaitoshape(),
-              controlpoints = contrpoints,
-              nrow = nr,
-              ncol = nc,
-              layout = input$plotlayout,
-              serpentine = input$serpentine,
-              buffer_col = input$buffercol |> chrv2numv(),
-              buffer_row = input$buffercol |> chrv2numv(),
-              plot_width = pw,
-              plot_height = ph,
-              crop_to_shape_ext = FALSE,
-              verbose = FALSE
-            )
-          rv_list <- reactiveValuesToList(createdshape)
-          if (length(rv_list) > 0) {
-            element_names <- names(rv_list)
-            last_name <- tail(element_names, 1)
-            createdshape[[last_name]] <- NULL
-          }
-          tmpshape$tmp <- shpt[[1]]
+        })
+
+        # 3. Handle Final Shape Plotting and Canvas Update
+        observe({
+          req(tmpshape$tmp, mosaitoshape())
+
+          # Adjust canvas size
           sizes <- adjust_canvas(mosaitoshape())
           png(basepolygon, width = sizes[[1]], height = sizes[[2]])
 
@@ -930,87 +970,221 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
             # Plot the base shape
             check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b)
 
-            # Combine the created shapes with the temporary shape
-            alreadybuilt <- reactiveValuesToList(createdshape) |>
-              dplyr::bind_rows(.id = "block")
-
+            # Combine created shapes and temporary shape
+            alreadybuilt <- dplyr::bind_rows(reactiveValuesToList(createdshape), .id = "block")
             if (nrow(alreadybuilt) > 0) {
-              shptoplot <- dplyr::bind_rows(
-                alreadybuilt,
-                tmpshape$tmp |> dplyr::mutate(block = "block_temp")
-              )
+              shptoplot <- dplyr::bind_rows(alreadybuilt, tmpshape$tmp |> dplyr::mutate(block = "block_temp"))
             } else {
               shptoplot <- tmpshape$tmp
             }
-
-            # Store the new shapefile and update choices for the UI
-            shapefile[[input$shapenamebuild]] <- create_reactval(input$shapenamebuild, shptoplot)
-            shapefilenames <- setdiff(c("none", names(shapefile)), c("shapefile", "shapefileplot"))
-
-            updateSelectInput(
-              session,
-              "shapefiletoanalyze",
-              choices = shapefilenames,
-              selected = shapefilenames[[length(shapefilenames)]]
-            )
-
-            # Process the shapefile for plotting
+            # Extract number from plot ID for plotting
             shptoplot <- shptoplot |> extract_number(plot_id)
-
-            # Plot the shapefile layer
             plot(shptoplot[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "red", lwd = 3)
 
-            # Optionally add text labels at the centroids
+            # Add text labels at centroids if enabled
             if (input$showplotid) {
-              centrs <- suppressMessages(
-                sf::st_centroid(shptoplot) |> sf::st_coordinates()
-              )
-              text(
-                x = centrs[, 1],
-                y = centrs[, 2],
-                labels = shptoplot$plot_id,
-                col = "black",
-                cex = 1
-              )
+              centrs <- suppressMessages(sf::st_centroid(shptoplot) |> sf::st_coordinates())
+              text(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col = "black", cex = 1)
             }
 
           }, error = function(e) {
-            # Log or notify the error
             message("An error occurred during plotting: ", e$message)
           }, finally = {
-            # Ensure the graphics device is closed regardless of errors
             dev.off()
           })
 
-          session$sendCustomMessage("updateTiles", list(
-            img = base64enc::base64encode(basepolygon)
-          ))
+          # Update the canvas with the new image
+          session$sendCustomMessage("updateTiles_shp", list(img = base64enc::base64encode(basepolygon)))
           removeNotification(id = "buildingplot")
         })
 
 
-        nblock <- reactiveVal(0)
-        observe({
-          if(input$buildblocks){
-            observeEvent(input$doneblock, {
-              nblock(nblock() + 1)
-              output$nblocksdone <- renderText({
-                glue::glue("Built blocks: {nblock()}")
-              })
-              block_name <- paste0("B", sprintf("%02d", nblock()))
-              createdshape[[block_name]] <- tmpshape$tmp
-              sendSweetAlert(
-                session = session,
-                title = "Block built",
-                text = "The shapes in the current block have been built. Just insert a new polygon with the 'Draw polygon' tool to delineate another block. To finish the shapefile construction, check the box 'Shapefile finished'.",
-                type = "info"
-              )
-            })
-          } else{
-            req(tmpshape$tmp)
-            createdshape[["B01"]] <- tmpshape$tmp
-          }
-        })
+
+        # observeEvent(input$createupdate2, {
+        #   if(length(points$data) < 2){
+        #     sendSweetAlert(
+        #       session = session,
+        #       title = "No control points available",
+        #       text = "You need to insert at least three points to build a shapefile.",
+        #       type = "error"
+        #     )
+        #     return(NULL)
+        #   }
+        #   showNotification(
+        #     ui = tagList(
+        #       tags$i(class = "fa fa-spinner fa-spin"), " Building plots at lightning speed..."
+        #     ),
+        #     type = "message",
+        #     duration = NULL,  # Remains until manually removed
+        #     id = "buildingplot"
+        #   )
+        #   pdata <- isolate(do.call(rbind, points$data))
+        #   contrpoints <- sf::st_as_sf(vect(as.matrix(rbind(pdata, pdata[1, ])[, 1:2]), type = "polygon"))
+        #   sf::st_crs(contrpoints) <- sf::st_crs(mosaitoshape())
+        #   # # create the shapes
+        #   nr <- input$nrows |> chrv2numv()
+        #   nc <- input$ncols |> chrv2numv()
+        #   pw <- input$plot_width |> chrv2numv()
+        #   ph <- input$plot_height |> chrv2numv()
+        #   t1 <- nr == 1
+        #   t2 <- nc == 1
+        #   ps <- any(t2 & t1 == TRUE)
+        #   if(length(ph) == 0 | ps){
+        #     ph <- NULL
+        #   }
+        #   if(length(pw) == 0 | ps){
+        #     pw <- NULL
+        #   }
+        #   shpt <-
+        #     shapefile_build(
+        #       basemap = FALSE,
+        #       mosaitoshape(),
+        #       controlpoints = contrpoints,
+        #       nrow = nr,
+        #       ncol = nc,
+        #       layout = input$plotlayout,
+        #       serpentine = input$serpentine,
+        #       buffer_col = input$buffercol |> chrv2numv(),
+        #       buffer_row = input$buffercol |> chrv2numv(),
+        #       plot_width = pw,
+        #       plot_height = ph,
+        #       crop_to_shape_ext = FALSE,
+        #       verbose = FALSE
+        #     )
+        #   tmpshape$tmp <- shpt[[1]]
+        #
+        #   if(input$buildblocks){
+        #     observeEvent(input$doneblock, {
+        #       nblock(nblock() + 1)
+        #       output$nblocksdone <- renderText({
+        #         glue::glue("Built blocks: {nblock()}")
+        #       })
+        #       block_name <- paste0("B", sprintf("%02d", nblock()))
+        #       createdshape[[block_name]] <- tmpshape$tmp
+        #       sendSweetAlert(
+        #         session = session,
+        #         title = "Block built",
+        #         text = "The shapes in the current block have been built. Just insert a new polygon with the 'Draw polygon' tool to delineate another block. To finish the shapefile construction, check the box 'Shapefile finished'.",
+        #         type = "info"
+        #       )
+        #     })
+        #   } else{
+        #     req(tmpshape$tmp)
+        #     createdshape[["B01"]] <- tmpshape$tmp
+        #   }
+        #
+        #   # remove last shape if block is not used
+        #   rv_list <- reactiveValuesToList(createdshape)
+        #   if (length(rv_list) > 0) {
+        #     element_names <- names(rv_list)
+        #     print(element_names)
+        #     if(input$buildblocks){
+        #       blocks_created <- head(element_names, nblock())
+        #       # Extract elements from reactiveValues as a list
+        #       selected_data <- rv_list[blocks_created]
+        #
+        #       # Convert list back to reactiveValues
+        #       for (name in names(selected_data)) {
+        #         createdshape[[name]] <- selected_data[[name]]
+        #       }
+        #     } else{
+        #       createdshape[[tail(element_names, 1)]] <- NULL
+        #     }
+        #   }
+        #
+        #
+        #   sizes <- adjust_canvas(mosaitoshape())
+        #   png(basepolygon, width = sizes[[1]], height = sizes[[2]])
+        #
+        #   tryCatch({
+        #     # Plot the base shape
+        #     check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b)
+        #
+        #     # Combine the created shapes with the temporary shape
+        #     alreadybuilt <-
+        #       reactiveValuesToList(createdshape) |>
+        #       dplyr::bind_rows(.id = "block")
+        #
+        #     if (nrow(alreadybuilt) > 0) {
+        #       shptoplot <- dplyr::bind_rows(
+        #         alreadybuilt,
+        #         tmpshape$tmp |> dplyr::mutate(block = "block_temp")
+        #       )
+        #     } else {
+        #       shptoplot <- tmpshape$tmp
+        #     }
+        #
+        #     # Store the new shapefile and update choices for the UI
+        #     shapefile[[input$shapenamebuild]] <- create_reactval(input$shapenamebuild, shptoplot)
+        #     shapefilenames <- setdiff(c("none", names(shapefile)), c("shapefile", "shapefileplot"))
+        #
+        #     updateSelectInput(
+        #       session,
+        #       "shapefiletoanalyze",
+        #       choices = shapefilenames,
+        #       selected = shapefilenames[[length(shapefilenames)]]
+        #     )
+        #
+        #     # Process the shapefile for plotting
+        #     shptoplot <- shptoplot |> extract_number(plot_id)
+        #
+        #     # Plot the shapefile layer
+        #     plot(shptoplot[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "red", lwd = 3)
+        #
+        #     # Optionally add text labels at the centroids
+        #     if (input$showplotid) {
+        #       centrs <- suppressMessages(
+        #         sf::st_centroid(shptoplot) |> sf::st_coordinates()
+        #       )
+        #       text(
+        #         x = centrs[, 1],
+        #         y = centrs[, 2],
+        #         labels = shptoplot$plot_id,
+        #         col = "black",
+        #         cex = 1
+        #       )
+        #     }
+        #
+        #   }, error = function(e) {
+        #     # Log or notify the error
+        #     message("An error occurred during plotting: ", e$message)
+        #   }, finally = {
+        #     # Ensure the graphics device is closed regardless of errors
+        #     dev.off()
+        #   })
+        #
+        #   session$sendCustomMessage("updateTiles_shp", list(
+        #     img = base64enc::base64encode(basepolygon)
+        #   ))
+        #   removeNotification(id = "buildingplot")
+        # })
+
+
+
+
+        # observe({
+        #   if(input$buildblocks){
+        #     observeEvent(input$doneblock, {
+        #       nblock(nblock() + 1)
+        #       output$nblocksdone <- renderText({
+        #         glue::glue("Built blocks: {nblock()}")
+        #       })
+        #       block_name <- paste0("B", sprintf("%02d", nblock()))
+        #       createdshape[[block_name]] <- tmpshape$tmp
+        #       sendSweetAlert(
+        #         session = session,
+        #         title = "Block built",
+        #         text = "The shapes in the current block have been built. Just insert a new polygon with the 'Draw polygon' tool to delineate another block. To finish the shapefile construction, check the box 'Shapefile finished'.",
+        #         type = "info"
+        #       )
+        #     })
+        #   } else{
+        #     req(tmpshape$tmp)
+        #     createdshape[["B01"]] <- tmpshape$tmp
+        #   }
+        # })
+
+
 
         observeEvent(input$shapedone,{
           if(input$shapedone){
@@ -1035,7 +1209,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
 
         # RESET VIEW
-        observeEvent(c(input$reset_view, input$delete_point_click, input$editiondone), {
+        observeEvent(c(input$reset_view_shp, input$delete_point_click, input$editiondone), {
           wid(widori())
           hei(heiori())
           current_extent(ext(mosaitoshape()))  # Reset extent to the full raster
@@ -1096,15 +1270,15 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
               dev.off()
             })
 
-            session$sendCustomMessage("updateTiles", list(
+            session$sendCustomMessage("updateTiles_shp", list(
               img = base64enc::base64encode(basepolygon)
             ))
           } else{
-            session$sendCustomMessage("updateTiles", list(
+            session$sendCustomMessage("updateTiles_shp", list(
               img = base64enc::base64encode(original_image_path)
             ))
           }
-          session$sendCustomMessage("adjustCanvasSize", list(
+          session$sendCustomMessage("adjustcanvas_shpSize", list(
             width = as.integer(widori()),
             height = as.integer(heiori())
           ))
@@ -1229,8 +1403,10 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
         observe({
           req(input$shapefiletoanalyze)
           req(shapefile[[input$shapefiletoanalyze]]$data)
+          sizes <- adjust_canvas(mosaic_data[[activemosaic$name]]$data)
+
           original_image_path <- file.path(tempdir(), "originalimage.png")
-          png(original_image_path, width = 1080, height = 720)
+          png(original_image_path, width = sizes[[1]], height = sizes[[2]])
 
           tryCatch({
             if (!is.null(mosaitoshape())) {
@@ -1254,7 +1430,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
             dev.off()
           })
 
-          session$sendCustomMessage("updateTiles", list(
+          session$sendCustomMessage("updateTiles_shp", list(
             img = base64enc::base64encode(original_image_path)
           ))
         })
@@ -1277,7 +1453,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
         shapefile[["shapefileplot"]] <- shapefile[[input$shapefiletoanalyze]]$data
       }
     })
-    mod_download_shapefile_server("downloadshapefile2", terra::vect(shapefile$shapefileplot), name = "created_shp")
+    mod_download_shapefile_server("downloadshapefile2", terra::vect(shapefile[[input$shapefiletoanalyze]]$data), name = "created_shp")
 
 
     ############################################# PLOT INFO ##########################################################
