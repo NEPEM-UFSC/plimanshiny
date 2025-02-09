@@ -884,13 +884,12 @@ round_cols <- function(df, digits = 2) {
 
   return(df)
 }
-adjust_canvas <- function(raster){
+adjust_canvas <- function(raster, max_width = 1200, max_height = 800){
   nrows <- nrow(raster)
   ncols <- ncol(raster)
   aspect_ratio <- ncols / nrows
   # Limit canvas width and height
-  max_width <- 1200
-  max_height <- 720
+
   if (aspect_ratio > 1) {
     # Width is the limiting factor
     width <- min(max_width, max_height * aspect_ratio)
@@ -902,20 +901,22 @@ adjust_canvas <- function(raster){
   }
   return(c(width, height))
 }
-check_and_plot <- function(mosaic, r = 1, g = 2, b = 3){
-  if(terra::nlyr(mosaic) < 3){
-    terra::plot(mosaic[[1]],
-                col = pliman::custom_palette(c("darkred",  "yellow", "darkgreen"), n = 100),
-                maxcell = 1e6,
-                mar = 0,
-                smooth = TRUE)
-  } else{
-    a <- try(plotRGB(mosaic, smooth = TRUE, r = r, g = g, b = b))
-    if (inherits(a, "try-error")) {
-      plotRGB(mosaic, smooth = TRUE, r = r, g = g, b = b, stretch = "lin")
+check_and_plot <- function(mosaic, r = 1, g = 2, b = 3, zlim = NULL){
+  if(is.null(zlim)){
+    if(terra::nlyr(mosaic) < 3){
+      terra::plot(mosaic[[1]],
+                  col = pliman::custom_palette(c("darkred",  "yellow", "darkgreen"), n = 100),
+                  maxcell = 1e6,
+                  mar = 0,
+                  smooth = TRUE)
     } else{
-      plotRGB(mosaic, smooth = TRUE, r = r, g = g, b = b)
+      a <- try(plotRGB(mosaic, smooth = TRUE, r = r, g = g, b = b))
+      if (inherits(a, "try-error")) {
+        plotRGB(mosaic, smooth = TRUE, r = r, g = g, b = b, stretch = "lin")
+      }
     }
+  } else{
+    plotRGB(mosaic, smooth = TRUE, r = r, g = g, b = b, stretch = "lin", zlim = zlim)
   }
 }
 guess_coordinate_type <- function(coords) {
@@ -945,7 +946,7 @@ to_utm <- function(latlon){
   # Convert gps_coords to UTM
   gps_sf <- sf::st_as_sf(as.data.frame(latlon), coords = c("X", "Y"), crs = 4326)
   utmcoords <-
-  sf::st_transform(gps_sf, crs = epsg_code) |>
+    sf::st_transform(gps_sf, crs = epsg_code) |>
     sf::st_coordinates()
   return(list(utm  = utmcoords, epsg = epsg_code))
 }

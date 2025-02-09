@@ -243,7 +243,7 @@ mod_georeference_ui <- function(id) {
 #' georeference Server Functions
 #'
 #' @noRd
-mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs){
+mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs, zlim){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     mosaitoshape <- reactiveVal()
@@ -410,7 +410,7 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs){
         sizes <- adjust_canvas(mosaitoshape())
         png(original_image_path, width = sizes[[1]], height = sizes[[2]])
         tryCatch({
-          check_and_plot(mosaitoshape(), r = 1, g = 2, b = 3)
+          check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
           if(has_control_points()){
             points(x = control_points()[, 1],
                    y = control_points()[, 2],
@@ -509,7 +509,7 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs){
             wid(sizes[[1]])
             hei(sizes[[2]])
             png(tfc, width = wid(), height = hei())
-            check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b)
+            check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
             dev.off()
           } else{
             cropped_ras <- rast(tfc)
@@ -527,7 +527,7 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs){
 
           tryCatch({
             # Plot the raster with custom color settings
-            check_and_plot(cropped_ras, r = r$r, g = g$g, b = b$b)
+            check_and_plot(cropped_ras, r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
 
             # If there are point data, process and plot them
             if (length(points$data) > 0) {
@@ -701,7 +701,7 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs){
         png(cropped_image_path, width = wid(), height = hei())
 
         tryCatch({
-          check_and_plot(cropped_ras, r = r$r, g = g$g, b = b$b)
+          check_and_plot(cropped_ras, r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
 
           points(x = x, y = y, col = "red", cex = 5, pch = 13)
 
@@ -782,7 +782,7 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs){
           png(basepolygon, width = sizes[[1]], height = sizes[[2]])
 
           tryCatch({
-            check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b)
+            check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
 
             points_df <- do.call(rbind, points$data)
             points_df <- as.data.frame(points_df)

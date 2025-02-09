@@ -16,6 +16,7 @@ app_server <- function(input, output, session) {
   swir <- reactiveValues(swir = NA)
   tir <- reactiveValues(tir = NA)
   quantiles <- reactiveValues(q = c(0, 1))
+  zlim <- reactiveValues(zlim = NULL)
   maxpixel <- reactiveValues(mp = 1e6)
   basemap <- reactiveValues(map = NULL)
   bmap <- reactiveValues(map = NULL)
@@ -67,7 +68,7 @@ app_server <- function(input, output, session) {
     # Import Rasters
     if(input$tabshome == "mosaicimport" && is.null(module_loaded$mosaicimport)){
       module_loaded$mosaicimport <- TRUE
-      mod_mosaic_prepare_server("mosaic_prepare_1", mosaic_data, r, g, b, re, nir, swir, tir, basemap, pathmosaic, quantiles, maxpixel, activemosaic, settings)
+      mod_mosaic_prepare_server("mosaic_prepare_1", mosaic_data, r, g, b, re, nir, swir, tir, basemap, pathmosaic, quantiles, maxpixel, activemosaic, zlim, settings)
     }
 
     # Import or Build Shapefiles
@@ -78,7 +79,7 @@ app_server <- function(input, output, session) {
 
     if(input$tabshome == "shapefilenative" && is.null(module_loaded$shapefilenative)){
       module_loaded$shapefilenative <- TRUE
-      mod_shapefilenative_server("shpnative", mosaic_data,  r, g, b, activemosaic, shapefile)
+      mod_shapefilenative_server("shpnative", mosaic_data,  r, g, b, activemosaic, shapefile, zlim)
     }
 
 
@@ -210,7 +211,7 @@ app_server <- function(input, output, session) {
     }
     if(input$tabshome == "gcp" && is.null(module_loaded$gcp)){
       module_loaded$gcp <- TRUE
-      mod_georeference_server("georef_ui", mosaic_data = mosaic_data, r, g, b, dfs)
+      mod_georeference_server("georef_ui", mosaic_data = mosaic_data, r, g, b, dfs, zlim)
     }
 
   })

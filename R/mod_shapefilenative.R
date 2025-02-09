@@ -481,7 +481,7 @@ mod_shapefilenative_ui <- function(id) {
 
 #' shapefilenative Server Functions
 #'
-mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, shapefile) {
+mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, shapefile, zlim) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     mosaitoshape <- reactiveVal()
@@ -533,9 +533,9 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           sizes <- adjust_canvas(mosaitoshape())
           png(original_image_path, width = sizes[[1]], height = sizes[[2]])
           tryCatch({
-            check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b)
+            check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
           }, error = function(e) {
-            message("An error occurred during plotting: ", e$message)
+            message("An error occurred during plotting6: ", e$message)
           }, finally = {
             dev.off()
           })
@@ -568,7 +568,6 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           xrange <- abs(xmax - xmin)
           originalres <- res(mosaitoshape())[[1]]
           newres <- max(c(xrange / 720, originalres))
-          # Crop the raster and update the current extent
           tfc <- file.path(tempdir(), "tempcropped.png")
           session$onSessionEnded(function() {
             if (file.exists(tfc)) {
@@ -581,7 +580,6 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
             wid(sizes[[1]])
             hei(sizes[[2]])
             png(tfc, width = wid(), height = hei())
-            # print(marg())
             terra::plot(cropped_ras,
                         col = pliman::custom_palette(c("darkred",  "yellow", "darkgreen"), n = 100),
                         maxcell = 1e6,
@@ -590,126 +588,124 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                         mar = 0)
             dev.off()
           } else{
-            trycrop <-
-              try(
-                suppressMessages(
-                  suppressWarnings(
-                    sf::gdal_utils(
-                      util = "warp",
-                      source = terra::sources(mosaitoshape()),
-                      destination = tfc,
-                      options = c(
-                        strsplit(paste("-te", xmin, ymin, xmax, ymax), split = "\\s")[[1]],
-                        "-tr", paste0(newres), paste0(newres),
-                        "-overwrite"
+
+            if (is.null(zlim$zlim) & length(points$data) == 0 & nchar(input$shapefiletoanalyze) == 0) {
+              trycrop <-
+                try(
+                  suppressMessages(
+                    suppressWarnings(
+                      sf::gdal_utils(
+                        util = "warp",
+                        source = terra::sources(mosaitoshape()),
+                        destination = tfc,
+                        options = c(
+                          strsplit(paste("-te", xmin, ymin, xmax, ymax), split = "\\s")[[1]],
+                          "-tr", paste0(newres), paste0(newres),
+                          "-overwrite"
+                        )
                       )
                     )
                   )
                 )
-              )
-            if(inherits(trycrop, "try-error")){
+              if(inherits(trycrop, "try-error")){
+                cropped_ras <- crop(mosaitoshape(), ext(xmin, xmax, ymin, ymax))
+                sizes <- adjust_canvas(cropped_ras)
+                wid(sizes[[1]])
+                hei(sizes[[2]])
+                png(tfc, width = wid(), height = hei())
+                check_and_plot(cropped_ras, r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
+                dev.off()
+              } else{
+                cropped_ras <- terra::rast(tfc)
+                sizes <- adjust_canvas(cropped_ras)
+                wid(sizes[[1]])
+                hei(sizes[[2]])
+              }
+
+            } else {
+              # Handle case when zlim is not NULL
               cropped_ras <- crop(mosaitoshape(), ext(xmin, xmax, ymin, ymax))
               sizes <- adjust_canvas(cropped_ras)
               wid(sizes[[1]])
               hei(sizes[[2]])
               png(tfc, width = wid(), height = hei())
-              check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b)
-              dev.off()
-            } else{
-              cropped_ras <- rast(tfc)
-              sizes <- adjust_canvas(cropped_ras)
-              wid(sizes[[1]])
-              hei(sizes[[2]])
-            }
-          }
+              check_and_plot(cropped_ras, r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
 
+              if(length(points$data) > 0 | nchar(input$shapefiletoanalyze) > 0){
+                if (length(points$data) > 0) {
+                  points_df <- do.call(rbind, points$data)
+                  points_df <- as.data.frame(points_df, stringsAsFactors = FALSE)[, 1:2]
 
-          # Generate the cropped image
-          if(length(points$data) > 0 | nchar(input$shapefiletoanalyze) > 0){
-            cropped_image_path <- paste(tempdir(), "croppedimage.png")
-            png(cropped_image_path, width = wid(), height = hei())
-
-            tryCatch({
-              # Plot the raster with custom color settings
-              check_and_plot(cropped_ras, r = r$r, g = g$g, b = b$b)
-
-              # If there are point data, process and plot them
-              if (length(points$data) > 0) {
-                points_df <- do.call(rbind, points$data)
-                points_df <- as.data.frame(points_df, stringsAsFactors = FALSE)[, 1:2]
-
-                points(x = points_df[, 1],
-                       y = points_df[, 2],
-                       col = "red",
-                       cex = 4,
-                       pch = 10)
-
-                text(
-                  x = points_df[, 1],
-                  y = points_df[, 2],  # You can adjust the offset if needed
-                  labels = 1:nrow(points_df),
-                  col = "red",
-                  cex = 2,
-                  pos = 3
-                )
-              }
-
-              # If a shapefile has been selected, add it to the plot
-              if (nchar(input$shapefiletoanalyze) > 0) {
-                plot(
-                  shapefile[[input$shapefiletoanalyze]]$data[ifelse(input$fillid == "none", "plot_id", input$fillid)],
-                  add = TRUE,
-                  border = "red",
-                  lwd = 3,
-                  col = rgb(0, 0, 1, alpha = 0)
-                )
-
-                if (input$showplotid) {
-                  centrs <- suppressWarnings(
-                    sf::st_centroid(shapefile[[input$shapefiletoanalyze]]$data) |>
-                      sf::st_coordinates()
-                  )
+                  points(x = points_df[, 1],
+                         y = points_df[, 2],
+                         col = "red",
+                         cex = 4,
+                         pch = 10)
 
                   text(
-                    x = centrs[, 1],
-                    y = centrs[, 2],
-                    labels = shapefile[[input$shapefiletoanalyze]]$data$plot_id,
-                    col = "black",
-                    cex = 1
+                    x = points_df[, 1],
+                    y = points_df[, 2],  # You can adjust the offset if needed
+                    labels = 1:nrow(points_df),
+                    col = "red",
+                    cex = 2,
+                    pos = 3
                   )
                 }
-              }
-              # Combine created shapes and temporary shape
-              alreadybuilt <- dplyr::bind_rows(reactiveValuesToList(createdshape), .id = "block")
-              if (nrow(alreadybuilt) > 0) {
-                shptoplot <- dplyr::bind_rows(alreadybuilt, tmpshape$tmp |> dplyr::mutate(block = "block_temp"))
-              } else {
-                shptoplot <- tmpshape$tmp
-              }
-              # Extract number from plot ID for plotting
-              shptoplot <- shptoplot |> extract_number(plot_id)
-              plot(shptoplot[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "red", lwd = 3)
 
-              # Add text labels at centroids if enabled
-              if (input$showplotid) {
-                centrs <- suppressMessages(sf::st_centroid(shptoplot) |> sf::st_coordinates())
-                text(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col = "black", cex = 1)
+                # If a shapefile has been selected, add it to the plot
+                if (nchar(input$shapefiletoanalyze) > 0) {
+                  plot(
+                    shapefile[[input$shapefiletoanalyze]]$data[ifelse(input$fillid == "none", "plot_id", input$fillid)],
+                    add = TRUE,
+                    border = "red",
+                    lwd = 3,
+                    col = rgb(0, 0, 1, alpha = 0)
+                  )
+
+                  if (input$showplotid) {
+                    centrs <- suppressWarnings(
+                      sf::st_centroid(shapefile[[input$shapefiletoanalyze]]$data) |>
+                        sf::st_coordinates()
+                    )
+
+                    text(
+                      x = centrs[, 1],
+                      y = centrs[, 2],
+                      labels = shapefile[[input$shapefiletoanalyze]]$data$plot_id,
+                      col = "black",
+                      cex = 1
+                    )
+                  }
+                }
+                if(!is.null(tmpshape$tmp) && nrow(tmpshape$tmp) > 0){
+                  # Combine created shapes and temporary shape
+                  alreadybuilt <- dplyr::bind_rows(reactiveValuesToList(createdshape), .id = "block")
+                  if (nrow(alreadybuilt) > 0) {
+                    shptoplot <- dplyr::bind_rows(alreadybuilt, tmpshape$tmp |> dplyr::mutate(block = "block_temp"))
+                  } else {
+                    shptoplot <- tmpshape$tmp
+                  }
+                  # Extract number from plot ID for plotting
+                  shptoplot <- shptoplot |> extract_number(plot_id)
+                  plot(shptoplot[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "red", lwd = 3)
+
+                  # Add text labels at centroids if enabled
+                  if (input$showplotid) {
+                    centrs <- suppressMessages(sf::st_centroid(shptoplot) |> sf::st_coordinates())
+                    text(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col = "black", cex = 1)
+                  }
+                }
               }
 
-            }, error = function(e) {
-              message("An error occurred during plotting: ", e$message)
-            }, finally = {
               dev.off()
-            })
+            }
 
-            session$sendCustomMessage("updateTiles_shp", list(
-              img = base64enc::base64encode(cropped_image_path)
-            ))
-          } else{
-            session$sendCustomMessage("updateTiles_shp", list(
-              img = base64enc::base64encode(tfc)
-            ))
           }
+
+          session$sendCustomMessage("updateTiles_shp", list(
+            img = base64enc::base64encode(tfc)
+          ))
+
           session$sendCustomMessage("adjustcanvas_shpSize", list(
             width = as.integer(wid()),
             height = as.integer(hei())
@@ -738,7 +734,6 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           y_raster <- ymin_val + ((canvas_height - y_canvas) / canvas_height) * (ymax_val - ymin_val)
           coords <- data.frame(xmim = x_raster, ymin = y_raster, edited = FALSE)
           # # Add the point to the list of points
-          # print(coords)
           points$data <- append(points$data, list(coords))
 
         })
@@ -830,7 +825,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           png(cropped_image_path, width = wid(), height = hei())
 
           tryCatch({
-            check_and_plot(cropped_ras, r = r$r, g = g$g, b = b$b)
+            check_and_plot(cropped_ras, r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
 
             points(x = x, y = y, col = "red", cex = 5, pch = 13)
 
@@ -843,7 +838,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
               pos = 3
             )
           }, error = function(e) {
-            message("An error occurred during plotting: ", e$message)
+            message("An error occurred during plotting2: ", e$message)
           }, finally = {
             dev.off()
           })
@@ -933,7 +928,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
             pw <- NULL
           }
           # Build shape and store it temporarily
-          tmpshape$tmp <-
+          shpt <-
             shapefile_build(
               basemap = FALSE,
               mosaitoshape(),
@@ -949,7 +944,13 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
               crop_to_shape_ext = FALSE,
               verbose = FALSE
             )[[1]]
-          shapefile[["shapefileplot"]] <- tmpshape$tmp
+          if(input$numplots != ""){
+            shpt <-
+              shpt |>
+              dplyr::filter(plot_id %in% paste0("P", leading_zeros(1:chrv2numv(input$numplots), 4)))
+          }
+          tmpshape$tmp <- shpt
+          shapefile[["shapefileplot"]] <- shpt
         })
 
 
@@ -969,7 +970,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
             sendSweetAlert(
               session = session,
               title = "Block built",
-              text = "The shapes in the current block have been built. Use the 'Draw polygon' tool to create another block.",
+              text = "The shapes in the current block have been built. Go to 'Control points' tab, clear the points and draw the controlpoints for another block, if needed.",
               type = "info"
             )
           }
@@ -985,7 +986,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
           tryCatch({
             # Plot the base shape
-            check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b)
+            check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
 
             # Combine created shapes and temporary shape
             alreadybuilt <- dplyr::bind_rows(reactiveValuesToList(createdshape), .id = "block")
@@ -1005,7 +1006,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
             }
 
           }, error = function(e) {
-            message("An error occurred during plotting: ", e$message)
+            message("An error occurred during plotting3: ", e$message)
           }, finally = {
             dev.off()
           })
@@ -1064,7 +1065,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
             png(basepolygon, width = sizes[[1]], height = sizes[[2]])
 
             tryCatch({
-              check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b)
+              check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
 
               points_df <- do.call(rbind, points$data)
               points_df <- as.data.frame(points_df)
@@ -1135,7 +1136,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
             }, error = function(e) {
               # Handle the error (you can log it, notify the user, etc.)
-              message("An error occurred during plotting: ", e$message)
+              message("An error occurred during plotting4: ", e$message)
             }, finally = {
               # Ensure that the graphics device is closed no matter what
               dev.off()
@@ -1281,7 +1282,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
           tryCatch({
             if (!is.null(mosaitoshape())) {
-              check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b)
+              check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
               if (input$fillid == "none") {
                 plot(shapefile[[input$shapefiletoanalyze]]$data, add = TRUE)
               } else {
@@ -1296,7 +1297,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
               }
             }
           }, error = function(e) {
-            message("An error occurred during plotting: ", e$message)
+            message("An error occurred during plotting5: ", e$message)
           }, finally = {
             dev.off()
           })
@@ -1364,7 +1365,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
             )
           if(!is.null(mos) & (nrow(mos) != 180) & (nrow(mos) != 360)){
             mcro <- terra::crop(mos, terra::vect(shpinfo) |> terra::buffer(buff))
-            check_and_plot(mcro, r = r$r, g = g$g, b = b$b)
+            check_and_plot(mcro, r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
             plot(shpinfo[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "salmon", lwd = 3, col = rgb(250/255, 128/255, 114/255, alpha = 0.5))
           } else{
             plot(shpinfo[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "salmon", lwd = 3, col = rgb(250/255, 128/255, 114/255, alpha = 0.5))

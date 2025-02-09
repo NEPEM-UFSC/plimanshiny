@@ -95,16 +95,35 @@ mod_mosaic_prepare_ui <- function(id){
                     )
                   )
                 ),
-                sliderInput(ns("quantileplot"),
-                            label = "Quantiles",
-                            min = 0,
-                            max = 1,
-                            value = c(0, 1),
-                            step = 0.001),
-                numericInput(ns("maxpixels"),
-                             label = "Maximum Pixels",
-                             value = 1e6),
-
+                conditionalPanel(
+                  condition = "input.intmap == true", ns = ns,
+                  sliderInput(ns("quantileplot"),
+                              label = "Quantiles",
+                              min = 0,
+                              max = 1,
+                              value = c(0, 1),
+                              step = 0.001),
+                  numericInput(ns("maxpixels"),
+                               label = "Maximum Pixels",
+                               value = 1e6)
+                ),
+                prettyCheckbox(
+                  inputId = ns("useminmax"),
+                  label = "Set range of values to plot ",
+                  value = FALSE,
+                  icon = icon("check"),
+                  status = "success",
+                  animation = "rotate"
+                ),
+                conditionalPanel(
+                  condition = "input.useminmax == true & input.intmap == false", ns = ns,
+                  histoslider::input_histoslider(
+                    id = ns("histoslider"),
+                    label = "Pixel intensity range (BGR)",
+                    values = runif(100),
+                    height = 250,
+                  )
+                ),
                 actionBttn(
                   ns("donebands"),
                   label = "Done",
@@ -115,7 +134,7 @@ mod_mosaic_prepare_ui <- function(id){
                 circle = FALSE,
                 status = "success",
                 style = "unite",
-                width = "420px",
+                width = "550px",
                 icon = icon("gear"),
                 animate = animateOptions(enter = "fadeInLeft", exit = "fadeOutRight", duration = 1),
                 tooltip = tooltipOptions(title = "Configure the bands")
@@ -243,15 +262,7 @@ mod_mosaic_prepare_ui <- function(id){
     col_9(
       conditionalPanel(
         condition = "input.showmosaic == 'rgb' & input.intmap == false", ns = ns,
-        bs4Card(
-          width = 12,
-          height = "740px",
-          title = "Plimanshiny viewer",
-          color = "success",
-          status = "success",
-          maximizable = TRUE,
-          plimanshiny_viewer_ui(ns("mosaic_viewer"))
-        )
+        plimanshiny_viewer_ui(ns("mosaic_viewer"))
       ),
       conditionalPanel(
         condition = "(input.showmosaic == 'bands' | input.showmosaic == 'hist') & input.intmap == false", ns = ns,
@@ -284,7 +295,7 @@ mod_mosaic_prepare_ui <- function(id){
 #' mosaic_prepare Server Functions
 #'
 #' @noRd
-mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, basemap, pathmosaic, quantiles, maxpixel, activemosaic, settings) {
+mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, basemap, pathmosaic, quantiles, maxpixel, activemosaic, zlim, settings) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
@@ -302,22 +313,27 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
 
     observeEvent(input$donebands, {
       # Update reactiveValues for color bands
-      r$r <- input$r_band
-      g$g <- input$g_band
-      b$b <- input$b_band
-      re$re <- input$re_band
-      nir$nir <- input$nir_band
-      swir$swir <- input$swir_band
-      tir$tir <- input$tir_band
+      r$r <- input$r_band |> as.numeric()
+      g$g <- input$g_band |> as.numeric()
+      b$b <- input$b_band |> as.numeric()
+      re$re <- input$re_band |> as.numeric()
+      nir$nir <- input$nir_band |> as.numeric()
+      swir$swir <- input$swir_band |> as.numeric()
+      tir$tir <- input$tir_band |> as.numeric()
       quantiles$q <- input$quantileplot
       maxpixel$mp <- input$maxpixels
+      zlim$zlim <- c(input$histoslider[[1]], input$histoslider[[2]])
+      if(!input$useminmax){
+        zlim$zlim <- NULL
+      }
       showNotification(
         ui = "Configuring the layers and re-building the basemap. Please, wait!",
         type = "message",
         duration = NULL,   # Infinite duration until manually removed
-        id = "importmosaic"
+        id = "rebuilding"
       )
     })
+
 
     input_file_selected <- reactiveValues(paths = NULL)
     observe({
@@ -332,7 +348,6 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
         }
       }
     })
-
     observeEvent(input$importmosaic, {
       if(length(input_file_selected$paths$datapath) != 0){
         new_mosaic_name <- sapply(input_file_selected$paths$datapath, file_name)
@@ -438,6 +453,22 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
       mosaic_info(mosaic_data[[input$mosaictoanalyze]]$data)
     })
 
+
+    observeEvent(input$useminmax, {
+      if(input$useminmax){
+        req(mosaic_data[[input$mosaictoanalyze]]$data)
+        vals <- terra::spatSample(mosaic_data[[input$mosaictoanalyze]]$data[[c(suppressWarnings(as.numeric(r$r)),
+                                                                               suppressWarnings(as.numeric(g$g)),
+                                                                               suppressWarnings(as.numeric(b$b)))]], 2000)
+        # update slider here
+        histoslider::update_histoslider("histoslider",
+                                        values = as.numeric(as.matrix(vals)),
+                                        breaks = 100)
+
+      }
+    })
+
+
     output$mosaic_plot <- renderPlot({
       req(input$mosaictoanalyze)
       if (input$showmosaic == "bands") {
@@ -447,6 +478,7 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
         terra::hist(mosaic_data[[input$mosaictoanalyze]]$data)
       }
       removeNotification(id = "importmosaic")
+      removeNotification(id = "rebuilding")
     })
 
 
@@ -456,16 +488,17 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
       if(!input$intmap & input$showmosaic == "rgb"){
         req(input$mosaictoanalyze)
         req(mosaic_data[[input$mosaictoanalyze]]$data)
-        # print(r$r)
         plimanshiny_viewer_server("mosaic_viewer",
                                   mosaic_data[[input$mosaictoanalyze]]$data,
                                   r = reactive({ suppressWarnings(as.numeric(r$r)) }),
                                   g = reactive({ suppressWarnings(as.numeric(g$g)) }),
                                   b = reactive({ suppressWarnings(as.numeric(b$b)) }),
-                                  usemargin = reactive({input$showlegend})
+                                  usemargin = reactive({input$showlegend}),
+                                  zlim = reactive(zlim$zlim)
         )
-        removeNotification(id = "importmosaic")
       }
+      removeNotification(id = "importmosaic")
+      removeNotification(id = "rebuilding")
     })
 
     #
@@ -508,6 +541,7 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
         output$mosaic_mapview <- renderLeaflet({
           req(bmtmp)
           removeNotification(id = "importmosaic")
+          removeNotification(id = "rebuilding")
           bmtmp@map
         })
       }

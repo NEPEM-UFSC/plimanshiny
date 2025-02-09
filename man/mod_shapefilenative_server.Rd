@@ -4,7 +4,16 @@
 \alias{mod_shapefilenative_server}
 \title{shapefilenative Server Functions}
 \usage{
-mod_shapefilenative_server(id, mosaic_data, r, g, b, activemosaic, shapefile)
+mod_shapefilenative_server(
+  id,
+  mosaic_data,
+  r,
+  g,
+  b,
+  activemosaic,
+  shapefile,
+  zlim
+)
 }
 \description{
 shapefilenative Server Functions
