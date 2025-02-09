@@ -898,57 +898,57 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
         # 1. Shape Creation Logic (no nested observers)
         observeEvent(input$createupdate2, {
-            if(length(points$data) < 2){
-              sendSweetAlert(
-                session = session,
-                title = "No control points available",
-                text = "You need to insert at least three points to build a shapefile.",
-                type = "error"
-              )
-              return(NULL)
-            }
-            showNotification(
-              ui = tagList(
-                tags$i(class = "fa fa-spinner fa-spin"), " Building plots at lightning speed..."
-              ),
-              type = "message",
-              duration = NULL,  # Remains until manually removed
-              id = "buildingplot"
+          if(length(points$data) < 2){
+            sendSweetAlert(
+              session = session,
+              title = "No control points available",
+              text = "You need to insert at least three points to build a shapefile.",
+              type = "error"
             )
-            pdata <- isolate(do.call(rbind, points$data))
-            contrpoints <- sf::st_as_sf(vect(as.matrix(rbind(pdata, pdata[1, ])[, 1:2]), type = "polygon"))
-            sf::st_crs(contrpoints) <- sf::st_crs(mosaitoshape())
-            # # create the shapes
-            nr <- input$nrows |> chrv2numv()
-            nc <- input$ncols |> chrv2numv()
-            pw <- input$plot_width |> chrv2numv()
-            ph <- input$plot_height |> chrv2numv()
-            t1 <- nr == 1
-            t2 <- nc == 1
-            ps <- any(t2 & t1 == TRUE)
-            if(length(ph) == 0 | ps){
-              ph <- NULL
-            }
-            if(length(pw) == 0 | ps){
-              pw <- NULL
-            }
+            return(NULL)
+          }
+          showNotification(
+            ui = tagList(
+              tags$i(class = "fa fa-spinner fa-spin"), " Building plots at lightning speed..."
+            ),
+            type = "message",
+            duration = NULL,  # Remains until manually removed
+            id = "buildingplot"
+          )
+          pdata <- isolate(do.call(rbind, points$data))
+          contrpoints <- sf::st_as_sf(vect(as.matrix(rbind(pdata, pdata[1, ])[, 1:2]), type = "polygon"))
+          sf::st_crs(contrpoints) <- sf::st_crs(mosaitoshape())
+          # # create the shapes
+          nr <- input$nrows |> chrv2numv()
+          nc <- input$ncols |> chrv2numv()
+          pw <- input$plot_width |> chrv2numv()
+          ph <- input$plot_height |> chrv2numv()
+          t1 <- nr == 1
+          t2 <- nc == 1
+          ps <- any(t2 & t1 == TRUE)
+          if(length(ph) == 0 | ps){
+            ph <- NULL
+          }
+          if(length(pw) == 0 | ps){
+            pw <- NULL
+          }
           # Build shape and store it temporarily
           tmpshape$tmp <-
-                shapefile_build(
-                  basemap = FALSE,
-                  mosaitoshape(),
-                  controlpoints = contrpoints,
-                  nrow = nr,
-                  ncol = nc,
-                  layout = input$plotlayout,
-                  serpentine = input$serpentine,
-                  buffer_col = input$buffercol |> chrv2numv(),
-                  buffer_row = input$buffercol |> chrv2numv(),
-                  plot_width = pw,
-                  plot_height = ph,
-                  crop_to_shape_ext = FALSE,
-                  verbose = FALSE
-                )[[1]]
+            shapefile_build(
+              basemap = FALSE,
+              mosaitoshape(),
+              controlpoints = contrpoints,
+              nrow = nr,
+              ncol = nc,
+              layout = input$plotlayout,
+              serpentine = input$serpentine,
+              buffer_col = input$buffercol |> chrv2numv(),
+              buffer_row = input$buffercol |> chrv2numv(),
+              plot_width = pw,
+              plot_height = ph,
+              crop_to_shape_ext = FALSE,
+              verbose = FALSE
+            )[[1]]
           shapefile[["shapefileplot"]] <- tmpshape$tmp
         })
 
@@ -1017,200 +1017,23 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
 
 
-        # observeEvent(input$createupdate2, {
-        #   if(length(points$data) < 2){
-        #     sendSweetAlert(
-        #       session = session,
-        #       title = "No control points available",
-        #       text = "You need to insert at least three points to build a shapefile.",
-        #       type = "error"
-        #     )
-        #     return(NULL)
-        #   }
-        #   showNotification(
-        #     ui = tagList(
-        #       tags$i(class = "fa fa-spinner fa-spin"), " Building plots at lightning speed..."
-        #     ),
-        #     type = "message",
-        #     duration = NULL,  # Remains until manually removed
-        #     id = "buildingplot"
-        #   )
-        #   pdata <- isolate(do.call(rbind, points$data))
-        #   contrpoints <- sf::st_as_sf(vect(as.matrix(rbind(pdata, pdata[1, ])[, 1:2]), type = "polygon"))
-        #   sf::st_crs(contrpoints) <- sf::st_crs(mosaitoshape())
-        #   # # create the shapes
-        #   nr <- input$nrows |> chrv2numv()
-        #   nc <- input$ncols |> chrv2numv()
-        #   pw <- input$plot_width |> chrv2numv()
-        #   ph <- input$plot_height |> chrv2numv()
-        #   t1 <- nr == 1
-        #   t2 <- nc == 1
-        #   ps <- any(t2 & t1 == TRUE)
-        #   if(length(ph) == 0 | ps){
-        #     ph <- NULL
-        #   }
-        #   if(length(pw) == 0 | ps){
-        #     pw <- NULL
-        #   }
-        #   shpt <-
-        #     shapefile_build(
-        #       basemap = FALSE,
-        #       mosaitoshape(),
-        #       controlpoints = contrpoints,
-        #       nrow = nr,
-        #       ncol = nc,
-        #       layout = input$plotlayout,
-        #       serpentine = input$serpentine,
-        #       buffer_col = input$buffercol |> chrv2numv(),
-        #       buffer_row = input$buffercol |> chrv2numv(),
-        #       plot_width = pw,
-        #       plot_height = ph,
-        #       crop_to_shape_ext = FALSE,
-        #       verbose = FALSE
-        #     )
-        #   tmpshape$tmp <- shpt[[1]]
-        #
-        #   if(input$buildblocks){
-        #     observeEvent(input$doneblock, {
-        #       nblock(nblock() + 1)
-        #       output$nblocksdone <- renderText({
-        #         glue::glue("Built blocks: {nblock()}")
-        #       })
-        #       block_name <- paste0("B", sprintf("%02d", nblock()))
-        #       createdshape[[block_name]] <- tmpshape$tmp
-        #       sendSweetAlert(
-        #         session = session,
-        #         title = "Block built",
-        #         text = "The shapes in the current block have been built. Just insert a new polygon with the 'Draw polygon' tool to delineate another block. To finish the shapefile construction, check the box 'Shapefile finished'.",
-        #         type = "info"
-        #       )
-        #     })
-        #   } else{
-        #     req(tmpshape$tmp)
-        #     createdshape[["B01"]] <- tmpshape$tmp
-        #   }
-        #
-        #   # remove last shape if block is not used
-        #   rv_list <- reactiveValuesToList(createdshape)
-        #   if (length(rv_list) > 0) {
-        #     element_names <- names(rv_list)
-        #     print(element_names)
-        #     if(input$buildblocks){
-        #       blocks_created <- head(element_names, nblock())
-        #       # Extract elements from reactiveValues as a list
-        #       selected_data <- rv_list[blocks_created]
-        #
-        #       # Convert list back to reactiveValues
-        #       for (name in names(selected_data)) {
-        #         createdshape[[name]] <- selected_data[[name]]
-        #       }
-        #     } else{
-        #       createdshape[[tail(element_names, 1)]] <- NULL
-        #     }
-        #   }
-        #
-        #
-        #   sizes <- adjust_canvas(mosaitoshape())
-        #   png(basepolygon, width = sizes[[1]], height = sizes[[2]])
-        #
-        #   tryCatch({
-        #     # Plot the base shape
-        #     check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b)
-        #
-        #     # Combine the created shapes with the temporary shape
-        #     alreadybuilt <-
-        #       reactiveValuesToList(createdshape) |>
-        #       dplyr::bind_rows(.id = "block")
-        #
-        #     if (nrow(alreadybuilt) > 0) {
-        #       shptoplot <- dplyr::bind_rows(
-        #         alreadybuilt,
-        #         tmpshape$tmp |> dplyr::mutate(block = "block_temp")
-        #       )
-        #     } else {
-        #       shptoplot <- tmpshape$tmp
-        #     }
-        #
-        #     # Store the new shapefile and update choices for the UI
-        #     shapefile[[input$shapenamebuild]] <- create_reactval(input$shapenamebuild, shptoplot)
-        #     shapefilenames <- setdiff(c("none", names(shapefile)), c("shapefile", "shapefileplot"))
-        #
-        #     updateSelectInput(
-        #       session,
-        #       "shapefiletoanalyze",
-        #       choices = shapefilenames,
-        #       selected = shapefilenames[[length(shapefilenames)]]
-        #     )
-        #
-        #     # Process the shapefile for plotting
-        #     shptoplot <- shptoplot |> extract_number(plot_id)
-        #
-        #     # Plot the shapefile layer
-        #     plot(shptoplot[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "red", lwd = 3)
-        #
-        #     # Optionally add text labels at the centroids
-        #     if (input$showplotid) {
-        #       centrs <- suppressMessages(
-        #         sf::st_centroid(shptoplot) |> sf::st_coordinates()
-        #       )
-        #       text(
-        #         x = centrs[, 1],
-        #         y = centrs[, 2],
-        #         labels = shptoplot$plot_id,
-        #         col = "black",
-        #         cex = 1
-        #       )
-        #     }
-        #
-        #   }, error = function(e) {
-        #     # Log or notify the error
-        #     message("An error occurred during plotting: ", e$message)
-        #   }, finally = {
-        #     # Ensure the graphics device is closed regardless of errors
-        #     dev.off()
-        #   })
-        #
-        #   session$sendCustomMessage("updateTiles_shp", list(
-        #     img = base64enc::base64encode(basepolygon)
-        #   ))
-        #   removeNotification(id = "buildingplot")
-        # })
-
-
-
-
-        # observe({
-        #   if(input$buildblocks){
-        #     observeEvent(input$doneblock, {
-        #       nblock(nblock() + 1)
-        #       output$nblocksdone <- renderText({
-        #         glue::glue("Built blocks: {nblock()}")
-        #       })
-        #       block_name <- paste0("B", sprintf("%02d", nblock()))
-        #       createdshape[[block_name]] <- tmpshape$tmp
-        #       sendSweetAlert(
-        #         session = session,
-        #         title = "Block built",
-        #         text = "The shapes in the current block have been built. Just insert a new polygon with the 'Draw polygon' tool to delineate another block. To finish the shapefile construction, check the box 'Shapefile finished'.",
-        #         type = "info"
-        #       )
-        #     })
-        #   } else{
-        #     req(tmpshape$tmp)
-        #     createdshape[["B01"]] <- tmpshape$tmp
-        #   }
-        # })
-
 
 
         observeEvent(input$shapedone,{
           if(input$shapedone){
             req(input$shapenamebuild)
             req(createdshape)
-            shptemp <-
-              reactiveValuesToList(createdshape) |>
-              dplyr::bind_rows(.id = "block") |>
-              dplyr::mutate(unique_id = dplyr::row_number(), .before = 1)
+            shptemp <- reactiveValuesToList(createdshape)
+            if(length(shptemp) == 0){
+              shptemp <- shapefile[["shapefileplot"]]
+            } else{
+              shptemp <-
+                shptemp |>
+                dplyr::bind_rows(.id = "block") |>
+                dplyr::mutate(unique_id = dplyr::row_number(), .before = 1)
+
+            }
+
             observe({
               shapefilenames <- setdiff(c("none", names(shapefile)), c("shapefile", "shapefileplot"))
               shapefile[[input$shapenamebuild]] <- create_reactval(input$shapenamebuild, shptemp)
@@ -1219,6 +1042,12 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                                 choices = shapefilenames,
                                 selected = shapefilenames[[length(shapefilenames)]])
             })
+            sendSweetAlert(
+              session = session,
+              title = "Shapefile built",
+              text = "The shapefile has been successfully built. You can now download or use it for further analysis.",
+              type = "success"
+            )
           }
         })
 
@@ -1256,7 +1085,6 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                 cex = 2,
                 pos = 3
               )
-
               # Optionally add a shapefile layer if specified
               if (nchar(input$shapefiletoanalyze) > 0) {
                 plot(shapefile[[input$shapefiletoanalyze]]$data[ifelse(input$fillid == "none", "plot_id", input$fillid)],
@@ -1282,17 +1110,27 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
               alreadybuilt <- dplyr::bind_rows(reactiveValuesToList(createdshape), .id = "block")
               if (nrow(alreadybuilt) > 0) {
                 shptoplot <- dplyr::bind_rows(alreadybuilt, tmpshape$tmp |> dplyr::mutate(block = "block_temp"))
-              } else {
-                shptoplot <- tmpshape$tmp
-              }
-              # Extract number from plot ID for plotting
-              shptoplot <- shptoplot |> extract_number(plot_id)
-              plot(shptoplot[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "red", lwd = 3)
+                # Extract number from plot ID for plotting
+                shptoplot <- shptoplot |> extract_number(plot_id)
+                plot(shptoplot[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "red", lwd = 3)
 
-              # Add text labels at centroids if enabled
-              if (input$showplotid) {
-                centrs <- suppressMessages(sf::st_centroid(shptoplot) |> sf::st_coordinates())
-                text(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col = "black", cex = 1)
+                # Add text labels at centroids if enabled
+                if (input$showplotid) {
+                  centrs <- suppressMessages(sf::st_centroid(shptoplot) |> sf::st_coordinates())
+                  text(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col = "black", cex = 1)
+                }
+              }
+              if (nrow(tmpshape$tmp) > 0) {
+                shptoplot <- dplyr::bind_rows(tmpshape$tmp |> dplyr::mutate(block = "block_temp"))
+                # Extract number from plot ID for plotting
+                shptoplot <- shptoplot |> extract_number(plot_id)
+                plot(shptoplot[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "red", lwd = 3)
+
+                # Add text labels at centroids if enabled
+                if (input$showplotid) {
+                  centrs <- suppressMessages(sf::st_centroid(shptoplot) |> sf::st_coordinates())
+                  text(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col = "black", cex = 1)
+                }
               }
 
             }, error = function(e) {
@@ -1483,10 +1321,10 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
       if(input$shapefiletoanalyze == "none"){
         shapefile[["shapefileplot"]] <- NULL
       } else{
-        shapefile[["shapefileplot"]] <- shapefile[[input$shapefiletoanalyze]]$data
+        shapefile[["shapefileplot"]] <- shapefile[[input$shapenamebuild]]$data
       }
     })
-    mod_download_shapefile_server("downloadshapefile2", terra::vect(shapefile[[input$shapefiletoanalyze]]$data), name = "created_shp")
+    mod_download_shapefile_server("downloadshapefile2", terra::vect(shapefile[["shapefileplot"]]), name = "created_shp")
 
 
     ############################################# PLOT INFO ##########################################################
