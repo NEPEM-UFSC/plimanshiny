@@ -898,7 +898,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
         # 1. Shape Creation Logic (no nested observers)
         observeEvent(input$createupdate2, {
-          if(length(points$data) < 2){
+          if(length(points$data) < 3){
             sendSweetAlert(
               session = session,
               title = "No control points available",
