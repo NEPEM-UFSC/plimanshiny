@@ -160,19 +160,11 @@ mod_indexes_ui <- function(id){
             title = "Plot Index (raster)",
             fluidRow(
               col_4(
-                conditionalPanel(
-                  condition = "input['config_1-histoslider'] === true",
-                  materialSwitch(
-                    inputId = ns("truncateindex"),
-                    label = "Truncate index?",
-                    value = FALSE,
-                    status = "success"
-                  ),
-                  conditionalPanel(
-                    condition = "input.truncateindex == true", ns = ns,
-                    # histoslider(id)
-
-                  )
+                materialSwitch(
+                  inputId = ns("truncateindex"),
+                  label = "Truncate index?",
+                  value = FALSE,
+                  status = "success"
                 )
               ),
               col_6(
@@ -200,7 +192,11 @@ mod_indexes_ui <- function(id){
                     color = "success",
                     icon = icon("down-left-and-up-right-to-center")
                   ),
-                  histoslider(id)
+                  mod_histo_slider_ui(ns("histosliderindex"),
+                                      data = rnorm(100),
+                                      width = "100%",
+                                      height = "250px",
+                                      n_bins = 50)
                 ),
                 col_7(
                   plotOutput(ns("plotindextrunc"), height = "600px"),
@@ -460,6 +456,7 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
     truncated <- reactiveValues(trunc = NULL)
     wastrunc <- reactiveValues(was = 0)
     tt <- reactiveValues(tt = NULL)
+    valstruncated <- reactiveVal()
 
     # Render plot based on the selected index to sync
     # Update histoslider when indextosync changes
@@ -468,8 +465,16 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
       req(input$indextosync %in% names(magg$agg))
       tt$tt <- magg$agg[[input$indextosync]]
 
-      if(settings()$histoslider){
-        update_histoslider("truncslider", values = terra::values(tt$tt), breaks = 100)
+    })
+
+    observeEvent(input$truncateindex, {
+      if(input$truncateindex){
+        valsind <- as.numeric(as.matrix(terra::spatSample(magg$agg, 10000)))
+        slider_range <- mod_histo_slider_server("histosliderindex", data_reactive = reactiveVal(valsind))
+        observe({
+          req(slider_range())
+          valstruncated(c(slider_range()$min, slider_range()$max))
+        })
       }
     })
 
@@ -492,8 +497,8 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
       if(input$truncateindex){
         req(input$indextosync %in% names(magg$agg), "Selected index not found in data.")
         tt <- magg$agg[[input$indextosync]]
-        req(input$truncslider)
-        maskk <- tt > input$truncslider[[1]] & tt < input$truncslider[[2]]
+        req(valstruncated())
+        maskk <- tt > valstruncated()[[1]] & tt < valstruncated()[[2]]
         truncated$trunc <- terra::mask(tt, maskk, maskvalues = FALSE)
         output$plotindextrunc <- renderPlot({
           terra::plot(truncated$trunc,
@@ -512,7 +517,7 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
         ),
         color = "#228B227F"
       )
-      maskori <- (indori[[input$indextosync]] > input$truncslider[[1]]) & (indori[[input$indextosync]] < input$truncslider[[2]])
+      maskori <- (indori[[input$indextosync]] > valstruncated()[[1]]) & (indori[[input$indextosync]] < valstruncated()[[2]])
       index[[input$activeindex]] <- create_reactval(input$activeindex, terra::mask(indori, maskori, maskvalues = FALSE))
       updateMaterialSwitch(session,
                            "truncateindex",

@@ -613,20 +613,6 @@ observe_dependency <- function(input_id, packages, ns, input) {
   }, ignoreInit = TRUE)
 }
 
-histoslider <- function(id){
-  ns <- NS(id) # Define ns com o namespace do módulo
-  pars <- read_pars()
-  if(pars$histoslider){
-    histoslider::input_histoslider(
-      id = ns("truncslider"),
-      label = "Truncate to...",
-      values = runif(50),
-      height = 350,
-    )
-  } else{
-    NULL
-  }
-}
 
 # Corresponding statistical functions
 custom_stats <- function(data, stats) {
@@ -950,3 +936,12 @@ to_utm <- function(latlon){
     sf::st_coordinates()
   return(list(utm  = utmcoords, epsg = epsg_code))
 }
+
+hex_to_rgba <- function(hex, alpha = 1){
+  rgb_values <- col2rgb(hex)
+  r <- rgb_values[1]
+  g <- rgb_values[2]
+  b <- rgb_values[3]
+  rgb(r/255, g/255, b/255, alpha = alpha)
+}
+hex_to_rgba("#0361FC", alpha = 0.5)

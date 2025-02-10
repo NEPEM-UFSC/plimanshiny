@@ -117,12 +117,12 @@ mod_mosaic_prepare_ui <- function(id){
                 ),
                 conditionalPanel(
                   condition = "input.useminmax == true & input.intmap == false", ns = ns,
-                  histoslider::input_histoslider(
-                    id = ns("histoslider"),
-                    label = "Pixel intensity range (BGR)",
-                    values = runif(100),
-                    height = 250,
-                  )
+                  mod_histo_slider_ui(ns("historaster"),
+                                      data = rnorm(100),
+                                      width = "100%",
+                                      height = "250px",
+                                      n_bins = 75),
+                  br(),br(),
                 ),
                 actionBttn(
                   ns("donebands"),
@@ -308,6 +308,7 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
                                      events = list("oncomplete"=I('alert("Hope it helped!")')))
                  }
     )
+    slider_range <- reactiveVal()
 
     # GUIA
 
@@ -322,7 +323,6 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
       tir$tir <- input$tir_band |> as.numeric()
       quantiles$q <- input$quantileplot
       maxpixel$mp <- input$maxpixels
-      zlim$zlim <- c(input$histoslider[[1]], input$histoslider[[2]])
       if(!input$useminmax){
         zlim$zlim <- NULL
       }
@@ -456,15 +456,20 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
 
     observeEvent(input$useminmax, {
       if(input$useminmax){
+        req(input$mosaictoanalyze)
         req(mosaic_data[[input$mosaictoanalyze]]$data)
         vals <- terra::spatSample(mosaic_data[[input$mosaictoanalyze]]$data[[c(suppressWarnings(as.numeric(r$r)),
                                                                                suppressWarnings(as.numeric(g$g)),
                                                                                suppressWarnings(as.numeric(b$b)))]], 2000)
-        # update slider here
-        histoslider::update_histoslider("histoslider",
-                                        values = as.numeric(as.matrix(vals)),
-                                        breaks = 100)
+        slider_range <- mod_histo_slider_server("historaster", data_reactive = reactiveVal(as.numeric(as.matrix(vals))))
 
+        observeEvent(input$donebands, {
+          if(!input$useminmax){
+            zlim$zlim <- NULL
+          } else{
+            zlim$zlim <- c(slider_range()$min, slider_range()$max)
+          }
+        })
       }
     })
 
@@ -498,8 +503,8 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
         )
       }
       removeNotification(id = "importmosaic")
-      removeNotification(id = "rebuilding")
     })
+      removeNotification(id = "rebuilding")
 
     #
     observe({

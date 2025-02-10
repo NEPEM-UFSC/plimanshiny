@@ -79,11 +79,6 @@ mod_config_ui <- function(id){
                     description = "Enable synchronize the basemap (eg., RGB mosaic) with the index (eg., NDVI) layer.",
                     deps = "leafsync",
                     ns = ns),
-      enable_module(mod_id = "histoslider",
-                    mod_name = "Histogram Slider",
-                    description = "Enable the histogram slider to adjust the range of values of computed indexes in the 'Index' module.",
-                    deps = "histoslider",
-                    ns = ns),
       enable_module(mod_id = "tidyterra",
                     mod_name = "ggplot2-like plots for raster",
                     description = "Enable the 'plot attribute' option in 'see as' dropdown menu of 'Evolution plot' in the 'Analyze' tab of time series module. This uses the tidyterra::geom_spatraster() to produce a ggplot2-like plot for the vegetation indexes.",
@@ -143,7 +138,6 @@ mod_config_server <- function(id, settings){
                              animatets =  FALSE,
                              cssloaders = FALSE,
                              synckmaps = FALSE,
-                             histoslider = FALSE,
                              tidyterra = FALSE,
                              introjs = FALSE,
                              sparkline = FALSE,
@@ -176,7 +170,7 @@ mod_config_server <- function(id, settings){
     observeEvent(input$enableall, {
       if (input$enableall) {
         pkgs <- c("fields", "minpack.lm", "segmented", "magick", "shinycssloaders",
-                  "leafsync", "histoslider", "tidyterra", "rintrojs",
+                  "leafsync",  "tidyterra", "rintrojs",
                   "sparkline", "leaflet.extras2", "lwgeom", "leafem", "terra")
         check_and_install_dependencies(pkgs, ns, input, "enableall")
         settings(lapply(default_settings, \(x){x = TRUE}))
@@ -191,7 +185,6 @@ mod_config_server <- function(id, settings){
       updatePrettySwitch(session = session, inputId = "animatets", value = settings()$animatets)
       updatePrettySwitch(session = session, inputId = "cssloaders", value = settings()$cssloaders)
       updatePrettySwitch(session = session, inputId = "synckmaps", value = settings()$synckmaps)
-      updatePrettySwitch(session = session, inputId = "histoslider", value = settings()$histoslider)
       updatePrettySwitch(session = session, inputId = "tidyterra", value = settings()$tidyterra)
       updatePrettySwitch(session = session, inputId = "introjs", value = settings()$introjs)
       updatePrettySwitch(session = session, inputId = "sparkline", value = settings()$sparkline)
@@ -211,7 +204,6 @@ mod_config_server <- function(id, settings){
                                animatets = input$animatets,
                                cssloaders = input$cssloaders,
                                synckmaps = input$synckmaps,
-                               histoslider = input$histoslider,
                                tidyterra = input$tidyterra,
                                introjs = input$introjs,
                                sparkline = input$sparkline,
@@ -245,9 +237,6 @@ mod_config_server <- function(id, settings){
 
     observe_dependency("synckmaps", c("leafsync"), ns, input)
     observe_dependency("check_synckmaps", c("leafsync"), ns, input)
-
-    observe_dependency("histoslider", c("histoslider"), ns, input)
-    observe_dependency("check_histoslider", c("histoslider"), ns, input)
 
     observe_dependency("tidyterra", c("tidyterra"), ns, input)
     observe_dependency("check_tidyterra", c("tidyterra"), ns, input)

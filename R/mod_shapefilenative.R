@@ -47,7 +47,8 @@ mod_shapefilenative_ui <- function(id) {
                             swatches = scales::viridis_pal()(10),
                             theme = "monolith",
                             useAsButton = TRUE,
-                            selected = "#0361FC",
+                            selected = "#0361FC80",
+                            opacity = TRUE
                           )
                         ),
                         col_6(
@@ -58,6 +59,7 @@ mod_shapefilenative_ui <- function(id) {
                             theme = "monolith",
                             useAsButton = TRUE,
                             selected = "darkred",
+                            opacity = TRUE
                           )
                         )
                       ),
@@ -72,6 +74,11 @@ mod_shapefilenative_ui <- function(id) {
                                   min = 0,
                                   max = 5,
                                   value = 2),
+                      sliderInput(ns("alpha"),
+                                  label = "Color opacity",
+                                  min = 0,
+                                  max = 1,
+                                  value = 1),
                       style = "unite",
                       icon = icon("gear"),
                       status = "success",
@@ -654,13 +661,24 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
                 # If a shapefile has been selected, add it to the plot
                 if (nchar(input$shapefiletoanalyze) > 0) {
-                  plot(
-                    shapefile[[input$shapefiletoanalyze]]$data[ifelse(input$fillid == "none", "plot_id", input$fillid)],
-                    add = TRUE,
-                    border = "red",
-                    lwd = 3,
-                    col = rgb(0, 0, 1, alpha = 0)
-                  )
+                  if(input$fillid == "none"){
+                    plot(
+                      shapefile[[input$shapefiletoanalyze]]$data["plot_id"],
+                      add = TRUE,
+                       border = input$colorstroke,
+                      lwd = input$lwdt,
+                      col = input$colorfill
+                    )
+                  } else{
+                    plot(
+                      shapefile[[input$shapefiletoanalyze]]$data[input$fillid],
+                      add = TRUE,
+                       border = input$colorstroke,
+                      lwd = input$lwdt,
+                      col = input$colorfill
+                    )
+                  }
+
 
                   if (input$showplotid) {
                     centrs <- suppressWarnings(
@@ -687,7 +705,23 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                   }
                   # Extract number from plot ID for plotting
                   shptoplot <- shptoplot |> extract_number(plot_id)
-                  plot(shptoplot[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "red", lwd = 3)
+                  if(input$fillid == "none"){
+                    plot(
+                      shptoplot["plot_id"],
+                      add = TRUE,
+                       border = input$colorstroke,
+                      lwd = input$lwdt,
+                      col = input$colorfill
+                    )
+                  } else{
+                    plot(
+                      shptoplot[input$fillid],
+                      add = TRUE,
+                       border = input$colorstroke,
+                      lwd = input$lwdt
+                    )
+                  }
+
 
                   # Add text labels at centroids if enabled
                   if (input$showplotid) {
@@ -997,7 +1031,22 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
             }
             # Extract number from plot ID for plotting
             shptoplot <- shptoplot |> extract_number(plot_id)
-            plot(shptoplot[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "red", lwd = 3)
+            if(input$fillid == "none"){
+              plot(
+                shptoplot["plot_id"],
+                add = TRUE,
+                 border = input$colorstroke,
+                lwd = input$lwdt,
+                col = input$colorfill
+              )
+            } else{
+              plot(
+                shptoplot[input$fillid],
+                add = TRUE,
+                 border = input$colorstroke,
+                lwd = input$lwdt
+              )
+            }
 
             # Add text labels at centroids if enabled
             if (input$showplotid) {
@@ -1088,11 +1137,22 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
               )
               # Optionally add a shapefile layer if specified
               if (nchar(input$shapefiletoanalyze) > 0) {
-                plot(shapefile[[input$shapefiletoanalyze]]$data[ifelse(input$fillid == "none", "plot_id", input$fillid)],
-                     add = TRUE,
-                     border = "red",
-                     lwd = 3,
-                     col = rgb(0, 0, 1, alpha = 0))
+                if(input$fillid == "none"){
+                  plot(
+                    shapefile[[input$shapefiletoanalyze]]$data["plot_id"],
+                    add = TRUE,
+                     border = input$colorstroke,
+                    lwd = input$lwdt,
+                    col = input$colorfill
+                  )
+                } else{
+                  plot(
+                    shapefile[[input$shapefiletoanalyze]]$data[input$fillid],
+                    add = TRUE,
+                     border = input$colorstroke,
+                    lwd = input$lwdt
+                  )
+                }
 
                 if (input$showplotid) {
                   centrs <- suppressMessages(
@@ -1113,7 +1173,22 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                 shptoplot <- dplyr::bind_rows(alreadybuilt, tmpshape$tmp |> dplyr::mutate(block = "block_temp"))
                 # Extract number from plot ID for plotting
                 shptoplot <- shptoplot |> extract_number(plot_id)
-                plot(shptoplot[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "red", lwd = 3)
+                if(input$fillid == "none"){
+                  plot(
+                    shptoplot["plot_id"],
+                    add = TRUE,
+                     border = input$colorstroke,
+                    lwd = input$lwdt,
+                    col = input$colorfill
+                  )
+                } else{
+                  plot(
+                    shptoplot[input$fillid],
+                    add = TRUE,
+                     border = input$colorstroke,
+                    lwd = input$lwdt
+                  )
+                }
 
                 # Add text labels at centroids if enabled
                 if (input$showplotid) {
@@ -1125,7 +1200,23 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                 shptoplot <- dplyr::bind_rows(tmpshape$tmp |> dplyr::mutate(block = "block_temp"))
                 # Extract number from plot ID for plotting
                 shptoplot <- shptoplot |> extract_number(plot_id)
-                plot(shptoplot[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "red", lwd = 3)
+                if(input$fillid == "none"){
+                  plot(
+                    shptoplot["plot_id"],
+                    add = TRUE,
+                     border = input$colorstroke,
+                    lwd = input$lwdt,
+                    col = input$colorfill
+                  )
+                } else{
+                  plot(
+                    shptoplot[input$fillid],
+                    add = TRUE,
+                     border = input$colorstroke,
+                    lwd = input$lwdt
+                  )
+                }
+
 
                 # Add text labels at centroids if enabled
                 if (input$showplotid) {
@@ -1283,12 +1374,23 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           tryCatch({
             if (!is.null(mosaitoshape())) {
               check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
-              if (input$fillid == "none") {
-                plot(shapefile[[input$shapefiletoanalyze]]$data, add = TRUE)
-              } else {
-                plot(shapefile[[input$shapefiletoanalyze]]$data[input$fillid], add = TRUE)
-              }
 
+              if(input$fillid == "none"){
+                plot(
+                  shapefile[[input$shapefiletoanalyze]]$data,
+                  add = TRUE,
+                  border = input$colorstroke,
+                  lwd = input$lwdt,
+                  col = input$colorfill
+                )
+              } else{
+                plot(
+                  shapefile[[input$shapefiletoanalyze]]$data[input$fillid],
+                  add = TRUE,
+                  border = input$colorstroke,
+                  lwd = input$lwdt
+                )
+              }
             } else {
               if (input$fillid == "none") {
                 plot(shapefile[[input$shapefiletoanalyze]]$data)
@@ -1346,7 +1448,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           npoints <- sf::st_coordinates(shpinfo) |> nrow()
           coords <- sf::st_coordinates(shpinfo)[, 1:2]
           buff <- diff(range(coords[, 1])) * 0.15
-          measures <- shapefile_measures(shpinfo)
+          measures <- shapefile_measures(shpinfo, n = 1)
           dists <-  suppressWarnings(as.matrix(sf::st_distance(sf::st_cast(shpinfo, "POINT")$geometry)))
           seq_dists <- c()
           for (i in 1:(ncol(dists) - 1)) {
@@ -1366,9 +1468,9 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           if(!is.null(mos) & (nrow(mos) != 180) & (nrow(mos) != 360)){
             mcro <- terra::crop(mos, terra::vect(shpinfo) |> terra::buffer(buff))
             check_and_plot(mcro, r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
-            plot(shpinfo[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "salmon", lwd = 3, col = rgb(250/255, 128/255, 114/255, alpha = 0.5))
+            plot(shpinfo[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "salmon", lwd = input$lwdt, col = rgb(250/255, 128/255, 114/255, alpha = 0.5))
           } else{
-            plot(shpinfo[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "salmon", lwd = 3, col = rgb(250/255, 128/255, 114/255, alpha = 0.5))
+            plot(shpinfo[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "salmon", lwd = input$lwdt, col = rgb(250/255, 128/255, 114/255, alpha = 0.5))
           }
           wid$val <- ifelse(npoints > 5, "-", paste0(round(measures$width, 3), " m"))
           hei$val <- ifelse(npoints > 5, "-", paste0(round(measures$height, 3), " m"))

@@ -53,7 +53,6 @@ Imports:
     waiter
 Suggests:
     fields,
-    histoslider,
     leaflet.extras2,
     leafem,
     leafsync,

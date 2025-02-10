@@ -117,7 +117,7 @@ plimanshiny_viewer_ui <- function(id, prefix = "mainviewer") {
       tags$style(HTML(sprintf(
         "#%s {
           border: 1px solid #ddd;
-          box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.3);
+          box-shadow: 3px 3px 8px rgba(40, 167,69, 0.3);
         }", ids("rasterCanvas")
       ))),
       tags$script(HTML(js_code))
