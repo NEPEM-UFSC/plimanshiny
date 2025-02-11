@@ -263,6 +263,11 @@ app_ui <- function(request) {
               icon = shiny::icon("map-location-dot", verify_fa = FALSE)
             ),
             bs4SidebarMenuSubItem(
+              text = "Comparision Slider",
+              tabName = "compslider",
+              icon = shiny::icon("sliders", verify_fa = FALSE)
+            ),
+            bs4SidebarMenuSubItem(
               text = "Geometric measurements",
               tabName = "geometricmeasures",
               icon = shiny::icon("ruler", verify_fa = FALSE)
@@ -436,6 +441,10 @@ app_ui <- function(request) {
           bs4TabItem(
             tabName = "gcp",
             mod_georeference_ui("georef_ui")
+          ),
+          bs4TabItem(
+            tabName = "compslider",
+            mod_compslider_ui("sliderindex")
           ),
           bs4TabItem(
             tabName = "geometricmeasures",

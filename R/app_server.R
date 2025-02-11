@@ -213,6 +213,10 @@ app_server <- function(input, output, session) {
       module_loaded$gcp <- TRUE
       mod_georeference_server("georef_ui", mosaic_data = mosaic_data, r, g, b, dfs, zlim)
     }
+    if(input$tabshome == "compslider" && is.null(module_loaded$compslider)){
+      module_loaded$compslider <- TRUE
+      mod_compslider_server("sliderindex", mosaic_data, index)
+    }
 
   })
 }

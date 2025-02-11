@@ -184,7 +184,6 @@ mod_slider_server <- function(id, imgdata, settings){
           }
         })
       }
-
     })
 
   })

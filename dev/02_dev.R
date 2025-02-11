@@ -71,6 +71,7 @@ golem::add_module(name = "growthmodelscurves")
 golem::add_module(name = "graphicalexploration")
 golem::add_module(name = "shapefilenative")
 golem::add_module(name = "georeference")
+golem::add_module(name = "compslider")
 
 ## Add packages
 usethis::use_package("shiny")

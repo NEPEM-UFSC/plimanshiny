@@ -937,11 +937,3 @@ to_utm <- function(latlon){
   return(list(utm  = utmcoords, epsg = epsg_code))
 }
 
-hex_to_rgba <- function(hex, alpha = 1){
-  rgb_values <- col2rgb(hex)
-  r <- rgb_values[1]
-  g <- rgb_values[2]
-  b <- rgb_values[3]
-  rgb(r/255, g/255, b/255, alpha = alpha)
-}
-hex_to_rgba("#0361FC", alpha = 0.5)
