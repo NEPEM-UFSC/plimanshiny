@@ -1,10 +1,3 @@
-library(shiny)
-library(shinyWidgets)
-library(terra)
-library(base64enc)
-library(bs4Dash)
-library(pliman)
-
 mod_slider_zoom_ui <- function(id) {
   ns <- NS(id)
   tagList(
@@ -287,66 +280,3 @@ drawCanvas.addEventListener("mouseup", function() {
 
   })
 }
-#
-# #
-# ui <- fluidPage(
-#   titlePanel("Dual Image Viewer with Slider"),
-#   mod_slider_zoom_ui("dual_viewer")
-# )
-#
-# server <- function(input, output, session) {
-#   img <- rast("D:/Desktop/mosaics/lettuce_small.tif")
-#   img <- rast("D:/Desktop/mosaics/wheat/rasters/Tri_22_07_2022.tiff") |> mosaic_aggregate(30)
-#   index <- mosaic_index(img, "NDVI", r = 3, g = 2, b = 1, re = 4, nir = 5, plot = FALSE)
-#   imgdata <- list(
-#     RGB = list(data = img),
-#     NDVI = list(data = index)
-#   )
-#   servervals <- mod_slider_zoom_server("dual_viewer",
-#                                        img1 = img,
-#                                        rgb1 = TRUE,
-#                                        r1 = 1,
-#                                        g1 = 2,
-#                                        b1 = 3,
-#                                        zlim1 =  c(0, 12000),
-#                                        img2 = index,
-#                                        rgb2 = FALSE,
-#                                        r2 = 1,
-#                                        g2 = 2,
-#                                        b2 = 3,
-#                                        zlim2 = c(0, 12000))
-#
-#   observeEvent(servervals()$drawn_rectangle, {
-#     rect <- servervals()$drawn_rectangle
-#     req(rect$startX)
-#     print(rect)
-#     if (rect$startX == rect$endX || rect$startY == rect$endY) {
-#       return(NULL)
-#     }
-#     xmin_val <- terra::xmin(imgdata[[1]]$data)
-#     xmax_val <- terra::xmax(imgdata[[1]]$data)
-#     ymin_val <- terra::ymin(imgdata[[1]]$data)
-#     ymax_val <- terra::ymax(imgdata[[1]]$data)
-#
-#     fact_canva_rast_x <- servervals()$canvas_size$width / (xmax_val - xmin_val)
-#     fact_canva_rast_y <- servervals()$canvas_size$height / (ymax_val - ymin_val)
-#     xmin <- xmin_val + rect$startX / fact_canva_rast_x
-#     xmax <- xmin_val + rect$endX / fact_canva_rast_x
-#     ymin <- ymin_val + (servervals()$canvas_size$height - rect$endY) / fact_canva_rast_y
-#     ymax <- ymin_val + (servervals()$canvas_size$height - rect$startY) / fact_canva_rast_y
-#
-#     img1cropped <- terra::crop(imgdata[[1]]$data, terra::ext(xmin, xmax, ymin, ymax))
-#     img2cropped <- terra::crop(imgdata[[2]]$data, terra::ext(xmin, xmax, ymin, ymax))
-#
-#     imgdatacrop <- list(
-#       img1 = list(data = img1cropped),
-#       img2 = list(data = img2cropped)
-#     )
-#     servervals <- mod_slider_server("dual_viewer", imgdatacrop)
-#   })
-#
-#
-#
-# }
-#
-# shinyApp(ui = ui, server = server)
