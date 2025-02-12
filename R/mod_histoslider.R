@@ -31,7 +31,10 @@ mod_histo_slider_ui <- function(id, data, width = "100%", height = "400px", n_bi
     tags$div(id = ns("histo_slider_histogram"), style = "height:90%; width:100%;"),
     tags$div(id = ns("histo_slider_slider"), style = "height:10%; width:100%; margin-bottom: 50px"),
 
-    # Include external libraries
+    # Include external JavaScript and CSS dependencies.
+    # https://d3js.org/d3.v7.min.js
+    # https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.0/nouislider.min.css
+    # https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.0/nouislider.min.js
     tags$head(
       tags$script(src = "libs/d3.v7.min.js"),
       tags$link(rel = "stylesheet", href = "libs/nouislider.min.css"),

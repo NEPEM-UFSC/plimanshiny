@@ -23,7 +23,7 @@ mod_compslider_ui <- function(id) {
           tabPanel(
             title = "Raster Selection",
             hl(),
-            selectInput(ns("beforeimg"), label = "Left raster", choices = NULL),
+            selectInput(ns("beforeimg"), label = "Left-side image", choices = NULL),
             prettyCheckbox(
               inputId = ns("rgb1"),
               label = "RGB",
@@ -64,8 +64,9 @@ mod_compslider_ui <- function(id) {
               condition = "input.rgb1 == false", ns = ns,
               pickerInput(ns("layer1"), "Layer to plot", choices = NULL)
             ),
+            br(),
             hl(),
-            selectInput(ns("afterimg"), label = "Right raster", choices = NULL),
+            selectInput(ns("afterimg"), label = "Right-side image", choices = NULL),
             prettyCheckbox(
               inputId = ns("rgb2"),
               label = "RGB",
@@ -106,6 +107,7 @@ mod_compslider_ui <- function(id) {
               condition = "input.rgb2 == false", ns = ns,
               pickerInput(ns("layer2"), "Layer to plot", choices = NULL)
             ),
+            br(),
             hl(),
             prettyCheckbox(
               inputId = ns("compare"),
@@ -208,7 +210,7 @@ mod_compslider_server <- function(id, mosaic_data, index) {
         updatePickerInput(session, "r2", choices = 1:nlr2)
         updatePickerInput(session, "g2", choices = 1:nlr2, selected = "2")
         updatePickerInput(session, "b2", choices = 1:nlr2, selected = "3")
-        imgleft(tmplist()[[input$afterimg]])
+        imgright(tmplist()[[input$afterimg]])
         nameright(input$afterimg)
       }
     })
@@ -239,7 +241,8 @@ mod_compslider_server <- function(id, mosaic_data, index) {
     #
     observe({
       if(input$compare){
-        # observe({
+        invisible(imgleft())
+        invisible(imgright())
         invisible(zlim1())
         invisible(zlim2())
         invisible(input$r1)
@@ -274,14 +277,14 @@ mod_compslider_server <- function(id, mosaic_data, index) {
           }
           if(rect$startX == 0 & rect$startY == 0) {
             mod_slider_zoom_server("sliderui",
-                                   img1 = imgleft(),
+                                   img1 = "cache",
                                    name1 =  nameleft(),
                                    rgb1 = input$rgb1,
                                    r1 = as.numeric(input$r1),
                                    g1 = as.numeric(input$g1),
                                    b1 = as.numeric(input$b1),
                                    zlim1 =  zlim1(),
-                                   img2 = imgright(),
+                                   img2 = "cache",
                                    name2 = nameright(),
                                    rgb2 = input$rgb2,
                                    r2 = as.numeric(input$r2),
@@ -318,10 +321,10 @@ mod_compslider_server <- function(id, mosaic_data, index) {
                                    r2 = as.numeric(input$r2),
                                    g2 = as.numeric(input$g2),
                                    b2 = as.numeric(input$b2),
-                                   zlim2 =  zlim2())
+                                   zlim2 =  zlim2(),
+                                   isrec = TRUE)
           }
         })
-        # })
       }
     })
   })

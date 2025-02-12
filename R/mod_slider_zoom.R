@@ -5,61 +5,84 @@ mod_slider_zoom_ui <- function(id) {
   )
 }
 
-mod_slider_zoom_server <- function(id, img1,name1, rgb1, r1, g1, b1, zlim1, img2, name2, rgb2, r2, g2, b2, zlim2) {
+mod_slider_zoom_server <- function(id, img1,name1, rgb1, r1, g1, b1, zlim1, img2, name2, rgb2, r2, g2, b2, zlim2, isrec = FALSE) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     reactive_values <- reactiveValues(drawn_rectangle = NULL, canvas_size = NULL)
 
     output$slider <- renderUI({
 
-      req(img1)
-      dims <- round(adjust_canvas(img1, max_width = 1080, max_height = 750))
+      if(!is.character(img1)){
+        req(img1)
+        dims <- round(adjust_canvas(img1, max_width = 1080, max_height = 750))
+        paramsfile <- paste0(system.file("app", package = "plimanshiny" ), "/www/params_dim_slider.rds")
+        if(!file.exists(paramsfile)){
+          saveRDS(dims, file = paramsfile)
+        }
+        saveRDS(c(name1, name2), file = paste0(system.file("app", package = "plimanshiny" ), "/www/params_name_slider.rds"))
+        # tfbef <- file.path(tempdir(), "beforeimg.png")
+        tfbef <- paste0(system.file("app", package = "plimanshiny" ), "/www/beforeimg.png")
 
-      tfbef <- file.path(tempdir(), "beforeimg.png")
+        png(tfbef, width = dims[1], height = dims[2])
+        stretch1 <- if(is.null(zlim1)){NULL} else {"lin"}
+        if (rgb1) {
+          plotRGB(img1,
+                  r = r1,
+                  g = g1,
+                  b = b1,
+                  zlim = zlim1,
+                  stretch = stretch1)
+        } else {
+          plot(img1,
+               col = pliman::custom_palette(c("darkred",  "yellow", "darkgreen"), n = 100),
+               maxcell = 1e6,
+               mar = 0,
+               smooth = TRUE)
+        }
+        dev.off()
+        if(!isrec){
+          file.copy(from = tfbef, to = paste0(system.file("app", package = "plimanshiny" ), "/www/bef_cache.png"),
+                    overwrite = TRUE)
+        }
 
-      png(tfbef, width = dims[1], height = dims[2])
-      stretch1 <- if(is.null(zlim1)){NULL} else {"lin"}
-      if (rgb1) {
-        plotRGB(img1,
-                r = r1,
-                g = g1,
-                b = b1,
-                zlim = zlim1,
-                stretch = stretch1)
-      } else {
-        plot(img1,
-             col = pliman::custom_palette(c("darkred",  "yellow", "darkgreen"), n = 100),
-             maxcell = 1e6,
-             mar = 0,
-             smooth = TRUE)
+        ############# RIGHT IMAGE ############
+
+        # tfaft <- file.path(tempdir(), "afterimg.png")
+        tfaft <- paste0(system.file("app", package = "plimanshiny" ), "/www/afterimg.png")
+        png(tfaft, width = dims[1], height = dims[2])
+        stretch2 <- if(is.null(zlim2)){NULL} else {"lin"}
+        if (rgb2) {
+          plotRGB(img2,
+                  r = r2,
+                  g = g2,
+                  b = b2,
+                  zlim = zlim2,
+                  stretch = stretch2)
+        } else {
+          plot(img2,
+               col = pliman::custom_palette(c("darkred",  "yellow", "darkgreen"), n = 100),
+               maxcell = 1e6,
+               mar = 0,
+               smooth = TRUE)
+        }
+        dev.off()
+        if(!isrec){
+          file.copy(from = tfaft, to = paste0(system.file("app", package = "plimanshiny" ), "/www/aft_cache.png"),
+                    overwrite = TRUE)
+        }
+
+        img_before_base64 <- base64enc::base64encode(tfbef)
+        img_after_base64 <- base64enc::base64encode(tfaft)
+
+      } else{
+        img_before_base64 <- base64enc::base64encode(paste0(system.file("app", package = "plimanshiny" ), "/www/bef_cache.png"))
+        img_after_base64 <- base64enc::base64encode(paste0(system.file("app", package = "plimanshiny" ), "/www/aft_cache.png"))
+        paramsdim <- readRDS(file = paste0(system.file("app", package = "plimanshiny" ), "/www/params_dim_slider.rds"))
+        paramname <- readRDS(file = paste0(system.file("app", package = "plimanshiny" ), "/www/params_name_slider.rds"))
+        name1 <- paramname[1]
+        name2 <- paramname[2]
+        dims <- c(as.numeric(paramsdim[1]), as.numeric(paramsdim[2]))
       }
-      dev.off()
-
-
-
-      ############# RIGHT IMAGE ############
-
-      tfaft <- file.path(tempdir(), "afterimg.png")
-      png(tfaft, width = dims[1], height = dims[2])
-      stretch2 <- if(is.null(zlim2)){NULL} else {"lin"}
-      if (rgb2) {
-        plotRGB(img2,
-                r = r2,
-                g = g2,
-                b = b2,
-                zlim = zlim2,
-                stretch = stretch2)
-      } else {
-        plot(img2,
-             col = pliman::custom_palette(c("darkred",  "yellow", "darkgreen"), n = 100),
-             maxcell = 1e6,
-             mar = 0,
-             smooth = TRUE)
-      }
-      dev.off()
-
-      img_before_base64 <- base64enc::base64encode(tfbef)
-      img_after_base64 <- base64enc::base64encode(tfaft)
 
       session$sendCustomMessage("adjustCanvasSize_dualviewer",
                                 list(width = dims[1], height = dims[2]))
@@ -259,13 +282,20 @@ drawCanvas.addEventListener("mouseup", function() {
       )
     })
 
+    observe
     session$onSessionEnded(function() {
       f1 <- list.files(path = paste0(system.file("app", package = "plimanshiny" ), "/www/"),
-                       pattern = "beforeimg_")
+                       pattern = "beforeimg")
       f2 <- list.files(path = paste0(system.file("app", package = "plimanshiny" ), "/www/"),
-                       pattern = "afterimg_")
-      if(any(c(length(f1), length(f2)) != 0)){
-        tmpimages <- paste0(paste0(system.file("app", package = "plimanshiny" ), "/www/"), c(f1, f2))
+                       pattern = "afterimg")
+      f3 <- list.files(path = paste0(system.file("app", package = "plimanshiny" ), "/www/"),
+                       pattern = "bef_")
+      f4 <- list.files(path = paste0(system.file("app", package = "plimanshiny" ), "/www/"),
+                       pattern = "aft_")
+      f5 <- list.files(path = paste0(system.file("app", package = "plimanshiny" ), "/www/"),
+                       pattern = "params_")
+      if(any(c(length(f1), length(f2), length(f3), length(f4), length(f5)) != 0)){
+        tmpimages <- paste0(paste0(system.file("app", package = "plimanshiny" ), "/www/"), c(f1, f2, f3, f4, f5))
         a <- sapply(tmpimages, file.remove)
       }
     })
