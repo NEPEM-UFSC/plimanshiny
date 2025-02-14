@@ -110,6 +110,12 @@ app_server <- function(input, output, session) {
       mod_analyze_server("analyze_1", mosaic_data, basemap, shapefile, index, pathmosaic, dfs, settings)
     }
 
+    # Hyperspectral signature
+    if(input$tabshome == "hyperspec" && is.null(module_loaded$hyperspec)){
+      module_loaded$hyperspec <- TRUE
+      mod_hyperspectral_server("hyperspectral_1",  mosaic_data, r, g, b, maxpixel,  basemap, dfs)
+    }
+
     # Plant Measures
     if(input$tabshome == "phanalyze" && is.null(module_loaded$phanalyze)){
       module_loaded$phanalyze <- TRUE

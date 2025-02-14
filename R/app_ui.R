@@ -136,6 +136,11 @@ app_ui <- function(request) {
               text = "Analyze",
               tabName = "mosaicanalyze",
               icon = shiny::icon("chart-simple")
+            ),
+            bs4SidebarMenuSubItem(
+              text = "Hyperspectral Tools",
+              tabName = "hyperspec",
+              icon = shiny::icon("chart-line")
             )
           ),
           bs4SidebarMenuItem(
@@ -353,6 +358,10 @@ app_ui <- function(request) {
           bs4TabItem(
             tabName = "mosaicanalyze",
             mod_analyze_ui("analyze_1")
+          ),
+          bs4TabItem(
+            tabName = "hyperspec",
+            mod_hyperspectral_ui("hyperspectral_1")
           ),
 
           # Time series

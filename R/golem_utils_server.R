@@ -937,3 +937,6 @@ to_utm <- function(latlon){
   return(list(utm  = utmcoords, epsg = epsg_code))
 }
 
+get_number <- function(string){
+  as.numeric(regmatches(string, gregexpr("\\d+\\.?\\d*", string)))
+}

@@ -70,7 +70,7 @@ mod_indexes_ui <- function(id){
             pickerInput(
               inputId = ns("imgbands"),
               label = "Image Bands",
-              choices = c("RGB", "MS"),
+              choices = c("RGB", "MS", "HS"),
               selected = "RGB",
               multiple = TRUE
             ),
@@ -88,6 +88,12 @@ mod_indexes_ui <- function(id){
                                     label="Indexes' equations",
                                     icon = icon("square-root-variable"))
               )
+            ),
+            pickerInput(
+              inputId = ns("bandnames"),
+              label = "Single bands",
+              choices = "",
+              multiple = TRUE
             ),
             textInput(ns("myindex"),
                       label = "My personalized index",
@@ -351,6 +357,10 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
           new_choices$MULTISPECTRAL <- sort(pliman_indexes_me())
         }
 
+        if ("HS" %in% input$imgbands) {
+          new_choices$HYPERSPECTRAL <- sort(pliman_indexes_hs())
+        }
+
         updatePickerInput(session, "plotindexes",
                           choices = new_choices,
                           options = list(
@@ -360,9 +370,20 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
       }
     })
 
+    observe({
+      req(mosaictmp$mosaic)
+      updatePickerInput(session, "bandnames",
+                        choices = names(mosaictmp$mosaic),
+                        options = list(
+                          `actions-box` = TRUE,
+                          `live-search` = TRUE
+                        ))
+    })
+
+
     finalindex <- reactive({
       mindex <- strsplit(input$myindex, split = ",")[[1]]
-      finalindex <- c(mindex, input$plotindexes)
+      finalindex <- c(mindex, input$plotindexes, input$bandnames)
     })
 
     observeEvent(input$computeindex, {
@@ -408,18 +429,20 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
             ),
             color = "#228B227F"
           )
-          indextemp <- mosaic_index(mosaictmp$mosaic,
-                                    r = suppressWarnings(as.numeric(r$r)),
-                                    g = suppressWarnings(as.numeric(g$g)),
-                                    b = suppressWarnings(as.numeric(b$b)),
-                                    re = suppressWarnings(as.numeric(re$re)),
-                                    nir = suppressWarnings(as.numeric(nir$nir)),
-                                    swir = suppressWarnings(as.numeric(swir$swir)),
-                                    tir = suppressWarnings(as.numeric(tir$tir)),
-                                    index = finalindex(),
-                                    workers = input$workers,
-                                    in_memory = input$inmemory,
-                                    plot = FALSE)
+          indextemp <- suppressMessages(
+            mosaic_index(mosaictmp$mosaic,
+                         r = suppressWarnings(as.numeric(r$r)),
+                         g = suppressWarnings(as.numeric(g$g)),
+                         b = suppressWarnings(as.numeric(b$b)),
+                         re = suppressWarnings(as.numeric(re$re)),
+                         nir = suppressWarnings(as.numeric(nir$nir)),
+                         swir = suppressWarnings(as.numeric(swir$swir)),
+                         tir = suppressWarnings(as.numeric(tir$tir)),
+                         index = finalindex(),
+                         workers = input$workers,
+                         in_memory = input$inmemory,
+                         plot = FALSE)
+          )
           req(indextemp)
           waiter_hide()
           sendSweetAlert(

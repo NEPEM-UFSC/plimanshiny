@@ -107,23 +107,27 @@ mod_mosaic_prepare_ui <- function(id){
                                label = "Maximum Pixels",
                                value = 1e6)
                 ),
-                prettyCheckbox(
-                  inputId = ns("useminmax"),
-                  label = "Set range of values to plot ",
-                  value = FALSE,
-                  icon = icon("check"),
-                  status = "success",
-                  animation = "rotate"
-                ),
                 conditionalPanel(
-                  condition = "input.useminmax == true & input.intmap == false", ns = ns,
-                  mod_histo_slider_ui(ns("historaster"),
-                                      data = rnorm(100),
-                                      width = "100%",
-                                      height = "250px",
-                                      n_bins = 75),
-                  br(),br(),
+                  condition = "input.intmap == false", ns = ns,
+                  prettyCheckbox(
+                    inputId = ns("useminmax"),
+                    label = "Set range of values to plot ",
+                    value = FALSE,
+                    icon = icon("check"),
+                    status = "success",
+                    animation = "rotate"
+                  ),
+                  conditionalPanel(
+                    condition = "input.useminmax == true", ns = ns,
+                    mod_histo_slider_ui(ns("historaster"),
+                                        data = rnorm(100),
+                                        width = "100%",
+                                        height = "250px",
+                                        n_bins = 75),
+                    br(),br()
+                  )
                 ),
+
                 actionBttn(
                   ns("donebands"),
                   label = "Done",
@@ -231,6 +235,7 @@ mod_mosaic_prepare_ui <- function(id){
                      To crop the raster accurately, disable this option to
                      ensure the canvas area matches the raster's extents
                      without additional padding."),
+          hl(),
           prettyCheckbox(
             inputId = ns("intmap"),
             label = "Create leaflet map?",

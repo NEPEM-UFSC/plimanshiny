@@ -175,12 +175,21 @@ plimanshiny_viewer_server <- function(id, mosaic,
     # Generate and cache the original image.
     # the image will be redrawn.
     observe({
+      req(g())
+      req(r())
+      req(b())
       req(mosaic)
       # Register reactive dependencies on the colors:
       sizes <- adjust_canvas(mosaic)
-      png(original_image_path, width = sizes[[1]], height = sizes[[2]])
-      check_and_plot(mosaic, r = as.numeric(r()), g = as.numeric(g()), b = as.numeric(b()), zlim = zlim())
-      dev.off()
+      tryCatch({
+        png(original_image_path, width = sizes[[1]], height = sizes[[2]])
+        check_and_plot(mosaic, r = as.numeric(r()), g = as.numeric(g()), b = as.numeric(b()), zlim = zlim())
+      }, error = function(e) {
+        message("Error in plotting: ", e$message)
+      }, finally = {
+        dev.off()
+      })
+
       current_extent(ext(mosaic))
       session$sendCustomMessage("updateTiles_mainviewer", list(
         img = base64enc::base64encode(original_image_path)
@@ -237,15 +246,21 @@ plimanshiny_viewer_server <- function(id, mosaic,
         sizes <- adjust_canvas(cropped_ras)
         wid(sizes[[1]])
         hei(sizes[[2]])
-        png(tfc, width = wid(), height = hei())
-        # print(marg())
-        terra::plot(cropped_ras,
-                    col = pliman::custom_palette(c("darkred",  "yellow", "darkgreen"), n = 100),
-                    maxcell = 1e6,
-                    smooth = TRUE,
-                    legend = "bottomleft",
-                    mar = marg())
-        dev.off()
+        tryCatch({
+          png(tfc, width = wid(), height = hei())
+          terra::plot(
+            cropped_ras,
+            col = pliman::custom_palette(c("darkred", "yellow", "darkgreen"), n = 100),
+            maxcell = 1e6,
+            smooth = TRUE,
+            legend = "bottomleft",
+            mar = marg()
+          )
+        }, error = function(e) {
+          message("Error in plotting: ", e$message)
+        }, finally = {
+          dev.off()
+        })
 
 
       } else{
@@ -282,9 +297,15 @@ plimanshiny_viewer_server <- function(id, mosaic,
             sizes <- adjust_canvas(cropped_ras)
             wid(sizes[[1]])
             hei(sizes[[2]])
-            png(tfc, width = wid(), height = hei())
-            check_and_plot(cropped_ras, r = current_r, g = current_g, b = current_b)
-            dev.off()
+            tryCatch({
+              png(tfc, width = wid(), height = hei())
+              check_and_plot(cropped_ras, r = current_r, g = current_g, b = current_b)
+            }, error = function(e) {
+              message("Error in plotting: ", e$message)
+            }, finally = {
+              dev.off()
+            })
+
           } else {
             # Successfully processed by gdal_utils
             cropped_ras <- rast(tfc)
@@ -299,9 +320,14 @@ plimanshiny_viewer_server <- function(id, mosaic,
           sizes <- adjust_canvas(cropped_ras)
           wid(sizes[[1]])
           hei(sizes[[2]])
-          png(tfc, width = wid(), height = hei())
-          check_and_plot(cropped_ras, r = current_r, g = current_g, b = current_b, zlim = zlim())
-          dev.off()
+          tryCatch({
+            png(tfc, width = wid(), height = hei())
+            check_and_plot(cropped_ras, r = current_r, g = current_g, b = current_b, zlim = zlim())
+          }, error = function(e) {
+            message("Error in plotting: ", e$message)
+          }, finally = {
+            dev.off()
+          })
         }
       }
 
