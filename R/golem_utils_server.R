@@ -940,3 +940,14 @@ to_utm <- function(latlon){
 get_number <- function(string){
   as.numeric(regmatches(string, gregexpr("\\d+\\.?\\d*", string)))
 }
+# Function to interpolate values per group
+interpolate_group <- function(df) {
+  wavelength_seq <- seq(min(df$wavelength), max(df$wavelength), by = 1)
+  df |>
+    dplyr::arrange(wavelength) |>
+    dplyr::distinct(wavelength, .keep_all = TRUE) |>
+    (\(df) {
+      interpolated_values <- approx(x = df$wavelength, y = df$value, xout = wavelength_seq, method = "linear")$y
+      data.frame(dists = unique(df$dists), wavelength = wavelength_seq, value = as.numeric(smooth.spline(interpolated_values, spar = 0.2)$y))
+    })()
+}

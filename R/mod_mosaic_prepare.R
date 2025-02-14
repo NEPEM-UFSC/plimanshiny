@@ -410,6 +410,7 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
     observe({
       req(input$mosaictoanalyze)
       activemosaic$name <- input$mosaictoanalyze
+      mosaic_data[["mosaic"]] <- create_reactval("mosaic", mosaic_data[[input$mosaictoanalyze]]$data)
       nl <- terra::nlyr(mosaic_data[[input$mosaictoanalyze]]$data)
       updateSelectInput(session, "r_band",
                         choices = paste0(c("NA", paste(1:nl))),
@@ -454,6 +455,7 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
       }
     })
     observeEvent(input$mosaicinfomosaic, {
+      req(input$mosaictoanalyze)
       req(mosaic_data[[input$mosaictoanalyze]]$data)
       mosaic_info(mosaic_data[[input$mosaictoanalyze]]$data)
     })
