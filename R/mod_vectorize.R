@@ -199,8 +199,8 @@ mod_vectorize_server <- function(id, mosaic_data, shapefile, basemap){
     observe({
       req(input$masktovectorize)
       if(input$masktovectorize == "Active mosaic"){
-        req(mosaic_data$mosaic)
-        segmented_mosaic(mosaic_data$mosaic)
+        req(mosaic_data$mosaic$data)
+        segmented_mosaic(mosaic_data$mosaic$data)
       } else{
         req(mosaic_data[[input$masktovectorize]]$data)
         segmented_mosaic(mosaic_data[[input$masktovectorize]]$data)
@@ -280,7 +280,7 @@ mod_vectorize_server <- function(id, mosaic_data, shapefile, basemap){
       })
 
       waiter_hide()
-      # Update mosaic_data$mosaic when input$cropmosaic is clicked
+      # Update mosaic_data$mosaic$data when input$cropmosaic is clicked
       shapefile[[input$vector]] <- create_reactval(name = input$vector, data = vectorized)
       sendSweetAlert(
         session = session,

@@ -822,7 +822,7 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
                               col = return_colors(input$plaindex, reverse = input$revindex, n = 100),
                               smooth=TRUE)
                 } else{
-                  mosaic_plot_rgb(terra::crop(mosaic_data$mosaic, exts))
+                  mosaic_plot_rgb(terra::crop(mosaic_data$mosaic$data, exts))
                 }
                 lines(coords,
                       col = "red",

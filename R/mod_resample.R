@@ -87,7 +87,7 @@ mod_resample_server <- function(id, mosaic_data, settings){
         terra::plot(myresampled[[1]])
       })
 
-      # Update mosaic_data$mosaic when input$cropmosaic is clicked
+      # Update mosaic_data$mosaic$data when input$cropmosaic is clicked
       mosaic_data[[input$new_resampled]] <- create_reactval(name = input$new_resampled, data = myresampled)
       sendSweetAlert(
         session = session,

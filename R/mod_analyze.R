@@ -767,7 +767,7 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
       } else{
         maskval$mask <- mosaic_data[[input$availablemasks]]$data
 
-        if(terra::crs(maskval$mask) != terra::crs(mosaic_data$mosaic)){
+        if(terra::crs(maskval$mask) != terra::crs(mosaic_data$mosaic$data)){
           sendSweetAlert(
             session = session,
             title = "Invalid CRS",
@@ -809,7 +809,7 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
       if(settings()$synckmaps & !input$byplot){
         req(input$activeindex)
         # req(index[[input$activeindex]]$data)
-        req(mosaic_data$mosaic)
+        req(mosaic_data$mosaic$data)
         req(basemap$map)
         req(input$segmentindex)
         layer <- ifelse(input$segmentindex != "", input$segmentindex, 1)
@@ -852,11 +852,11 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
 
     # Analyze
     observeEvent(input$analyzemosaic, {
-      if(c(!input$byplot & is.null(index[[input$activeindex]]$data)) | is.null(mosaic_data$mosaic) | is.null(basemap$map) | is.null(shapefile[[input$activeshape]]$data)){
+      if(c(!input$byplot & is.null(index[[input$activeindex]]$data)) | is.null(mosaic_data$mosaic$data) | is.null(basemap$map) | is.null(shapefile[[input$activeshape]]$data)){
         sendSweetAlert(
           session = session,
           title = "Did you skip any steps?",
-          text = "To analyze the mosaic, ensure that mosaic, index, and shapefile have been correctly computed.",
+          text = "To analyze the mosaic, ensure that mosaic, index, basemap (leaflet), and shapefile have been correctly computed.",
           type = "error"
         )
       }
@@ -934,8 +934,8 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
       if(!t1 && !t2 && !t3){
 
         if(!input$byplot){
-          req(index[[input$activeindex]]$data)  # Ensure mosaic_data$mosaic is not NULL
-          req(mosaic_data$mosaic)
+          req(index[[input$activeindex]]$data)  # Ensure mosaic_data$mosaic$data is not NULL
+          req(mosaic_data$mosaic$data)
           req(basemap$map)
           req(shapefile[[input$activeshape]]$data)
 
@@ -947,7 +947,7 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
             color = "#228B227F"
           )
           res <-
-            mosaic_analyze(mosaic = mosaic_data$mosaic,
+            mosaic_analyze(mosaic = mosaic_data$mosaic$data,
                            basemap = basemap$map,
                            shapefile = shapefile[[input$activeshape]]$data,
                            indexes = index[[input$activeindex]]$data,
@@ -1023,7 +1023,7 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
                 indexes <- terra::crop(index[[input$activeindex]]$data, terra::vect(shp$geometry[[i]]) |> terra::ext())
               }
               bind[[paste0("P", leading_zeros(i, 4))]] <-
-                mosaic_analyze(terra::crop(mosaic_data$mosaic, terra::vect(shp$geometry[[i]]) |> terra::ext()),
+                mosaic_analyze(terra::crop(mosaic_data$mosaic$data, terra::vect(shp$geometry[[i]]) |> terra::ext()),
                                indexes = indexes,
                                mask = maskval$mask,
                                plot = FALSE,

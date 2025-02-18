@@ -154,7 +154,7 @@ mod_segment_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, set
       # Reactive expression to store the cropped mosaic
       segmented_mosaic <- reactiveVal(NULL)
       if(input$mosaic_to_segment == "Active mosaic"){
-        mtemp <- mosaic_data$mosaic
+        mtemp <- mosaic_data$mosaic$data
         basemap <- basemap$map
       } else{
         mtemp <- mosaic_data[[input$mosaic_to_segment]]$data
@@ -330,7 +330,7 @@ mod_segment_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, set
 
       # Observe event for mosaic crop action
       observeEvent(input$segmentmosaic, {
-        # Update mosaic_data$mosaic when input$cropmosaic is clicked
+        # Update mosaic_data$mosaic$data when input$cropmosaic is clicked
         mosaic_data[[input$new_segment]] <- create_reactval(name = input$new_segment, data = finalmask())
         sendSweetAlert(
           session = session,

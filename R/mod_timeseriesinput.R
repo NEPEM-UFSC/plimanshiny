@@ -626,7 +626,7 @@ mod_timeseriesinput_server <- function(id, shapefile, mosaiclist, r, g, b, re, n
     })
 
     output$leafletmap <- renderLeaflet({
-      req(basemap$map)  # Ensure mosaic_data$mosaic is not NULL
+      req(basemap$map)  # Ensure mosaic_data$mosaic$data is not NULL
       if(input$plotshape){
         if(!is.null(shapefile[[input$shapefileimported]]$data)){
           (basemap$map + shapefile_view(shapefile_input(shapefile[[input$shapefileimported]]$data, as_sf = FALSE, info = FALSE)))@map

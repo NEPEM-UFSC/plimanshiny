@@ -478,13 +478,20 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs, zlim){
           wid(sizes[[1]])
           hei(sizes[[2]])
           png(tfc, width = wid(), height = hei())
-          terra::plot(cropped_ras,
-                      col = pliman::custom_palette(c("darkred",  "yellow", "darkgreen"), n = 100),
-                      maxcell = 1e6,
-                      smooth = TRUE,
-                      legend = "bottomleft",
-                      mar = 0)
-          dev.off()
+
+          tryCatch({
+            terra::plot(cropped_ras,
+                        col = pliman::custom_palette(c("darkred", "yellow", "darkgreen"), n = 100),
+                        maxcell = 1e6,
+                        smooth = TRUE,
+                        legend = "bottomleft",
+                        mar = 0)
+          }, error = function(e) {
+            message("Error in plotting: ", e$message)
+          }, finally = {
+            dev.off()
+          })
+
         } else{
           trycrop <-
             try(

@@ -587,13 +587,20 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
             wid(sizes[[1]])
             hei(sizes[[2]])
             png(tfc, width = wid(), height = hei())
-            terra::plot(cropped_ras,
-                        col = pliman::custom_palette(c("darkred",  "yellow", "darkgreen"), n = 100),
-                        maxcell = 1e6,
-                        smooth = TRUE,
-                        legend = "bottomleft",
-                        mar = 0)
-            dev.off()
+
+            tryCatch({
+              terra::plot(cropped_ras,
+                          col = pliman::custom_palette(c("darkred", "yellow", "darkgreen"), n = 100),
+                          maxcell = 1e6,
+                          smooth = TRUE,
+                          legend = "bottomleft",
+                          mar = 0)
+            }, error = function(e) {
+              message("Error in plotting: ", e$message)
+            }, finally = {
+              dev.off()
+            })
+
           } else{
 
             if (is.null(zlim$zlim) & length(points$data) == 0 & nchar(input$shapefiletoanalyze) == 0) {
@@ -620,8 +627,14 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                 wid(sizes[[1]])
                 hei(sizes[[2]])
                 png(tfc, width = wid(), height = hei())
-                check_and_plot(cropped_ras, r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
-                dev.off()
+                tryCatch({
+                  check_and_plot(cropped_ras, r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
+                }, error = function(e) {
+                  message("Error in plotting: ", e$message)
+                }, finally = {
+                  dev.off()
+                })
+
               } else{
                 cropped_ras <- terra::rast(tfc)
                 sizes <- adjust_canvas(cropped_ras)
@@ -1343,13 +1356,13 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
 
         observe({
-          req(input$shapefiletoanalyze)  # Ensure mosaic_data$mosaic is not NULL
+          req(input$shapefiletoanalyze)  # Ensure mosaic_data$mosaic$data is not NULL
 
           updateSelectInput(session, "colorshapeimport", choices = c("none", names(shapefile[[input$shapefiletoanalyze]]$data)))
           updateSelectInput(session, "fillid", choices = c("none", names(shapefile[[input$shapefiletoanalyze]]$data)))
 
-          if(!is.null(mosaic_data$mosaic) & input$shapefiletoanalyze != "none"){
-            if(sf::st_crs(shapefile[[input$shapefiletoanalyze]]$data) != sf::st_crs(mosaic_data$mosaic)){
+          if(!is.null(mosaic_data$mosaic$data) & input$shapefiletoanalyze != "none"){
+            if(sf::st_crs(shapefile[[input$shapefiletoanalyze]]$data) != sf::st_crs(mosaic_data$mosaic$data)){
               sendSweetAlert(
                 session = session,
                 title = "Invalid CRS",
@@ -1357,7 +1370,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
             not match the input mosaic. Trying to set the shapefile's CRS to match the mosaic one.",
                 type = "warning"
               )
-              shp <- shapefile[[input$shapefiletoanalyze]]$data |> sf::st_transform(crs = sf::st_crs(mosaic_data$mosaic))
+              shp <- shapefile[[input$shapefiletoanalyze]]$data |> sf::st_transform(crs = sf::st_crs(mosaic_data$mosaic$data))
               shapefile[[input$shapefiletoanalyze]] <- create_reactval(input$shapefiletoanalyze, shp)
             }
           }

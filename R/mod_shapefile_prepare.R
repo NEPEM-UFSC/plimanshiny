@@ -508,13 +508,13 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
           basemap$map <- mapview::mapview(map.types = c("Esri.WorldImagery", "OpenStreetMap", "CartoDB.Positron"))
         }
       } else{
-        mosaic_data$mosaic <- mosaic_data[[activemosaic$name]]$data
+        mosaic_data$mosaic$data <- mosaic_data[[activemosaic$name]]$data
       }
     })
 
 
     observeEvent(input$shapetype, {
-      observeEvent(c(basemap$map, mosaic_data$mosaic, input$shapedone), {
+      observeEvent(c(basemap$map, mosaic_data$mosaic$data, input$shapedone), {
         req(basemap$map)
         if (input$shapetype == "Build") {
           cpoints <- callModule(editMod, "shapefile_build",
@@ -564,8 +564,8 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
 
           observeEvent(input$createupdate, {
 
-            if(is.null(mosaic_data$mosaic)){
-              mosaic_data$mosaic <- rast(nrows=180, ncols=360, nlyrs=3, crs = "EPSG:3857")
+            if(is.null(mosaic_data$mosaic$data)){
+              mosaic_data$mosaic$data <- rast(nrows=180, ncols=360, nlyrs=3, crs = "EPSG:3857")
             }
             req(drawn$finished)
             nr <- input$nrows |> chrv2numv()
@@ -583,7 +583,7 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
             }
 
             shpt <- shapefile_build(
-              mosaic_data$mosaic,
+              mosaic_data$mosaic$data,
               basemap$map,
               controlpoints = drawn$finished,
               nrow = nr,
@@ -748,7 +748,7 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
                 if(input$editdone == TRUE){
                   if(!is.null(editedpoints()$all)){
                     editeshp <- editedpoints()$all |>
-                      sf::st_transform(sf::st_crs(mosaic_data$mosaic)) |>
+                      sf::st_transform(sf::st_crs(mosaic_data$mosaic$data)) |>
                       dplyr::select(geometry)
 
                     shapefile[[input$shapenamebuild]]$data <- editeshp |> check_cols_shpinp()
@@ -869,13 +869,13 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
 
 
         observe({
-          req(input$shapefiletoanalyze)  # Ensure mosaic_data$mosaic is not NULL
+          req(input$shapefiletoanalyze)  # Ensure mosaic_data$mosaic$data is not NULL
 
           updateSelectInput(session, "colorshapeimport", choices = c("none", names(shapefile[[input$shapefiletoanalyze]]$data)))
           updateSelectInput(session, "fillid", choices = c("none", names(shapefile[[input$shapefiletoanalyze]]$data)))
 
-          if(!is.null(mosaic_data$mosaic) & input$shapefiletoanalyze != "none"){
-            if(sf::st_crs(shapefile[[input$shapefiletoanalyze]]$data) != sf::st_crs(mosaic_data$mosaic)){
+          if(!is.null(mosaic_data$mosaic$data) & input$shapefiletoanalyze != "none"){
+            if(sf::st_crs(shapefile[[input$shapefiletoanalyze]]$data) != sf::st_crs(mosaic_data$mosaic$data)){
               sendSweetAlert(
                 session = session,
                 title = "Invalid CRS",
@@ -883,7 +883,7 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
             not match the input mosaic. Trying to set the shapefile's CRS to match the mosaic one.",
                 type = "warning"
               )
-              shp <- shapefile[[input$shapefiletoanalyze]]$data |> sf::st_transform(crs = sf::st_crs(mosaic_data$mosaic))
+              shp <- shapefile[[input$shapefiletoanalyze]]$data |> sf::st_transform(crs = sf::st_crs(mosaic_data$mosaic$data))
               shapefile[[input$shapefiletoanalyze]] <- create_reactval(input$shapefiletoanalyze, shp)
             }
           }
@@ -990,7 +990,7 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
 
                     shapefile[[input$shapefiletoanalyze]]$data <-
                       editedpoints()$all |>
-                      sf::st_transform(crs = sf::st_crs(mosaic_data$mosaic)) |>
+                      sf::st_transform(crs = sf::st_crs(mosaic_data$mosaic$data)) |>
                       dplyr::select(geometry)
                     output$plotshapedone <- renderLeaflet({
                       if(is.null(basemap$map)){
@@ -1031,7 +1031,7 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
       if(is.null(activemosaic$name)){
         mos <- rast(nrows=180, ncols=360, nlyrs=3, crs = "EPSG:3857")
       } else{
-        mos <- mosaic_data$mosaic
+        mos <- mosaic_data$mosaic$data
       }
       distsss <- reactiveValues()
       perim <- reactiveValues()

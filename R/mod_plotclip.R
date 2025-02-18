@@ -152,7 +152,7 @@ mod_plotclip_server <- function(id, mosaic_data, shapefile, r, g, b, basemap, se
 
       updateSelectInput(session, "uniqueid", choices = names(shptocrop))
       if(input$mosaic_to_clip == "Active mosaic"){
-        mosaictocrop <- mosaic_data$mosaic
+        mosaictocrop <- mosaic_data$mosaic$data
         bcrop <- basemap$map
       } else{
         bcrop <-
@@ -174,7 +174,7 @@ mod_plotclip_server <- function(id, mosaic_data, shapefile, r, g, b, basemap, se
 
       # Observe event for mosaic crop action
       observeEvent(input$clipmosaic, {
-        # Update mosaic_data$mosaic when input$cropmosaic is clicked
+        # Update mosaic_data$mosaic$data when input$cropmosaic is clicked
         diroutput <- parseDirPath(volumes, input$folderclip)
         req(diroutput)
         if(diroutput == "character(0)"){

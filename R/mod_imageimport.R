@@ -185,7 +185,7 @@ mod_imageimport_server <- function(id, imgdata, settings){
       })
 
       output$imgplot <- renderPlot({
-        req(imgdata$img)  # Ensure mosaic_data$mosaic is not NULL
+        req(imgdata$img)  # Ensure mosaic_data$mosaic$data is not NULL
         if(inherits(imgdata$img, "integer")){
           image(imgdata$img)
         } else{

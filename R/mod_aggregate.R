@@ -121,7 +121,7 @@ mod_aggregate_server <- function(id, mosaic_data, r, g, b, basemap, settings){
         bcrop2@map
       })
 
-        # Update mosaic_data$mosaic when input$cropmosaic is clicked
+        # Update mosaic_data$mosaic$data when input$cropmosaic is clicked
         mosaic_data[[input$new_aggr]] <- create_reactval(name = input$new_aggr, data = myaggr)
         sendSweetAlert(
           session = session,

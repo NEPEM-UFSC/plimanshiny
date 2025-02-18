@@ -85,7 +85,7 @@ mod_interpolate_server <- function(id, mosaic_data, r, g, b, basemap, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     observe({
-      req(mosaic_data$mosaic)
+      req(mosaic_data$mosaic$data)
       updatePickerInput(session, "mosaictointerpolate", choices = c("Active mosaic", setdiff(names(mosaic_data), "mosaic")), selected = "Active mosaic")
     })
     observeEvent(input$startinterpolating, {

@@ -139,7 +139,7 @@ mod_crop_server <- function(id, mosaic_data, shapefile, r, g, b, basemap, settin
           (bcrop + shapefile_view(shptocrop))@map
         })
 
-        mosaiccr <- terra::crop(mosaic_data$mosaic, terra::ext(shapefile_input(shptocrop, as_sf = FALSE, info = FALSE)))
+        mosaiccr <- terra::crop(mosaic_data$mosaic$data, terra::ext(shapefile_input(shptocrop, as_sf = FALSE, info = FALSE)))
         cropped_mosaic(mosaiccr)
 
       } else{
@@ -170,9 +170,9 @@ mod_crop_server <- function(id, mosaic_data, shapefile, r, g, b, basemap, settin
           if (!is.null(edits()$finished)) {
             grids <-
               edits()$finished |>
-              sf::st_transform(sf::st_crs(mosaic_data$mosaic)) |>
+              sf::st_transform(sf::st_crs(mosaic_data$mosaic$data)) |>
               terra::vect()
-              mosaiccr <- terra::crop(mosaic_data$mosaic, grids |> terra::ext())
+              mosaiccr <- terra::crop(mosaic_data$mosaic$data, grids |> terra::ext())
             if(input$cropormask == "Mask"){
               mosaiccr <- terra::mask(mosaiccr, grids)
             }
@@ -188,7 +188,7 @@ mod_crop_server <- function(id, mosaic_data, shapefile, r, g, b, basemap, settin
 
       # Observe event for mosaic crop action
       observeEvent(input$cropmosaic, {
-        # Update mosaic_data$mosaic when input$cropmosaic is clicked
+        # Update mosaic_data$mosaic$data when input$cropmosaic is clicked
         mosaic_data[[input$new_cropped]] <- create_reactval(name = input$new_cropped, data = cropped_mosaic())
         sendSweetAlert(
           session = session,
