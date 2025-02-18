@@ -185,12 +185,6 @@ mod_histo_slider_ui <- function(id, data, width = "100%", height = "400px", n_bi
 }
 
 #' Histo Slider Server Module
-#'
-#' @param id Module ID.
-#' @param data_reactive A reactive expression that returns a numeric vector for the histogram.
-#'
-#' @return A reactive expression with the current slider range (a list with elements `min` and `max`).
-#' @export
 mod_histo_slider_server <- function(id, data_reactive) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns

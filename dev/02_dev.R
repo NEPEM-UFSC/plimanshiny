@@ -73,6 +73,7 @@ golem::add_module(name = "shapefilenative")
 golem::add_module(name = "georeference")
 golem::add_module(name = "compslider")
 golem::add_module(name = "hyperspectral")
+golem::add_module(name = "classify")
 
 ## Add packages
 usethis::use_package("shiny")

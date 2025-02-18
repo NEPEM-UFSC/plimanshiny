@@ -559,7 +559,7 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
       }
     })
 
-    mod_download_mosaic_server("downloadmosaic", mosaic_data[[input$mosaictoanalyze]]$data)
+    mod_download_mosaic_server("downloadmosaic", mosaic_data[["mosaic"]]$data)
   })
 }
 

@@ -59,7 +59,10 @@ mod_download_mosaic_server <- function(id, data, name = "mosaic", settings) {
             } else{
               dty <- input$datatype
             }
-            mosaic_export(data, file, datatype = dty)
+            export <- try(mosaic_export(data, file, datatype = dty))
+            if(inherits(export, "try-error")){
+              terra::writeRaster(data, file)
+            }
           }
         }
       )

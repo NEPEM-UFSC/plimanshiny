@@ -116,6 +116,12 @@ app_server <- function(input, output, session) {
       mod_hyperspectral_server("hyperspectral_1",  mosaic_data, r, g, b, maxpixel,  basemap, dfs)
     }
 
+    # Classify mosaics
+    if(input$tabshome == "mosaicclassify" && is.null(module_loaded$mosaicclassify)){
+      module_loaded$mosaicclassify <- TRUE
+      mod_classify_server("classify_1", mosaic_data, index, dfs)
+    }
+
     # Plant Measures
     if(input$tabshome == "phanalyze" && is.null(module_loaded$phanalyze)){
       module_loaded$phanalyze <- TRUE

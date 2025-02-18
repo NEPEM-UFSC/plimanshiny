@@ -6,14 +6,6 @@
 \usage{
 mod_histo_slider_server(id, data_reactive)
 }
-\arguments{
-\item{id}{Module ID.}
-
-\item{data_reactive}{A reactive expression that returns a numeric vector for the histogram.}
-}
-\value{
-A reactive expression with the current slider range (a list with elements `min` and `max`).
-}
 \description{
 Histo Slider Server Module
 }
