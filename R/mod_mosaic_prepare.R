@@ -238,7 +238,7 @@ mod_mosaic_prepare_ui <- function(id){
           hl(),
           prettyCheckbox(
             inputId = ns("intmap"),
-            label = "Create leaflet map?",
+            label = "Create leaflet map (needed for 'Analyze' step)",
             value = FALSE,
             icon = icon("check"),
             status = "success",
