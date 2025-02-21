@@ -110,7 +110,7 @@ mod_config_ui <- function(id){
                     deps = "leafem",
                     ns = ns),
       enable_module(mod_id = "shapefileleaflet",
-                    mod_name = "Build shapefile using leaflet rendering.",
+                    mod_name = "Build shapefile using leaflet rendering",
                     description = "Enables shapefile creation using Leaflet's rendering tools. When disabled, the shapefile will be generated through a native approach, utilizing rectangle drawings to perform zoom-in operations.",
                     deps = "base64enc",
                     ns = ns),

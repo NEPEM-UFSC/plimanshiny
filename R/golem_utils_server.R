@@ -585,7 +585,7 @@ check_and_install_dependencies <- function(pkg_list, ns, input, inputId_check) {
 enable_module <- function(mod_id, mod_name, description, deps, ns) {
   # Create a fluid row with module switch, description, and dependencies
   fluidRow(
-    col_2(
+    col_3(
       prettySwitch(
         inputId = ns(mod_id),
         label = mod_name,
@@ -596,7 +596,7 @@ enable_module <- function(mod_id, mod_name, description, deps, ns) {
     col_5(
       description  # Display the module description
     ),
-    col_3(
+    col_2(
       paste(paste(deps, collapse = ", "))  # Display the dependencies
     ),
     col_2(

@@ -58,7 +58,7 @@ mod_shapefilenative_ui <- function(id) {
                             swatches = scales::viridis_pal()(10),
                             theme = "monolith",
                             useAsButton = TRUE,
-                            selected = "darkred",
+                            selected = "#8B000000",
                             opacity = TRUE
                           )
                         )
@@ -120,7 +120,7 @@ mod_shapefilenative_ui <- function(id) {
               condition = "input.shapetype == 'Build'", ns = ns,
               textInput(ns("shapenamebuild"),
                         label = "Shapefile Name",
-                        value = "Shapefile Build"),
+                        value = "field_shape"),
               hl(),
               fluidRow(
                 col_4(
@@ -695,10 +695,8 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
                   if (input$showplotid) {
                     centrs <- suppressWarnings(
-                      sf::st_centroid(shapefile[[input$shapefiletoanalyze]]$data) |>
-                        sf::st_coordinates()
+                      suppressMessages(suppressWarnings(sf::st_centroid(shapefile[[input$shapefiletoanalyze]]$data) |> sf::st_coordinates()))
                     )
-
                     text(
                       x = centrs[, 1],
                       y = centrs[, 2],
