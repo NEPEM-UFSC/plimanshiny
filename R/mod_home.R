@@ -151,7 +151,7 @@ mod_home_ui <- function(id){
         tags$script(HTML("
     const fetchCurrentVersion = async () => {
       try {
-        const response = await fetch('/myjson/version.json');  // Adjust path to match resource path
+        const response = await fetch('/myjson/version.json');
         const data = await response.json();
         return data.version;
       } catch (error) {
@@ -175,11 +175,41 @@ mod_home_ui <- function(id){
     const updateIcon = (iconClass) => {
       const iconElement = document.getElementById('example-icon');
       if (iconElement) {
-        iconElement.className = iconClass;  // Update icon class
+        iconElement.className = iconClass;
       } else {
         console.error('Icon element not found');
       }
     };
+
+    // Function to copy text to clipboard
+    const copyToClipboard = (text) => {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(() => {
+          alert('GitHub installation command copied to clipboard!');
+        }).catch(err => {
+          console.error('Error copying text via clipboard API:', err);
+        });
+      } else {
+        // Fallback method for older browsers
+        const tempInput = document.createElement('textarea');
+        tempInput.value = text;
+        document.body.appendChild(tempInput);
+        tempInput.select();
+        try {
+          document.execCommand('copy');
+          alert('GitHub installation command copied to clipboard!');
+        } catch (err) {
+          console.error('Error copying text via execCommand:', err);
+        }
+        document.body.removeChild(tempInput);
+      }
+    };
+
+    // Attach event listener for dynamically generated copy button
+    $(document).on('click', '#copy-button', function() {
+      const textToCopy = document.getElementById('install-command').textContent;
+      copyToClipboard(textToCopy);
+    });
 
     const CheckUpdates = async (is_start) => {
       try {
@@ -189,62 +219,59 @@ mod_home_ui <- function(id){
         console.log('Current version:', currentVersion);
         let message = '';
         let iconClass = '';
-      if (is_start) {
 
-        if (latestVersion && currentVersion) {
-          if (latestVersion != currentVersion) {
-              message = `The application is outdated. You have version '${currentVersion}', but version '${latestVersion}' is now available. Use the package {pak} to install the latest version from GitHub:<p/><p/>pak::pkg_install(\"NEPEM-UFSC/plimanshiny\")`;
-            iconClass = 'fas fa-exclamation-triangle text-warning';  // Yellow warning icon for outdated
-                    // Update the popup modal with the message
-        document.getElementById('example-popupMessage').innerHTML = message;
-        // Update the icon
-        updateIcon(iconClass);
-        // Show the modal
-        $('#example-messageModal').modal('show');
-          }
-        }
+        if (is_start) {
+          if (latestVersion && currentVersion && latestVersion != currentVersion) {
+            message = `The application is outdated. You have version '${currentVersion}', but version '${latestVersion}' is now available.<br/><br/>
+                       Use the package {pak} to install the latest version from GitHub:<br/>
+                       <code id='install-command'>pak::pkg_install(\"NEPEM-UFSC/plimanshiny\")</code>
+                       <button id='copy-button' class='btn btn-sm btn-primary'>Copy</button>`;
+            iconClass = 'fas fa-exclamation-triangle text-warning';
 
-      } else{
-        if (latestVersion && currentVersion) {
-          if (latestVersion === currentVersion) {
-              message = 'Congratulations! You are using the latest version of plimanshiny!';
-              iconClass = 'fas fa-check-circle text-success';  // Green checkmark icon for up-to-date
-          } else {
-            message = `The application is outdated. You have version '${currentVersion}', but version '${latestVersion}' is now available. Use the package {pak} to install the latest version from GitHub:<p/><p/>pak::pkg_install(\"NEPEM-UFSC/plimanshiny\")`;
-            iconClass = 'fas fa-exclamation-triangle text-warning';  // Yellow warning icon for outdated
+            document.getElementById('example-popupMessage').innerHTML = message;
+            updateIcon(iconClass);
+            $('#example-messageModal').modal('show');
           }
         } else {
-          message = 'Error while checking for updates';
-          iconClass = 'fas fa-times-circle text-danger';  // Red error icon for errors
+          if (latestVersion && currentVersion) {
+            if (latestVersion === currentVersion) {
+              message = 'Congratulations! You are using the latest version of plimanshiny!';
+              iconClass = 'fas fa-check-circle text-success';
+            } else {
+              message = `The application is outdated. You have version '${currentVersion}', but version '${latestVersion}' is now available.<br/><br/>
+                         Use the package {pak} to install the latest version from GitHub:<br/>
+                         <code id='install-command'>pak::pkg_install(\"NEPEM-UFSC/plimanshiny\")</code>
+                         <button id='copy-button' class='btn btn-sm btn-primary'>Copy</button>`;
+              iconClass = 'fas fa-exclamation-triangle text-warning';
+            }
+          } else {
+            message = 'Error while checking for updates';
+            iconClass = 'fas fa-times-circle text-danger';
+          }
+
+          document.getElementById('example-popupMessage').innerHTML = message;
+          updateIcon(iconClass);
+          $('#example-messageModal').modal('show');
         }
-
-        // Update the popup modal with the message
-        document.getElementById('example-popupMessage').innerHTML = message;
-        // Update the icon
-        updateIcon(iconClass);
-        // Show the modal
-        $('#example-messageModal').modal('show');
-
-       }
       } catch (error) {
         console.error('Error checking for updates:', error);
-        let errorMessage = 'Error while checking for updates';
-        document.getElementById('example-popupMessage').innerHTML = errorMessage;
-        updateIcon('fas fa-times-circle text-danger');  // Red error icon for errors
+        document.getElementById('example-popupMessage').innerHTML = 'Error while checking for updates';
+        updateIcon('fas fa-times-circle text-danger');
         $('#example-messageModal').modal('show');
       }
     };
 
-    // Attach the CheckUpdates function to the button click event
     $(document).on('click', '#example-checkupdate', function() {
       CheckUpdates();
     });
-        // Automatically check for updates when the page loads
+
     document.addEventListener('DOMContentLoaded', function() {
-    const is_start = true;
-      CheckUpdates(is_start);
+      CheckUpdates(true);
     });
 "))
+
+
+
 
 
       )

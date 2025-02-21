@@ -1,5 +1,5 @@
 # .rs.restartR()
-usethis::use_version()
+# usethis::use_version()
 # usethis::use_github_release()
 setwd("D:/Desktop/plimanshiny")
 # Set options here
