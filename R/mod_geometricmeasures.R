@@ -78,10 +78,7 @@ mod_geometricmeasures_server <- function(id, shapefile, settings){
 
     observe({
       req(dfactive$df)
-      coords <-
-        dfactive$df |>
-        sf::st_centroid() |>
-        sf::st_coordinates()
+      coords <- suppressMessages(suppressWarnings(dfactive$df |> sf::st_centroid() |> sf::st_coordinates()))
 
       shp <-
         dfactive$df |>

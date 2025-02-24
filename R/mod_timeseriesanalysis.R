@@ -316,7 +316,7 @@ mod_timeseriesanalysis_ui <- function(id){
                         label = "Attribute",
                         choices = NULL),
             hl(),
-            pickerpalette(id, "palplot", selected = "RdYlGn"),
+            pickerpalette(id, "palplot", selected = "set2"),
             prettyCheckbox(
               inputId = ns("palplotrev"),
               label = "Reverse",

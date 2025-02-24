@@ -264,7 +264,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
                             choices = NULL)
               ),
               col_3(
-                pickerpalette(id, "palplot", selected = "RdYlGn"),
+                pickerpalette(id, "palplot", selected = "set2"),
 
               ),
               col_2(
@@ -359,7 +359,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
                             choices = NULL)
               ),
               col_3(
-                pickerpalette(id, "palplot", selected = "RdYlGn"),
+                pickerpalette(id, "palplot", selected = "set2"),
 
               ),
               col_2(

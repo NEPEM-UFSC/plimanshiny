@@ -335,7 +335,7 @@ mod_analyze_ui <- function(id){
                          selectInput(ns("plotattribute"),
                                      label = "Plot attribute",
                                      choices = NULL),
-                         pickerpalette(id, "palplot", selected = "RdYlGn"),
+                         pickerpalette(id, "palplot", selected = "set2"),
                          prettyCheckbox(
                            inputId = ns("palplotrev"),
                            label = "Reverse",

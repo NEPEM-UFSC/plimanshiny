@@ -66,7 +66,7 @@ mod_shapefile_prepare_ui <- function(id){
                       choices = c("none", "unique_id", "block", "plot_id"),
                       selected = "none",
                     ),
-                    pickerpalette(id, "palplot", selected = "RdYlGn"),
+                    pickerpalette(id, "palplot", selected = "set2"),
                     sliderInput(ns("ncolors"),
                                 label = "Number of colors",
                                 min = 0,

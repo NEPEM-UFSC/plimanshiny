@@ -5,12 +5,22 @@ mod_slider_zoom_ui <- function(id) {
   )
 }
 
-mod_slider_zoom_server <- function(id, img1,name1, rgb1, r1, g1, b1, zlim1, img2, name2, rgb2, r2, g2, b2, zlim2, isrec = FALSE) {
+mod_slider_zoom_server <- function(id, img1,name1, rgb1, r1, g1, b1, zlim1, img2, name2, rgb2, r2, g2, b2, zlim2, isrec = FALSE, rev1, rev2) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     reactive_values <- reactiveValues(drawn_rectangle = NULL, canvas_size = NULL)
 
     output$slider <- renderUI({
+      if(rev1){
+        pal1 <- pliman::custom_palette(c("darkgreen",  "yellow", "darkred"), n = 100)
+      } else{
+        pal1 <- pliman::custom_palette(c("darkred",  "yellow", "darkgreen"), n = 100)
+      }
+      if(rev2){
+        pal2 <- pliman::custom_palette(c("darkgreen",  "yellow", "darkred"), n = 100)
+      } else{
+        pal2 <- pliman::custom_palette(c("darkred",  "yellow", "darkgreen"), n = 100)
+      }
 
       if(!is.character(img1)){
         req(img1)
@@ -23,23 +33,30 @@ mod_slider_zoom_server <- function(id, img1,name1, rgb1, r1, g1, b1, zlim1, img2
         # tfbef <- file.path(tempdir(), "beforeimg.png")
         tfbef <- paste0(system.file("app", package = "plimanshiny" ), "/www/beforeimg.png")
 
-        png(tfbef, width = dims[1], height = dims[2])
-        stretch1 <- if(is.null(zlim1)){NULL} else {"lin"}
-        if (rgb1) {
-          plotRGB(img1,
-                  r = r1,
-                  g = g1,
-                  b = b1,
-                  zlim = zlim1,
-                  stretch = stretch1)
-        } else {
-          plot(img1,
-               col = pliman::custom_palette(c("darkred",  "yellow", "darkgreen"), n = 100),
-               maxcell = 1e6,
-               mar = 0,
-               smooth = TRUE)
-        }
-        dev.off()
+        tryCatch({
+          png(tfbef, width = dims[1], height = dims[2])
+          stretch1 <- if (is.null(zlim1)) { NULL } else { "lin" }
+
+          if (rgb1) {
+            plotRGB(img1,
+                    r = r1,
+                    g = g1,
+                    b = b1,
+                    zlim = zlim1,
+                    stretch = stretch1)
+          } else {
+            plot(img1,
+                 col = pal1,
+                 maxcell = 1e6,
+                 mar = 0,
+                 smooth = TRUE)
+          }
+        }, error = function(e) {
+          message("Error during plotting: ", e$message)
+        }, finally = {
+          dev.off()
+        })
+
         if(!isrec){
           file.copy(from = tfbef, to = paste0(system.file("app", package = "plimanshiny" ), "/www/bef_cache.png"),
                     overwrite = TRUE)
@@ -49,23 +66,30 @@ mod_slider_zoom_server <- function(id, img1,name1, rgb1, r1, g1, b1, zlim1, img2
 
         # tfaft <- file.path(tempdir(), "afterimg.png")
         tfaft <- paste0(system.file("app", package = "plimanshiny" ), "/www/afterimg.png")
-        png(tfaft, width = dims[1], height = dims[2])
-        stretch2 <- if(is.null(zlim2)){NULL} else {"lin"}
-        if (rgb2) {
-          plotRGB(img2,
-                  r = r2,
-                  g = g2,
-                  b = b2,
-                  zlim = zlim2,
-                  stretch = stretch2)
-        } else {
-          plot(img2,
-               col = pliman::custom_palette(c("darkred",  "yellow", "darkgreen"), n = 100),
-               maxcell = 1e6,
-               mar = 0,
-               smooth = TRUE)
-        }
-        dev.off()
+        tryCatch({
+          png(tfaft, width = dims[1], height = dims[2])
+          stretch2 <- if (is.null(zlim2)) { NULL } else { "lin" }
+
+          if (rgb2) {
+            plotRGB(img2,
+                    r = r2,
+                    g = g2,
+                    b = b2,
+                    zlim = zlim2,
+                    stretch = stretch2)
+          } else {
+            plot(img2,
+                 col = pal2,
+                 maxcell = 1e6,
+                 mar = 0,
+                 smooth = TRUE)
+          }
+        }, error = function(e) {
+          message("Error during plotting: ", e$message)
+        }, finally = {
+          dev.off()
+        })
+
         if(!isrec){
           file.copy(from = tfaft, to = paste0(system.file("app", package = "plimanshiny" ), "/www/aft_cache.png"),
                     overwrite = TRUE)

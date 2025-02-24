@@ -147,7 +147,7 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
                             choices = NULL)
               ),
               col_3(
-                pickerpalette(id, "palplot", selected = "RdYlGn"),
+                pickerpalette(id, "palplot", selected = "set2"),
               ),
               col_1(
                 prettyCheckbox(
@@ -250,7 +250,7 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
                             choices = NULL)
               ),
               col_3(
-                pickerpalette(id, "palplot", selected = "RdYlGn"),
+                pickerpalette(id, "palplot", selected = "set2"),
               ),
               col_1(
                 prettyCheckbox(
@@ -373,7 +373,7 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
                             choices = NULL)
               ),
               col_3(
-                pickerpalette(id, "palplot", selected = "RdYlGn"),
+                pickerpalette(id, "palplot", selected = "set2"),
               ),
               col_1(
                 prettyCheckbox(

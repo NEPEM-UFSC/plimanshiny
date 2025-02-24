@@ -62,7 +62,12 @@ mod_compslider_ui <- function(id) {
             ),
             conditionalPanel(
               condition = "input.rgb1 == false", ns = ns,
-              pickerInput(ns("layer1"), "Layer to plot", choices = NULL)
+              pickerInput(ns("layer1"), "Layer to plot", choices = NULL),
+              prettyCheckbox(
+                inputId = ns("revcolor1"),
+                label = "Reverse color scale",
+                value = FALSE
+              )
             ),
             br(),
             hl(),
@@ -105,7 +110,12 @@ mod_compslider_ui <- function(id) {
             ),
             conditionalPanel(
               condition = "input.rgb2 == false", ns = ns,
-              pickerInput(ns("layer2"), "Layer to plot", choices = NULL)
+              pickerInput(ns("layer2"), "Layer to plot", choices = NULL),
+              prettyCheckbox(
+                inputId = ns("revcolor2"),
+                label = "Reverse color scale",
+                value = FALSE
+              )
             ),
             br(),
             hl(),
@@ -253,6 +263,8 @@ mod_compslider_server <- function(id, mosaic_data, index) {
         invisible(input$b2)
         invisible(input$minmaximg1)
         invisible(input$minmaximg2)
+        invisible(input$revcolor1)
+        invisible(input$revcolor2)
         req(input$beforeimg, input$afterimg)
         servervals <- mod_slider_zoom_server("sliderui",
                                              img1 = imgleft(),
@@ -268,7 +280,9 @@ mod_compslider_server <- function(id, mosaic_data, index) {
                                              r2 = as.numeric(input$r2),
                                              g2 = as.numeric(input$g2),
                                              b2 = as.numeric(input$b2),
-                                             zlim2 = zlim2())
+                                             zlim2 = zlim2(),
+                                             rev1 = input$revcolor1,
+                                             rev2 = input$revcolor2)
         observeEvent(servervals()$drawn_rectangle, {
           rect <- servervals()$drawn_rectangle
           req(rect$startX)
@@ -290,7 +304,9 @@ mod_compslider_server <- function(id, mosaic_data, index) {
                                    r2 = as.numeric(input$r2),
                                    g2 = as.numeric(input$g2),
                                    b2 = as.numeric(input$b2),
-                                   zlim2 =  zlim2())
+                                   zlim2 = zlim2(),
+                                   rev1 = input$revcolor1,
+                                   rev2 = input$revcolor2)
           } else{
             xmin_val <- terra::xmin(imgleft())
             xmax_val <- terra::xmax(imgleft())
@@ -321,7 +337,9 @@ mod_compslider_server <- function(id, mosaic_data, index) {
                                    r2 = as.numeric(input$r2),
                                    g2 = as.numeric(input$g2),
                                    b2 = as.numeric(input$b2),
-                                   zlim2 =  zlim2(),
+                                   zlim2 = zlim2(),
+                                   rev1 = input$revcolor1,
+                                   rev2 = input$revcolor2,
                                    isrec = TRUE)
           }
         })

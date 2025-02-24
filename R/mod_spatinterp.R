@@ -125,7 +125,7 @@ mod_spatinterp_ui <- function(id){
             "Points",
             fluidRow(
               col_10(
-                pickerpalette(id, "colorpalette2", selected = "RdYlGn"),
+                pickerpalette(id, "colorpalette2", selected = "set2"),
               ),
               col_2(
                 prettyCheckbox(
@@ -151,7 +151,7 @@ mod_spatinterp_ui <- function(id){
                 )
               ),
               col_6(
-                pickerpalette(id, "colorpalette", selected = "RdYlGn"),
+                pickerpalette(id, "colorpalette", selected = "set2"),
               ),
               col_2(
                 prettyCheckbox(

@@ -767,7 +767,7 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
             geometry = lapply(res$contours, function(x) {
               tmp <- x
               tmp[, 2] <- ncol(imgdata$img) - tmp[, 2]
-              sf::st_polygon(list(as.matrix(tmp |> poly_close())))
+              sf::st_polygon(list(as.matrix(tmp |> poly_smooth(plot = FALSE, niter = 5) |> poly_close())))
             }),
             data = data.frame(get_measures(res, dpi = parms()$dpi)),
             crs = sf::st_crs("EPSG:3857")

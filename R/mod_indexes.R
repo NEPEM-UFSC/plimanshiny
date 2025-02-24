@@ -174,7 +174,7 @@ mod_indexes_ui <- function(id){
                 )
               ),
               col_6(
-                pickerpalette(id, "palplotindex", selected = "RdYlGn"),
+                pickerpalette(id, "palplotindex", selected = "set2"),
               ),
               col_2(
                 prettyCheckbox(
@@ -222,7 +222,7 @@ mod_indexes_ui <- function(id){
             title = "Plot Index (shapefile)",
             fluidRow(
               col_10(
-                pickerpalette(id, "palplotindex", selected = "RdYlGn"),
+                pickerpalette(id, "palplotindex", selected = "set2"),
               ),
               col_2(
                 prettyCheckbox(
@@ -823,7 +823,7 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
                   )
                 ),
                 col_4(
-                  pickerpalette(id, "plaindex", selected = "RdYlGn"),
+                  pickerpalette(id, "plaindex", selected = "set2"),
                 ),
                 col_1(
                   prettyCheckbox(

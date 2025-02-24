@@ -172,7 +172,7 @@ mod_shapefilenative_ui <- function(id) {
                   conditionalPanel(
                     condition = "input['config_1-plotinfo'] === true",
                     actionBttn(
-                      ns("plotinfo"),
+                      ns("plotinfonat"),
                       label = "Plot info",
                       icon = icon("info"),
                       color = "success",
@@ -303,7 +303,7 @@ mod_shapefilenative_ui <- function(id) {
               conditionalPanel(
                 condition = "input['config_1-plotinfo'] === true",
                 actionBttn(
-                  ns("plotinfo2"),
+                  ns("plotinfo2nat"),
                   label = "Plot info",
                   icon = icon("info"),
                   color = "success",
@@ -1442,7 +1442,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
 
     ############################################# PLOT INFO ##########################################################
-    observeEvent(c(input$plotinfo, input$plotinfo2), {
+    observeEvent(c(input$plotinfonat, input$plotinfo2nat), {
       mos <- mosaitoshape()
       distsss <- reactiveValues()
       perim <- reactiveValues()
@@ -1450,7 +1450,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
       wid <- reactiveValues()
       hei <- reactiveValues()
       req(shapefile$shapefileplot)
-      if(input$plotinfo | input$plotinfo2){
+      if(input$plotinfonat | input$plotinfo2nat){
         updateSelectizeInput(session, "uniqueidinfo",
                              choices = 1:nrow(shapefile$shapefileplot),
                              server = TRUE)
