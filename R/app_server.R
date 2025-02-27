@@ -107,7 +107,7 @@ app_server <- function(input, output, session) {
     # Analysis of Mosaic
     if(input$tabshome == "mosaicanalyze" && is.null(module_loaded$mosaicanalyze)){
       module_loaded$mosaicanalyze <- TRUE
-      mod_analyze_server("analyze_1", mosaic_data, basemap, shapefile, index, pathmosaic, dfs, settings)
+      mod_analyze_server("analyze_1", mosaic_data, basemap, shapefile, index, pathmosaic, dfs, settings, r, g, b)
     }
 
     # Hyperspectral signature

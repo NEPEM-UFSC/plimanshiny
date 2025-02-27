@@ -411,7 +411,7 @@ mod_analyze_ui <- function(id){
 #' analyze Server Functions
 #'
 #' @noRd
-mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathmosaic, dfs, settings){
+mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathmosaic, dfs, settings, r, g, b){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
 
@@ -852,13 +852,32 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
 
     # Analyze
     observeEvent(input$analyzemosaic, {
-      if(c(!input$byplot & is.null(index[[input$activeindex]]$data)) | is.null(mosaic_data$mosaic$data) | is.null(basemap$map) | is.null(shapefile[[input$activeshape]]$data)){
+      if(c(!input$byplot & is.null(index[[input$activeindex]]$data)) | is.null(mosaic_data$mosaic$data) | is.null(shapefile[[input$activeshape]]$data)){
         sendSweetAlert(
           session = session,
           title = "Did you skip any steps?",
           text = "To analyze the mosaic, ensure that mosaic, index, basemap (leaflet), and shapefile have been correctly computed.",
           type = "error"
         )
+      }
+      # generate a basemap if not available
+      if(is.null(basemap$map)){
+        waiter_show(
+          html = tagList(
+            spin_google(),
+            h2("Building the basemap. Please, wait.")
+          ),
+          color = "#228B227F"
+        )
+        basemap$map <-
+          mosaic_view(
+            mosaic_data$mosaic$data,
+            r = suppressWarnings(as.numeric(r$r)),
+            g = suppressWarnings(as.numeric(g$g)),
+            b = suppressWarnings(as.numeric(b$b))
+          )
+        req(basemap$map)
+        waiter_hide()
       }
 
       t1 <- !is.na(input$lower_size) & !is.na(input$topn_lower)

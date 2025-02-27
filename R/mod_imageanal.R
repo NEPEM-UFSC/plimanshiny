@@ -391,6 +391,14 @@ mod_imageanal_ui <- function(id){
                     animation = "rotate"
                   ),
                   prettyCheckbox(
+                    inputId = ns("showbbox"),
+                    label = "Bounding box",
+                    value = FALSE,
+                    icon = icon("check"),
+                    status = "success",
+                    animation = "rotate"
+                  ),
+                  prettyCheckbox(
                     inputId = ns("showlw"),
                     label = "Length/Width",
                     value = FALSE,
@@ -735,6 +743,7 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
                           dir_processed = input$outdir,
                           marker = marker,
                           show_contour = input$showcontour,
+                          show_bbox = input$showbbox,
                           show_chull = input$showchull,
                           show_segmentation = input$showsegment,
                           show_lw = input$showlw,
@@ -923,6 +932,7 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
                             dir_original = input$indir,
                             marker = marker,
                             show_contour = input$showcontour,
+                            show_bbox = input$showbbox,
                             show_chull = input$showchull,
                             show_segmentation = input$showsegment,
                             show_lw = input$showlw,
@@ -1201,7 +1211,7 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
 
 
         ressumm <- rescor$summary
-        ressumm$img <- gsub("img", "", ressumm$img)
+        # ressumm$img <- gsub("img", "", ressumm$img)
         dfs[["raw_results_image_analysis"]] <- create_reactval("raw_results_image_analysis", rescor$results)
         dfs[["summary_results_image_analysis"]] <- create_reactval("summary_results_image_analysis", ressumm)
 

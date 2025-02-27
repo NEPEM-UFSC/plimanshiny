@@ -96,7 +96,7 @@ app_ui <- function(request) {
               icon = shiny::icon("list-ol", verify_fa = FALSE)
             ),
             bs4SidebarMenuSubItem(
-              text = "Boxplot",
+              text = "Vizualize",
               tabName = "boxplot",
               icon = shiny::icon("chart-simple", verify_fa = FALSE)
             )
