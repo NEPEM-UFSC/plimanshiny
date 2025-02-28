@@ -22,292 +22,300 @@ mod_shapefilenative_ui <- function(id) {
           type = "tabs",
           tabPanel(
             title = "Plots",
-            fluidRow(
-              col_6(
-                prettyRadioButtons(
-                  inputId = ns("shapetype"),
-                  label = "I want to...",
-                  choices = c("Build", "Import"),
-                  icon = icon("check"),
-                  bigger = TRUE,
-                  status = "info",
-                  animation = "jelly"
-                )
-              ),
-              col_6(
-                fluidRow(
-                  col_4(
-                    br(),
-                    dropdown(
-                      fluidRow(
-                        col_6(
-                          colorPickr(
-                            inputId = ns("colorfill"),
-                            label = "Fill color",
-                            swatches = scales::viridis_pal()(10),
-                            theme = "monolith",
-                            useAsButton = TRUE,
-                            selected = "#0361FC80",
-                            opacity = TRUE
-                          )
-                        ),
-                        col_6(
-                          colorPickr(
-                            inputId = ns("colorstroke"),
-                            label = "Stroke color",
-                            swatches = scales::viridis_pal()(10),
-                            theme = "monolith",
-                            useAsButton = TRUE,
-                            selected = "#8B000000",
-                            opacity = TRUE
-                          )
-                        )
-                      ),
-                      selectInput(
-                        ns("fillid"),
-                        label = "Fill color",
-                        choices = c("none", "unique_id", "block", "plot_id"),
-                        selected = "none",
-                      ),
-                      sliderInput(ns("lwdt"),
-                                  label = "Line width",
-                                  min = 0,
-                                  max = 5,
-                                  value = 2),
-                      sliderInput(ns("alpha"),
-                                  label = "Color opacity",
-                                  min = 0,
-                                  max = 1,
-                                  value = 1),
-                      style = "unite",
-                      icon = icon("gear"),
-                      status = "success",
-                      width = "360px",
-                      animate = animateOptions(enter = "fadeInLeft", exit = "fadeOutRight", duration = 1),
-                      tooltip = tooltipOptions(title = "Settings")
-                    )
-                  ),
-                  col_8(
-                    conditionalPanel(
-                      condition = "input.shapetype == 'Build'", ns = ns,
-                      br(),
-                      actionButton(
-                        inputId = ns("guideshape"),
-                        label = tagList(
-                          icon = icon("question-circle", verify_fa = FALSE), "Guide"
-                        ),
-                        style = "color: white ; background-color: #dd4b39",
-                        class = "btn-danger"
-                      )
-                    ),
-                    conditionalPanel(
-                      condition = "input.shapetype == 'Import'", ns = ns,
-                      br(),
-                      actionButton(
-                        inputId = ns("guideshapeimput"),
-                        label = tagList(
-                          icon = icon("question-circle", verify_fa = FALSE), "Guide"
-                        ),
-                        style = "color: white ; background-color: #dd4b39",
-                        class = "btn-danger"
-                      )
-                    )
-                  )
-                )
-              )
+            awesomeRadio(
+              inputId = ns("inputshptypenat"),
+              label = "Entry method",
+              choices = c("load shapefile", "example shapefile"),
+              selected = "load shapefile",
+              status = "success",
+              inline = TRUE
             ),
             conditionalPanel(
-              condition = "input.shapetype == 'Build'", ns = ns,
-              textInput(ns("shapenamebuild"),
-                        label = "Shapefile Name",
-                        value = "field_shape"),
-              hl(),
+              condition = "input.inputshptypenat == 'load shapefile'", ns = ns,
               fluidRow(
-                col_4(
-                  selectInput(
-                    ns("plotlayout"),
-                    label = "Layout",
-                    choices = c("tblr", "tbrl", "btlr", "btrl", "lrtb", "lrbt", "rltb", "rlbt"),
-                    selected = "lrtb",
+                col_6(
+                  prettyRadioButtons(
+                    inputId = ns("shapetype"),
+                    label = "I want to...",
+                    choices = c("Build", "Import"),
+                    icon = icon("check"),
+                    bigger = TRUE,
+                    status = "info",
+                    animation = "jelly"
                   )
                 ),
-                col_4(
-                  prettyCheckbox(
-                    inputId = ns("serpentine"),
-                    label = "Serpentine?",
-                    value = TRUE,
-                    status = "info",
-                    icon = icon("thumbs-up"),
-                    plain = TRUE,
-                    outline = TRUE,
-                    animation = "rotate"
-                  )
-                ),
-                col_4(
-                  prettyCheckbox(
-                    inputId = ns("buildblocks"),
-                    label = "Blocks?",
-                    value = FALSE,
-                    status = "info",
-                    icon = icon("thumbs-up"),
-                    plain = TRUE,
-                    outline = TRUE,
-                    animation = "rotate"
+                col_6(
+                  fluidRow(
+                    col_4(
+                      br(),
+                      dropdown(
+                        fluidRow(
+                          col_6(
+                            colorPickr(
+                              inputId = ns("colorfill"),
+                              label = "Fill color",
+                              swatches = scales::viridis_pal()(10),
+                              theme = "monolith",
+                              useAsButton = TRUE,
+                              selected = "#0361FC80",
+                              opacity = TRUE
+                            )
+                          ),
+                          col_6(
+                            colorPickr(
+                              inputId = ns("colorstroke"),
+                              label = "Stroke color",
+                              swatches = scales::viridis_pal()(10),
+                              theme = "monolith",
+                              useAsButton = TRUE,
+                              selected = "#8B000000",
+                              opacity = TRUE
+                            )
+                          )
+                        ),
+                        selectInput(
+                          ns("fillid"),
+                          label = "Fill color",
+                          choices = c("none", "unique_id", "block", "plot_id"),
+                          selected = "none",
+                        ),
+                        sliderInput(ns("lwdt"),
+                                    label = "Line width",
+                                    min = 0,
+                                    max = 5,
+                                    value = 2),
+                        sliderInput(ns("alpha"),
+                                    label = "Color opacity",
+                                    min = 0,
+                                    max = 1,
+                                    value = 1),
+                        style = "unite",
+                        icon = icon("gear"),
+                        status = "success",
+                        width = "360px",
+                        animate = animateOptions(enter = "fadeInLeft", exit = "fadeOutRight", duration = 1),
+                        tooltip = tooltipOptions(title = "Settings")
+                      )
+                    ),
+                    col_8(
+                      conditionalPanel(
+                        condition = "input.shapetype == 'Build'", ns = ns,
+                        br(),
+                        actionButton(
+                          inputId = ns("guideshape"),
+                          label = tagList(
+                            icon = icon("question-circle", verify_fa = FALSE), "Guide"
+                          ),
+                          style = "color: white ; background-color: #dd4b39",
+                          class = "btn-danger"
+                        )
+                      ),
+                      conditionalPanel(
+                        condition = "input.shapetype == 'Import'", ns = ns,
+                        br(),
+                        actionButton(
+                          inputId = ns("guideshapeimput"),
+                          label = tagList(
+                            icon = icon("question-circle", verify_fa = FALSE), "Guide"
+                          ),
+                          style = "color: white ; background-color: #dd4b39",
+                          class = "btn-danger"
+                        )
+                      )
+                    )
                   )
                 )
               ),
-              hl(),
-              fluidRow(
-                style = "margin-top: -10px;",
-                col_7(
+              conditionalPanel(
+                condition = "input.shapetype == 'Build'", ns = ns,
+                textInput(ns("shapenamebuild"),
+                          label = "Shapefile Name",
+                          value = "field_shape"),
+                hl(),
+                fluidRow(
+                  col_4(
+                    selectInput(
+                      ns("plotlayout"),
+                      label = "Layout",
+                      choices = c("tblr", "tbrl", "btlr", "btrl", "lrtb", "lrbt", "rltb", "rlbt"),
+                      selected = "lrtb",
+                    )
+                  ),
+                  col_4(
+                    prettyCheckbox(
+                      inputId = ns("serpentine"),
+                      label = "Serpentine?",
+                      value = TRUE,
+                      status = "info",
+                      icon = icon("thumbs-up"),
+                      plain = TRUE,
+                      outline = TRUE,
+                      animation = "rotate"
+                    )
+                  ),
+                  col_4(
+                    prettyCheckbox(
+                      inputId = ns("buildblocks"),
+                      label = "Blocks?",
+                      value = FALSE,
+                      status = "info",
+                      icon = icon("thumbs-up"),
+                      plain = TRUE,
+                      outline = TRUE,
+                      animation = "rotate"
+                    )
+                  )
+                ),
+                hl(),
+                fluidRow(
+                  style = "margin-top: -10px;",
+                  col_7(
+                    actionBttn(
+                      ns("createupdate2"),
+                      label = "Create-update",
+                      icon = icon("arrows-rotate"),
+                      color = "success",
+                      style = "jelly"
+                    )
+                  ),
+                  col_5(
+                    conditionalPanel(
+                      condition = "input['config_1-plotinfo'] === true",
+                      actionBttn(
+                        ns("plotinfonat"),
+                        label = "Plot info",
+                        icon = icon("info"),
+                        color = "success",
+                        style = "jelly"
+                      )
+                    )
+                  )
+                ),
+                conditionalPanel(
+                  condition = "input.buildblocks == true", ns = ns,
+                  fluidRow(
+                    col_6(
+                      actionBttn(
+                        ns("doneblock"),
+                        label = "Store block",
+                        icon = icon("plus"),
+                        color = "success",
+                        style = "jelly"
+                      )
+                    ),
+                    col_6(
+                      textOutput(ns("nblocksdone"))
+                    )
+                  )
+                ),
+                fluidRow(
+                  col_3(
+                    textInput(ns("ncols"),
+                              label = "Columns",
+                              value = 1)
+                  ),
+                  col_3(
+                    textInput(ns("nrows"),
+                              label = "Rows",
+                              value = 1)
+                  ),
+                  col_3(
+                    textInput(ns("plot_width"),
+                              label = "Width",
+                              value = NA)
+                  ),
+                  col_3(
+                    textInput(ns("plot_height"),
+                              label = "Height",
+                              value = NA)
+                  )
+                ),
+                fluidRow(
+                  style = "margin-top: -10px;",
+                  col_6(
+                    textInput(ns("buffercol"),
+                              label = "Plot buffer",
+                              value = 0)
+                  ),
+                  col_6(
+                    textInput(ns("numplots"),
+                              label = "Number of plots",
+                              value = "")
+                  )
+                ),
+                prettyCheckbox(
+                  inputId = ns("showplotid"),
+                  label = "Show plot ID?",
+                  value = TRUE,
+                  status = "info",
+                  icon = icon("thumbs-up"),
+                  plain = TRUE,
+                  outline = TRUE,
+                  animation = "rotate"
+                ),
+                hl(),
+                prettyCheckbox(
+                  inputId = ns("shapedone"),
+                  label = "Shapefile finished",
+                  value = FALSE,
+                  status = "info",
+                  icon = icon("thumbs-up"),
+                  plain = TRUE,
+                  outline = TRUE,
+                  animation = "rotate"
+                )
+              ),
+              conditionalPanel(
+                condition = "input.shapetype == 'Import'", ns = ns,
+                tags$hr(),
+                fluidRow(
+                  col_6(
+                    shinyFilesButton(id=ns("shapefileinput"),
+                                     label="Shapefile",
+                                     title="Shapefile",
+                                     buttonType = "primary",
+                                     multiple = TRUE,
+                                     class = NULL,
+                                     icon = icon("magnifying-glass"),
+                                     style = NULL)
+                  ),
+                  col_6(
+                    prettyCheckbox(
+                      inputId = ns("multiline"),
+                      label = "Multilinestring",
+                      value = FALSE,
+                      icon = icon("check"),
+                      status = "success",
+                      animation = "rotate"
+                    )
+                  )
+                ),
+                textInput(
+                  ns("filemosaicpath"),
+                  label = "Choosen file(s)",
+                  value = "",
+                  width = "100%"
+                ),
+                conditionalPanel(
+                  condition = "input.filemosaicpath != ''", ns = ns,
+                  fluidRow(
+                    actionBttn(ns("importshapefile"),
+                               label = "Import the choosen file(s)",
+                               no_outline = FALSE,
+                               icon = icon("file-import"),
+                               style = "material-flat",
+                               color = "primary")
+                  )
+                ),
+                conditionalPanel(
+                  condition = "input['config_1-plotinfo'] === true",
                   actionBttn(
-                    ns("createupdate2"),
-                    label = "Create-update",
-                    icon = icon("arrows-rotate"),
+                    ns("plotinfo2nat"),
+                    label = "Plot info",
+                    icon = icon("info"),
                     color = "success",
                     style = "jelly"
                   )
-                ),
-                col_5(
-                  conditionalPanel(
-                    condition = "input['config_1-plotinfo'] === true",
-                    actionBttn(
-                      ns("plotinfonat"),
-                      label = "Plot info",
-                      icon = icon("info"),
-                      color = "success",
-                      style = "jelly"
-                    )
-                  )
-                )
-              ),
-              conditionalPanel(
-                condition = "input.buildblocks == true", ns = ns,
-                fluidRow(
-                  col_6(
-                    actionBttn(
-                      ns("doneblock"),
-                      label = "Store block",
-                      icon = icon("plus"),
-                      color = "success",
-                      style = "jelly"
-                    )
-                  ),
-                  col_6(
-                    textOutput(ns("nblocksdone"))
-                  )
-                )
-              ),
-              fluidRow(
-                col_6(
-                  textInput(ns("ncols"),
-                            label = "Number of columns",
-                            value = 1)
-                ),
-                col_6(
-                  textInput(ns("nrows"),
-                            label = "Number of rows",
-                            value = 1)
-                )
-              ),
-              fluidRow(
-                style = "margin-top: -10px;",
-                col_6(
-                  textInput(ns("plot_width"),
-                            label = "Plot width",
-                            value = NA)
-                ),
-                col_6(
-                  textInput(ns("plot_height"),
-                            label = "Plot height",
-                            value = NA)
-                )
-              ),
-              fluidRow(
-                style = "margin-top: -10px;",
-                col_6(
-                  textInput(ns("buffercol"),
-                            label = "Plot buffer",
-                            value = 0)
-                ),
-                col_6(
-                  textInput(ns("numplots"),
-                            label = "Number of plots",
-                            value = "")
-                )
-              ),
-              prettyCheckbox(
-                inputId = ns("showplotid"),
-                label = "Show plot ID?",
-                value = TRUE,
-                status = "info",
-                icon = icon("thumbs-up"),
-                plain = TRUE,
-                outline = TRUE,
-                animation = "rotate"
-              ),
-              hl(),
-              prettyCheckbox(
-                inputId = ns("shapedone"),
-                label = "Shapefile finished",
-                value = FALSE,
-                status = "info",
-                icon = icon("thumbs-up"),
-                plain = TRUE,
-                outline = TRUE,
-                animation = "rotate"
-              )
-            ),
-            conditionalPanel(
-              condition = "input.shapetype == 'Import'", ns = ns,
-              tags$hr(),
-              fluidRow(
-                col_6(
-                  shinyFilesButton(id=ns("shapefileinput"),
-                                   label="Shapefile",
-                                   title="Shapefile",
-                                   buttonType = "primary",
-                                   multiple = TRUE,
-                                   class = NULL,
-                                   icon = icon("magnifying-glass"),
-                                   style = NULL)
-                ),
-                col_6(
-                  prettyCheckbox(
-                    inputId = ns("multiline"),
-                    label = "Multilinestring",
-                    value = FALSE,
-                    icon = icon("check"),
-                    status = "success",
-                    animation = "rotate"
-                  )
-                )
-              ),
-              textInput(
-                ns("filemosaicpath"),
-                label = "Choosen file(s)",
-                value = "",
-                width = "100%"
-              ),
-              conditionalPanel(
-                condition = "input.filemosaicpath != ''", ns = ns,
-                fluidRow(
-                  actionBttn(ns("importshapefile"),
-                             label = "Import the choosen file(s)",
-                             no_outline = FALSE,
-                             icon = icon("file-import"),
-                             style = "material-flat",
-                             color = "primary")
-                )
-              ),
-              conditionalPanel(
-                condition = "input['config_1-plotinfo'] === true",
-                actionBttn(
-                  ns("plotinfo2nat"),
-                  label = "Plot info",
-                  icon = icon("info"),
-                  color = "success",
-                  style = "jelly"
                 )
               )
             ),
@@ -342,145 +350,6 @@ mod_shapefilenative_ui <- function(id) {
       ),
       col_9(
         plimanshiny_canvas_output(prefix = "shp", ns = ns)
-        #   bs4TabCard(
-        #     id = "tabsshape2",
-        #     width = 12,
-        #     collapsible = FALSE,
-        #     status = "success",
-        #     selected = "Pliman viewer",
-        #     solidHeader = FALSE,
-        #     type = "tabs",
-        #     tabPanel("Pliman viewer",
-        #
-        #              tagList(
-        #                tags$head(
-        #                  tags$style(HTML("
-        #   #rasterCanvas {
-        #     margin-top: 20px;
-        #     border: 1px solid #ddd;
-        #     box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.3);
-        #   }
-        # ")),
-        #                  tags$script(HTML(sprintf("
-        #   let canvas, ctx, drawing = false;
-        #   let rectStartX, rectStartY, rectEndX, rectEndY;
-        #   let selectedPoints = [];
-        #   let rasterImage = null;
-        #   let canvasWidth = 1280;
-        #   let canvasHeight = 720;
-        #
-        #   function initCanvas() {
-        #     canvas = document.getElementById('%s');
-        #     ctx = canvas.getContext('2d');
-        #     canvas.width = canvasWidth;
-        #     canvas.height = canvasHeight;
-        #
-        #     canvas.addEventListener('mousedown', handleMouseDown);
-        #     canvas.addEventListener('mousemove', handleMouseMove);
-        #     canvas.addEventListener('mouseup', handleMouseUp);
-        #     canvas.addEventListener('dblclick', handleDoubleClick);
-        #   }
-        #
-        #   function adjustcanvas_shpSize(width, height) {
-        #     canvasWidth = width;
-        #     canvasHeight = height;
-        #     canvas.width = canvasWidth;
-        #     canvas.height = canvasHeight;
-        #     Shiny.setInputValue('%s', { width: canvasWidth, height: canvasHeight }, { priority: 'event' });
-        #     drawCanvas();
-        #   }
-        #
-        #   function handleMouseDown(e) {
-        #     const rect = canvas.getBoundingClientRect();
-        #     rectStartX = e.clientX - rect.left;
-        #     rectStartY = e.clientY - rect.top;
-        #     timeoutID = setTimeout(() => {
-        #       drawPoint(rectStartX, rectStartY);
-        #       selectedPoints.push({ x: rectStartX, y: rectStartY });
-        #       Shiny.setInputValue('%s', [rectStartX, rectStartY]);
-        #     }, 1000);
-        #     drawing = true;
-        #   }
-        #
-        #   function handleMouseMove(e) {
-        #     if (!drawing) return;
-        #     clearTimeout(timeoutID);
-        #     const rect = canvas.getBoundingClientRect();
-        #     rectEndX = e.clientX - rect.left;
-        #     rectEndY = e.clientY - rect.top;
-        #     drawCanvas();
-        #     drawRectangle(rectStartX, rectStartY, rectEndX, rectEndY);
-        #   }
-        #
-        #   function handleMouseUp() {
-        #     clearTimeout(timeoutID);
-        #     drawing = false;
-        #     Shiny.setInputValue('%s', {
-        #       startX: Math.min(rectStartX, rectEndX),
-        #       startY: Math.min(rectStartY, rectEndY),
-        #       endX: rectEndX,
-        #       endY: rectEndY,
-        #       width: Math.abs(rectEndX - rectStartX),
-        #       height: Math.abs(rectEndY - rectStartY)
-        #     });
-        #     rectStartX = rectStartY = rectEndX = rectEndY = 0;
-        #   }
-        #
-        #   function drawPoint(x, y) {
-        #     if (!ctx) return;
-        #     ctx.strokeStyle = 'red';
-        #     ctx.lineWidth = 2;
-        #     ctx.beginPath();
-        #     ctx.arc(x, y, 10, 0, 2 * Math.PI);
-        #     ctx.stroke();
-        #     ctx.beginPath();
-        #     ctx.moveTo(x - 10, y);
-        #     ctx.lineTo(x + 10, y);
-        #     ctx.moveTo(x, y - 10);
-        #     ctx.lineTo(x, y + 10);
-        #     ctx.stroke();
-        #   }
-        #
-        #   function drawRectangle(x1, y1, x2, y2) {
-        #     ctx.strokeStyle = 'red';
-        #     ctx.lineWidth = 2;
-        #     ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-        #   }
-        #
-        #   function drawCanvas() {
-        #     ctx.clearRect(0, 0, canvas.width, canvas.height);
-        #     drawRaster();
-        #   }
-        #
-        #   function drawRaster() {
-        #     if (rasterImage) {
-        #       ctx.drawImage(rasterImage, 0, 0, canvas.width, canvas.height);
-        #     }
-        #   }
-        #
-        #   Shiny.addCustomMessageHandler('updateTiles_shp', function(data) {
-        #     rasterImage = new Image();
-        #     rasterImage.src = 'data:image/png;base64,' + data.img;
-        #     rasterImage.onload = drawCanvas;
-        #   });
-        #
-        #   Shiny.addCustomMessageHandler('adjustcanvas_shpSize', function(data) {
-        #     adjustcanvas_shpSize(data.width, data.height);
-        #   });
-        #
-        #   function handleDoubleClick() {
-        #     Shiny.setInputValue('%s', new Date().getTime());
-        #   }
-        #
-        #   window.addEventListener('load', initCanvas);
-        # ", ns("rasterCanvas"), ns("canvas_size"), ns("picked_point_shp"), ns("drawn_rectangle_shp"), ns("reset_view_shp"))))
-        #                ),
-        #                tags$canvas(id = ns("rasterCanvas"))
-        #              )
-        #     )
-        #   )
-
-
       )
     )
   )
@@ -678,7 +547,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                     plot(
                       shapefile[[input$shapefiletoanalyze]]$data["plot_id"],
                       add = TRUE,
-                       border = input$colorstroke,
+                      border = input$colorstroke,
                       lwd = input$lwdt,
                       col = input$colorfill
                     )
@@ -686,7 +555,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                     plot(
                       shapefile[[input$shapefiletoanalyze]]$data[input$fillid],
                       add = TRUE,
-                       border = input$colorstroke,
+                      border = input$colorstroke,
                       lwd = input$lwdt,
                       col = input$colorfill
                     )
@@ -720,7 +589,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                     plot(
                       shptoplot["plot_id"],
                       add = TRUE,
-                       border = input$colorstroke,
+                      border = input$colorstroke,
                       lwd = input$lwdt,
                       col = input$colorfill
                     )
@@ -728,7 +597,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                     plot(
                       shptoplot[input$fillid],
                       add = TRUE,
-                       border = input$colorstroke,
+                      border = input$colorstroke,
                       lwd = input$lwdt
                     )
                   }
@@ -1046,7 +915,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
               plot(
                 shptoplot["plot_id"],
                 add = TRUE,
-                 border = input$colorstroke,
+                border = input$colorstroke,
                 lwd = input$lwdt,
                 col = input$colorfill
               )
@@ -1054,7 +923,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
               plot(
                 shptoplot[input$fillid],
                 add = TRUE,
-                 border = input$colorstroke,
+                border = input$colorstroke,
                 lwd = input$lwdt
               )
             }
@@ -1152,7 +1021,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                   plot(
                     shapefile[[input$shapefiletoanalyze]]$data["plot_id"],
                     add = TRUE,
-                     border = input$colorstroke,
+                    border = input$colorstroke,
                     lwd = input$lwdt,
                     col = input$colorfill
                   )
@@ -1160,7 +1029,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                   plot(
                     shapefile[[input$shapefiletoanalyze]]$data[input$fillid],
                     add = TRUE,
-                     border = input$colorstroke,
+                    border = input$colorstroke,
                     lwd = input$lwdt
                   )
                 }
@@ -1188,7 +1057,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                   plot(
                     shptoplot["plot_id"],
                     add = TRUE,
-                     border = input$colorstroke,
+                    border = input$colorstroke,
                     lwd = input$lwdt,
                     col = input$colorfill
                   )
@@ -1196,7 +1065,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                   plot(
                     shptoplot[input$fillid],
                     add = TRUE,
-                     border = input$colorstroke,
+                    border = input$colorstroke,
                     lwd = input$lwdt
                   )
                 }
@@ -1215,7 +1084,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                   plot(
                     shptoplot["plot_id"],
                     add = TRUE,
-                     border = input$colorstroke,
+                    border = input$colorstroke,
                     lwd = input$lwdt,
                     col = input$colorfill
                   )
@@ -1223,7 +1092,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                   plot(
                     shptoplot[input$fillid],
                     add = TRUE,
-                     border = input$colorstroke,
+                    border = input$colorstroke,
                     lwd = input$lwdt
                   )
                 }
@@ -1261,7 +1130,72 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
     })
 
 
+    # observe if example shapefile is used
+    # shapefile created using a sample raster provided by Arthur Bernardeli https://www.linkedin.com/in/arthur-bernardeli-5a1a0b5a/
+    observeEvent(input$inputshptypenat, {
+      if(input$inputshptypenat == "example shapefile"){
+        filepath <- file.path(system.file(package = "plimanshiny"), "app/www/soy_shape.rds")
+        shapefile[["example_shp"]] <- create_reactval("example_shp", shapefile_input(filepath, info = FALSE))
+        mosaicnames <-  setdiff(names(shapefile), c("mosaic", "shapefileplot"))
+        updateSelectInput(session, "shapefiletoanalyze",
+                          choices = mosaicnames,
+                          selected = mosaicnames[[1]])
 
+
+        observe({
+          req(input$shapefiletoanalyze)
+          req(shapefile[[input$shapefiletoanalyze]]$data)
+          req(activemosaic$name)
+          req(mosaic_data[[activemosaic$name]]$data)
+          sizes <- adjust_canvas(mosaic_data[[activemosaic$name]]$data)
+
+          original_image_path <- file.path(tempdir(), "originalimage.png")
+          png(original_image_path, width = sizes[[1]], height = sizes[[2]])
+
+          tryCatch({
+            if (!is.null(mosaitoshape())) {
+              check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
+              centrs <- suppressMessages(
+                sf::st_centroid(shapefile[[input$shapefiletoanalyze]]$data) |> sf::st_coordinates()
+              )
+              plot(
+                shapefile[[input$shapefiletoanalyze]]$data["plot_id"],
+                add = TRUE,
+                border = "red",
+                lwd = input$lwdt,
+                col = input$colorfill
+              )
+              text(
+                x = centrs[, 1],
+                y = centrs[, 2],
+                labels = shapefile[[input$shapefiletoanalyze]]$data$plot_id,
+                col = "black",
+                cex = 1
+              )
+
+            } else {
+              if (input$fillid == "none") {
+                plot(shapefile[[input$shapefiletoanalyze]]$data)
+              } else {
+                plot(shapefile[[input$shapefiletoanalyze]]$data[input$fillid])
+              }
+            }
+          }, error = function(e) {
+            message("An error occurred during plotting5: ", e$message)
+          }, finally = {
+            dev.off()
+          })
+
+          session$sendCustomMessage("updateTiles_shp", list(
+            img = base64enc::base64encode(original_image_path)
+          ))
+        })
+
+
+
+
+      }
+    })
 
     ############################################# IMPORT A SHAPEFILE ##########################################################
     observeEvent(input$shapetype, {
@@ -1372,11 +1306,12 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
               shapefile[[input$shapefiletoanalyze]] <- create_reactval(input$shapefiletoanalyze, shp)
             }
           }
-
         })
+
         observe({
           req(input$shapefiletoanalyze)
           req(shapefile[[input$shapefiletoanalyze]]$data)
+          req(mosaic_data[[activemosaic$name]]$data)
           sizes <- adjust_canvas(mosaic_data[[activemosaic$name]]$data)
 
           original_image_path <- file.path(tempdir(), "originalimage.png")
@@ -1387,6 +1322,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
               check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
 
               if(input$fillid == "none"){
+                print("a")
                 plot(
                   shapefile[[input$shapefiletoanalyze]]$data,
                   add = TRUE,

@@ -22,6 +22,8 @@ mod_mosaic_prepare_ui <- function(id){
         type = "tabs",
         tabPanel(
           title = "Input",
+          width = 12,
+          status = "success",
           fluidRow(
             col_4(
               conditionalPanel(
@@ -158,46 +160,55 @@ mod_mosaic_prepare_ui <- function(id){
                             intro = "Here, you can see the information about the mosaic.")
             )
           ),
-          width = 12,
-          status = "success",
-          add_help(
-            shinyFilesButton(id=ns("filemosaic"),
-                             label="Raster file(s)",
-                             title="Raster file(s)",
-                             buttonType = "primary",
-                             multiple = TRUE,
-                             class = NULL,
-                             icon = icon("magnifying-glass"),
-                             style = NULL),
-            fluidRow(
-              textInput(
-                ns("filemosaicpath"),
-                label = "Choosen file(s)",
-                value = "",
-                width = "100%"
-              )
-            ),
-            step = 3,
-            intro = "Search by rasters files to be imported."),
+          hl(),
+          awesomeRadio(
+            inputId = ns("inputrastertype"),
+            label = "Entry method",
+            choices = c("load rasters", "example raster"),
+            selected = "load rasters",
+            status = "success",
+            inline = TRUE
+          ),
           conditionalPanel(
-            condition = "input.filemosaicpath != ''", ns = ns,
-            fluidRow(
-              actionBttn(ns("importmosaic"),
-                         label = "Import the choosen file(s)",
-                         no_outline = FALSE,
-                         icon = icon("file-import"),
-                         style = "material-flat",
-                         color = "primary")
+            condition = "input.inputrastertype == 'load rasters'", ns = ns,
+            add_help(
+              shinyFilesButton(id=ns("filemosaic"),
+                               label="Raster file(s)",
+                               title="Raster file(s)",
+                               buttonType = "primary",
+                               multiple = TRUE,
+                               class = NULL,
+                               icon = icon("magnifying-glass"),
+                               style = NULL),
+              fluidRow(
+                textInput(
+                  ns("filemosaicpath"),
+                  label = "Choosen file(s)",
+                  value = "",
+                  width = "100%"
+                )
+              ),
+              step = 3,
+              intro = "Search by rasters files to be imported."),
+            conditionalPanel(
+              condition = "input.filemosaicpath != ''", ns = ns,
+              fluidRow(
+                actionBttn(ns("importmosaic"),
+                           label = "Import the choosen file(s)",
+                           no_outline = FALSE,
+                           icon = icon("file-import"),
+                           style = "material-flat",
+                           color = "primary")
+              )
             )
           ),
-          br(),
+          hl(),
           selectInput(ns("mosaictoanalyze"),
                       label = "Active Mosaic",
                       choices = NULL) |>
             add_help(step = 4,
                      intro = "Here you can define which raster file is active.
                    It will define the basemap for further modules"),
-          hl(),
           add_help(
             fluidRow(
               col_6(
@@ -407,6 +418,20 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
       }
     })
 
+    # if example mosaic is used
+    # mosaic provided by Arthur Bernardeli https://www.linkedin.com/in/arthur-bernardeli-5a1a0b5a/
+    observeEvent(input$inputrastertype, {
+      if(input$inputrastertype == "example raster"){
+        filepath <- file.path(system.file(package = "plimanshiny"), "app/www/soy_ortho.tif")
+        mosaic_data[["example_raster"]] <- create_reactval("example_raster", mosaic_input(filepath, info = FALSE))
+        # Update selectInput choices
+        mosaicnames <-  setdiff(names(mosaic_data), "mosaic")
+        updateSelectInput(session, "mosaictoanalyze",
+                          choices = mosaicnames,
+                          selected = mosaicnames[[1]])
+      }
+    })
+
     observe({
       req(input$mosaictoanalyze)
       activemosaic$name <- input$mosaictoanalyze
@@ -511,7 +536,7 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
       }
       removeNotification(id = "importmosaic")
     })
-      removeNotification(id = "rebuilding")
+    removeNotification(id = "rebuilding")
 
     #
     observe({

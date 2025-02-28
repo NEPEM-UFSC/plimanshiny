@@ -339,7 +339,8 @@ mod_home_server <- function(id, settings){
                 "Federal University of Santa Catarina", br(), br(),
                 h2("Contribution"),
                 a("Matheus Lopes Machado", href = "https://www.linkedin.com/in/matheus-lopesma/", target = "_blank"), br(),
-                a("Dr. Leonardo Volpato", href = "https://www.linkedin.com/in/leonardo-volpato/", target = "_blank"), br(),br(),
+                a("Dr. Leonardo Volpato", href = "https://www.linkedin.com/in/leonardo-volpato/", target = "_blank"), br(),
+                a("Dr. Arthur Bernardeli", href = "https://www.linkedin.com/in/arthur-bernardeli-5a1a0b5a/", target = "_blank"), br(),br(),
                 fluidRow(
                   col_6(
                     shiny::actionButton(inputId= ns("gitpliman"),

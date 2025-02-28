@@ -18,6 +18,15 @@ mod_phanalyze_ui <- function(id){
           width = 12,
           icon = icon("mountain-sun"),
           height = "790px",
+          awesomeRadio(
+            inputId = ns("inputdsmtype"),
+            label = "Entry method",
+            choices = c("Imported rasters", "Example raster"),
+            selected = "Imported rasters",
+            status = "success",
+            inline = TRUE
+          ),
+          hl(),
           prettyRadioButtons(
             inputId = ns("strategy"),
             label = "Strategy",
@@ -426,6 +435,22 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
         )
       }
     })
+    # if example mosaic is used
+    # mosaic provided by Arthur Bernardeli https://www.linkedin.com/in/arthur-bernardeli-5a1a0b5a/
+    observeEvent(input$inputdsmtype, {
+      if(input$inputdsmtype == "Example raster"){
+        pathdsm <- file.path(system.file(package = "plimanshiny"), "app/www/soy_dsm.tif")
+        pathdtm <- file.path(system.file(package = "plimanshiny"), "app/www/soy_dtm.tif")
+        pathshp <- file.path(system.file(package = "plimanshiny"), "app/www/soy_shape.rds")
+        mosaic_data[["dsm"]] <- create_reactval("dsm", mosaic_input(pathdsm, info = FALSE))
+        mosaic_data[["dtm"]] <- create_reactval("dtm", mosaic_input(pathdtm, info = FALSE))
+        shapefile[["chm_shape"]] <- create_reactval("chm_shape", shapefile_input(pathshp, info = FALSE))
+        updatePickerInput(session, "dsm", choices = c(setdiff(names(mosaic_data), "mosaic")), selected = "dsm")
+        updatePickerInput(session, "dtm", choices = c(setdiff(names(mosaic_data), "mosaic")), selected = "dtm")
+        updatePickerInput(session, "shapefile", choices = c(setdiff(names(shapefile), c("shapefile", "shapefileplot"))), selected = "chm_shape")
+      }
+    })
+
 
     # update selec input
     observe({
@@ -465,7 +490,6 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
         )
 
       }
-
     })
 
 
@@ -600,6 +624,7 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
 
         }
       }
+
 
       req(chmreact$rast)
       req(input$basemapplot)
