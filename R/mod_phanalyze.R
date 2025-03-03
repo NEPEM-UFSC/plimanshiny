@@ -619,7 +619,7 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
           chmreact$rast <- chmres$chm
           sampledpoints$sf <- chmres$sampling_points
           output$dtmplot <- renderPlot({
-            terra::plot(chmres$chm[[1]], col = terrain.colors(100))
+            terra::plot(chmres$chm[[1]], col = grDevices::colorRampPalette(c("darkred", "yellow", "darkgreen"))(100))
           })
 
         }

@@ -582,7 +582,8 @@ mod_timeseriesinput_server <- function(id, shapefile, mosaiclist, r, g, b, re, n
                            stretch = input$stretch)
           }
         } else{
-          terra::plot(mosaictoplot()[[as.numeric(input$bandnumber)]])
+          terra::plot(mosaictoplot()[[as.numeric(input$bandnumber)]],
+                      col = grDevices::colorRampPalette(c("darkred", "yellow", "darkgreen"))(100))
         }
       }
       if(input$shapefileimported != ""){

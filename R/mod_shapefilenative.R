@@ -368,6 +368,9 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
         showTab(inputId = "tabsshape", target = "Control Points")
       }
     })
+
+
+
     observe({
       if (input$shapetype == "Build") {
         observe({
@@ -1191,11 +1194,15 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           ))
         })
 
-
-
-
       }
     })
+
+
+
+
+
+
+
 
     ############################################# IMPORT A SHAPEFILE ##########################################################
     observeEvent(input$shapetype, {
@@ -1322,11 +1329,9 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
               check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
 
               if(input$fillid == "none"){
-                print("a")
                 plot(
-                  shapefile[[input$shapefiletoanalyze]]$data,
+                  shapefile[[input$shapefiletoanalyze]]$data["plot_id"],
                   add = TRUE,
-                  border = input$colorstroke,
                   lwd = input$lwdt,
                   col = input$colorfill
                 )

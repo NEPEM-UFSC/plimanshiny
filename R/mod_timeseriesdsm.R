@@ -521,7 +521,7 @@ mod_timeseriesdsm_server <- function(id, shapefile, mosaiclist, basemap, dfs, se
       #   ##### Show the results #######
       updateSelectInput(session, "plotattribute",
                         choices = names(result_plot),
-                        selected = ifelse("individual" %in% colnames(result_plot), colnames(result_plot)[6], colnames(result_plot)[5]))
+                        selected = ifelse("individual" %in% colnames(result_plot), colnames(result_plot)[14], colnames(result_plot)[13]))
       #
       #   # overview plot
       output$timeserieoverview <- renderPlotly({
@@ -648,14 +648,15 @@ mod_timeseriesdsm_server <- function(id, shapefile, mosaiclist, basemap, dfs, se
         for (i in seq_along(chmreact$rast)) {
           list_mo[[i]] <- chmreact$rast[[i]]$chm[[2]]
         }
+        # verify the code here.. resampling takes too time
         req(list_mo)
         if(length(list_mo) > 0){
+          first_plot <- list_mo[[1]] |> terra::crop(shapetmp, mask = TRUE)
           list_mo <-
             lapply(seq_along(list_mo), function(i){
-              terra::resample(list_mo[[i]], list_mo[[1]])
+              terra::resample(list_mo[[i]] |> terra::crop(shapetmp, mask = TRUE), first_plot)
             }) |>
-            terra::rast() |>
-            terra::crop(shapetmp, mask = TRUE)
+            terra::rast()
 
           names(list_mo) <- names(chmreact$rast)
 
