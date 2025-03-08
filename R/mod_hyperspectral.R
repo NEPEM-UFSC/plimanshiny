@@ -251,7 +251,6 @@ mod_hyperspectral_server <- function(id, mosaic_data, r, g, b, maxpixel,  basema
         pointsval <- do.call("rbind", lapply(1:nrow(polygons), function(i){
           terra::extract(mosfile(), terra::vect(polygons[i, ]))
         }))
-        # assign("points", pointsval, envir = .GlobalEnv)
 
         if(input$plottype == "hexbin"){
           req(input$bandx, input$bandy)
@@ -284,7 +283,6 @@ mod_hyperspectral_server <- function(id, mosaic_data, r, g, b, maxpixel,  basema
             )
 
           # Create hexbin plot with Plotly
-          # assign("points", pointsval, envir = .GlobalEnv)
           plotly::plot_ly(
             data = pointsval,
             x = ~bandx_mid,

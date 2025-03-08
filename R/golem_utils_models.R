@@ -65,9 +65,9 @@ mod_L3 <- function(data,
 
     tryCatch({
       if (!is.null(sowing_date)) {
-        flights <- as.POSIXlt(df[[flight_date]])$yday + 1 - (as.POSIXlt(sowing_date)$yday + 1)
+        flights <- as.numeric(round(difftime(to_datetime(df[[flight_date]]), to_datetime(sowing_date), units = "days")))
       } else {
-        flights <- as.POSIXlt(df[[flight_date]])$yday + 1
+        flights <- to_datetime(df[[flight_date]])$yday + 1
       }
 
       fflight <- min(flights)
@@ -293,21 +293,14 @@ mod_L4 <- function(data,
     tryCatch({
       # Compute flight days
       if (!is.null(sowing_date)) {
-        flights <- as.POSIXlt(df[[flight_date]])$yday + 1 - (as.POSIXlt(sowing_date)$yday + 1)
+        flights <- as.numeric(round(difftime(to_datetime(df[[flight_date]]), to_datetime(sowing_date), units = "days")))
       } else {
-        flights <- as.POSIXlt(df[[flight_date]])$yday + 1
+        flights <- to_datetime(df[[flight_date]])$yday + 1
       }
 
       fflight <- min(flights)
       lflight <- max(flights) + 20
       y <- df |> dplyr::pull(!!rlang::sym(predictor))
-
-      # Fit the L4 model
-      model <- nls(
-        y ~ SSfpl(flights, A, B, xmid, scal),
-        data = data.frame(x = flights, y = y),
-        control = minpack.lm::nls.lm.control(maxiter = 1000)
-      )
 
       model <- try(
         nls( y ~ SSfpl(flights, A, B, xmid, scal),
@@ -613,9 +606,9 @@ mod_L5 <- function(data,
 
     tryCatch({
       if (!is.null(sowing_date)) {
-        flights <- as.POSIXlt(df[[flight_date]])$yday + 1 - (as.POSIXlt(sowing_date)$yday + 1)
+        flights <- as.numeric(round(difftime(to_datetime(df[[flight_date]]), to_datetime(sowing_date), units = "days")))
       } else {
-        flights <- as.POSIXlt(df[[flight_date]])$yday + 1
+        flights <- to_datetime(df[[flight_date]])$yday + 1
       }
 
       fflight <- min(flights)
@@ -905,9 +898,9 @@ mod_loess <-  function(data,
   results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine=rbind) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
     if(!is.null(sowing_date)){
-      flights <- as.POSIXlt(df$date)$yday + 1 -  (as.POSIXlt(sowing_date)$yday + 1)
+      flights <- as.numeric(round(difftime(to_datetime(df[[flight_date]]), to_datetime(sowing_date), units = "days")))
     } else {
-      flights <- as.POSIXlt(df$date)$yday + 1
+      flights <- to_datetime(df$date)$yday + 1
     }
     fflight <- min(flights)
     lflight <- max(flights) + 20
@@ -1034,9 +1027,9 @@ mod_segmented <- function(data,
   `%dofut%` <- doFuture::`%dofuture%`
   results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = rbind) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
-    flights <- as.POSIXlt(df[[flight_date]])$yday + 1
+    flights <- to_datetime(df[[flight_date]])$yday + 1
     if (!is.null(sowing_date)) {
-      flights <- flights - (as.POSIXlt(sowing_date)$yday + 1)
+      flights <- as.numeric(round(difftime(to_datetime(df[[flight_date]]), to_datetime(sowing_date), units = "days")))
     }
     model_result <- calculate_dpm(df, flights, threshold, slope)
 
@@ -1160,9 +1153,9 @@ mod_segmented2 <- function(data,
   `%dofut%` <- doFuture::`%dofuture%`
   results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = rbind) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
-    flights <- as.POSIXlt(df[[flight_date]])$yday + 1
+    flights <- to_datetime(df[[flight_date]])$yday + 1
     if (!is.null(sowing_date)) {
-      flights <- flights - (as.POSIXlt(sowing_date)$yday + 1)
+      flights <- as.numeric(round(difftime(to_datetime(df[[flight_date]]), to_datetime(sowing_date), units = "days")))
     }
     model_result <- calculate_dpm(df[[predictor]], flights)
 
@@ -1229,9 +1222,11 @@ mod_weibull <- function(data,
   results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
     if (!is.null(sowing_date)) {
-      flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
+
+
     } else {
-      flights <- as.POSIXlt(df$date)$yday + 1
+      flights <- to_datetime(df$date)$yday + 1
     }
 
     fflight <- min(flights)
@@ -1450,9 +1445,9 @@ mod_gompertz <- function(data,
   results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
     if (!is.null(sowing_date)) {
-      flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
     } else {
-      flights <- as.POSIXlt(df$date)$yday + 1
+      flights <- to_datetime(df$date)$yday + 1
     }
 
     fflight <- min(flights)
@@ -1652,9 +1647,9 @@ mod_logistic_3P <- function(data,
   results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
     if (!is.null(sowing_date)) {
-      flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
     } else {
-      flights <- as.POSIXlt(df$date)$yday + 1
+      flights <- to_datetime(df$date)$yday + 1
     }
 
     fflight <- min(flights)
@@ -1827,7 +1822,6 @@ mod_logistic_4P <- function(data,
     dplyr::group_by(unique_plot) |>
     tidyr::nest()
 
-  results_list <- list()
 
   # Parallel or Sequential Plan
   if (parallel) {
@@ -1844,9 +1838,9 @@ mod_logistic_4P <- function(data,
     df <- as.data.frame(dftemp$data[[i]])
 
     if (!is.null(sowing_date)) {
-      flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
     } else {
-      flights <- as.POSIXlt(df$date)$yday + 1
+      flights <- to_datetime(df$date)$yday + 1
     }
 
     fflight <- min(flights)
@@ -2092,9 +2086,9 @@ mod_vonbert <- function(data,
   results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
     if (!is.null(sowing_date)) {
-      flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
     } else {
-      flights <- as.POSIXlt(df$date)$yday + 1
+      flights <- to_datetime(df$date)$yday + 1
     }
 
     fflight <- min(flights)
@@ -2319,9 +2313,9 @@ mod_exponential <- function(data,
   results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
     if (!is.null(sowing_date)) {
-      flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
     } else {
-      flights <- as.POSIXlt(df$date)$yday + 1
+      flights <- to_datetime(df$date)$yday + 1
     }
 
     fflight <- min(flights)
@@ -2553,9 +2547,9 @@ mod_janoschek <- function(data,
   results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
     if (!is.null(sowing_date)) {
-      flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
     } else {
-      flights <- as.POSIXlt(df$date)$yday + 1
+      flights <- to_datetime(df$date)$yday + 1
     }
 
     fflight <- min(flights)
@@ -2802,9 +2796,9 @@ mod_transgompertz <- function(data,
   results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
     if (!is.null(sowing_date)) {
-      flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
     } else {
-      flights <- as.POSIXlt(df$date)$yday + 1
+      flights <- to_datetime(df$date)$yday + 1
     }
 
     fflight <- min(flights)
@@ -3059,9 +3053,9 @@ mod_sinusoidal <- function(data,
   results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
     if (!is.null(sowing_date)) {
-      flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
     } else {
-      flights <- as.POSIXlt(df$date)$yday + 1
+      flights <- to_datetime(df$date)$yday + 1
     }
 
     fflight <- min(flights)
@@ -3238,9 +3232,9 @@ mod_asymptotic <- function(data,
     df <- as.data.frame(dftemp$data[[i]])
     tryCatch({
       if (!is.null(sowing_date)) {
-        flights <- as.POSIXlt(df[[flight_date]])$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+        flights <- to_datetime(df[[flight_date]])$yday + 1 - (to_datetime(sowing_date)$yday)
       } else {
-        flights <- as.POSIXlt(df[[flight_date]])$yday + 1
+        flights <- to_datetime(df[[flight_date]])$yday + 1
       }
 
       fflight <- min(flights)
@@ -3489,9 +3483,9 @@ mod_agauss <- function(data,
     df <- as.data.frame(dftemp$data[[i]])
     tryCatch({
       if (!is.null(sowing_date)) {
-        flights <- as.POSIXlt(df[[flight_date]])$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+        flights <- to_datetime(df[[flight_date]])$yday + 1 - (to_datetime(sowing_date)$yday)
       } else {
-        flights <- as.POSIXlt(df[[flight_date]])$yday + 1
+        flights <- to_datetime(df[[flight_date]])$yday + 1
       }
 
       fflight <- min(flights)
@@ -3756,9 +3750,9 @@ mod_beta <- function(data,
     df <- as.data.frame(dftemp$data[[i]])
     tryCatch({
       if (!is.null(sowing_date)) {
-        flights <- as.POSIXlt(df[[flight_date]])$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+        flights <- to_datetime(df[[flight_date]])$yday + 1 - (to_datetime(sowing_date)$yday)
       } else {
-        flights <- as.POSIXlt(df[[flight_date]])$yday + 1
+        flights <- to_datetime(df[[flight_date]])$yday + 1
       }
 
       fflight <- min(flights)
@@ -4013,9 +4007,9 @@ mod_hill <- function(data,
     df <- as.data.frame(dftemp$data[[i]])
 
     if (!is.null(sowing_date)) {
-      flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
     } else {
-      flights <- as.POSIXlt(df$date)$yday + 1
+      flights <- to_datetime(df$date)$yday + 1
     }
 
     fflight <- min(flights)
@@ -4327,9 +4321,9 @@ mod_expplat <- function(data,
     df <- as.data.frame(dftemp$data[[i]])
 
     if (!is.null(sowing_date)) {
-      flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
     } else {
-      flights <- as.POSIXlt(df$date)$yday + 1
+      flights <- to_datetime(df$date)$yday + 1
     }
 
     fflight <- min(flights)
@@ -4598,9 +4592,9 @@ mod_explinear <- function(data,
     df <- as.data.frame(dftemp$data[[i]])
 
     if (!is.null(sowing_date)) {
-      flights <- as.POSIXlt(df$date)$yday + 1 - (as.POSIXlt(sowing_date)$yday)
+      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
     } else {
-      flights <- as.POSIXlt(df$date)$yday + 1
+      flights <- to_datetime(df$date)$yday + 1
     }
 
     fflight <- min(flights)

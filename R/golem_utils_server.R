@@ -951,3 +951,25 @@ interpolate_group <- function(df) {
       data.frame(dists = unique(df$dists), wavelength = wavelength_seq, value = as.numeric(smooth.spline(interpolated_values, spar = 0.2)$y))
     })()
 }
+to_datetime <- function(date_vector) {
+  formats <- c(
+    "%Y-%m-%d %H:%M:%OS",
+    "%Y/%m/%d %H:%M:%OS",
+    "%d-%m-%Y %H:%M:%OS",
+    "%d/%m/%Y %H:%M:%OS",
+    "%Y-%m-%d %H:%M",
+    "%Y/%m/%d %H:%M",
+    "%d-%m-%Y %H:%M",
+    "%d/%m/%Y %H:%M",
+    "%Y-%m-%d",
+    "%Y/%m/%d",
+    "%d-%m-%Y",
+    "%d/%m/%Y",
+    "%m-%d-%Y",
+    "%m/%d/%Y",
+    "%m-%d-%y",
+    "%m/%d/%y"
+  )
+  suppressWarnings(as.POSIXlt(date_vector, tryFormats = formats))
+}
+

@@ -451,359 +451,358 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
       )
 
       # modl <- reactive({
-        if(input$method == "Logistic Model L3" & !input$usethresh){
-          # modl <-
-          dfactive$df |>
-            mod_L3(predictor = input$vegetindex,
-                   flight_date = input$flightdate,
-                   sowing_date = input$sowing,
-                   parallel = input$parallel) |>
-            modl()
-        } else if(input$method == "Logistic Model L4" & !input$usethresh){
-          # modl <-
-          dfactive$df |>
-            mod_L4(predictor = input$vegetindex,
-                   flight_date = input$flightdate,
-                   sowing_date = input$sowing,
-                   parallel = input$parallel) |>
-            modl()
-        } else if(input$method == "Logistic Model L5" & !input$usethresh){
-          # modl <-
-          dfactive$df |>
-            mod_L5(predictor = input$vegetindex,
-                   flight_date = input$flightdate,
-                   sowing_date = input$sowing,
-                   parallel = input$parallel) |>
-            modl()
-        } else if(input$methodthresh == "LOESS (Volpato et al., 2021)" & input$usethresh){
-          # modl <-
-          dfactive$df |>
-            mod_loess(predictor = input$vegetindex,
-                      flight_date = input$flightdate,
-                      sowing_date = input$sowing,
-                      threshold = input$thresh,
-                      span = input$span,
-                      parallel = input$parallel) |>
-            modl()
+      if(input$method == "Logistic Model L3" & !input$usethresh){
+        # modl <-
+        dfactive$df |>
+          mod_L3(predictor = input$vegetindex,
+                 flight_date = input$flightdate,
+                 sowing_date = input$sowing,
+                 parallel = input$parallel) |>
+          modl()
+      } else if(input$method == "Logistic Model L4" & !input$usethresh){
+        # modl <-
+        dfactive$df |>
+          mod_L4(predictor = input$vegetindex,
+                 flight_date = input$flightdate,
+                 sowing_date = input$sowing,
+                 parallel = input$parallel) |>
+          modl()
+      } else if(input$method == "Logistic Model L5" & !input$usethresh){
+        # modl <-
+        dfactive$df |>
+          mod_L5(predictor = input$vegetindex,
+                 flight_date = input$flightdate,
+                 sowing_date = input$sowing,
+                 parallel = input$parallel) |>
+          modl()
+      } else if(input$methodthresh == "LOESS (Volpato et al., 2021)" & input$usethresh){
+        # modl <-
+        dfactive$df |>
+          mod_loess(predictor = input$vegetindex,
+                    flight_date = input$flightdate,
+                    sowing_date = input$sowing,
+                    threshold = input$thresh,
+                    span = input$span,
+                    parallel = input$parallel) |>
+          modl()
 
-        } else if(input$method == "Segmented Regression" & !input$usethresh){
-          dfactive$df |>
-            mod_segmented2(predictor = input$vegetindex,
-                           flight_date = input$flightdate,
-                           sowing_date = input$sowing,
-                           parallel = input$parallel) |>
-            modl()
+      } else if(input$method == "Segmented Regression" & !input$usethresh){
+        dfactive$df |>
+          mod_segmented2(predictor = input$vegetindex,
+                         flight_date = input$flightdate,
+                         sowing_date = input$sowing,
+                         parallel = input$parallel) |>
+          modl()
 
-        } else if(input$methodthresh == "Segmented Regression (Volpato et al., 2021)" & input$usethresh){
-          # modl <-
-          dfactive$df |>
-            mod_segmented(predictor = input$vegetindex,
-                          flight_date = input$flightdate,
-                          sowing_date = input$sowing,
-                          threshold = input$thresh,
-                          parallel = input$parallel) |>
-            modl()
-        }
-      })
- # send to dataset
-      observe({
-        req(modl())
-        dfs[[input$saveto]] <- create_reactval(input$saveto, modl() |> dplyr::select(-parms))
-      })
+      } else if(input$methodthresh == "Segmented Regression (Volpato et al., 2021)" & input$usethresh){
+        # modl <-
+        dfactive$df |>
+          mod_segmented(predictor = input$vegetindex,
+                        flight_date = input$flightdate,
+                        sowing_date = input$sowing,
+                        threshold = input$thresh,
+                        parallel = input$parallel) |>
+          modl()
+      }
+    })
+    # send to dataset
+    observe({
+      req(modl())
+      dfs[[input$saveto]] <- create_reactval(input$saveto, modl() |> dplyr::select(-parms))
+    })
 
-      # Save to a temp file
-      observeEvent(input$savetoglobalenv, {
-        req(modl())
-        tf <- tempfile(pattern = "plimanshiny_output", fileext = ".RData")
-        plimanshiny_growth_models <- modl()
-        save(plimanshiny_growth_models, file = tf)
-        ask_confirmation(
-          inputId = "myconfirmation",
-          type = "warning",
-          title = "Close the App?",
-          text = glue::glue("The results were saved in a temporary file ({basename(tf)}).
+    # Save to a temp file
+    observeEvent(input$savetoglobalenv, {
+      req(modl())
+      tf <- tempfile(pattern = "plimanshiny_output", fileext = ".RData")
+      plimanshiny_growth_models <- modl()
+      save(plimanshiny_growth_models, file = tf)
+      ask_confirmation(
+        inputId = "myconfirmation",
+        type = "warning",
+        title = "Close the App?",
+        text = glue::glue("The results were saved in a temporary file ({basename(tf)}).
               To access the created object, you need first to stop the App and run
               get_plimanshiny_results()
               to load the list into your R environment.
               Do you really want to close the app now?"),
-          btn_labels = c("Nope", "Yep"),
-          btn_colors = c("#FE642E", "#04B404")
-        )
-      })
+        btn_labels = c("Nope", "Yep"),
+        btn_colors = c("#FE642E", "#04B404")
+      )
+    })
 
-      observe({
-        if (!is.null(input$myconfirmation)) {
-          if (input$myconfirmation) {
-            stopApp()
-          } else {
-            return()
-          }
+    observe({
+      if (!is.null(input$myconfirmation)) {
+        if (input$myconfirmation) {
+          stopApp()
+        } else {
+          return()
         }
-      })
+      }
+    })
 
-      observe({
-        req(modl())
-        nplots <- nrow(modl())
-        converged <- nrow(modl() |> dplyr::filter(!is.na(maturity)))
-        notconverged <- nplots - converged
-        convergencerate <- round(converged / nplots * 100, 2)
+    observe({
+      req(modl())
+      nplots <- nrow(modl())
+      converged <- nrow(modl() |> dplyr::filter(!is.na(maturity)))
+      notconverged <- nplots - converged
+      convergencerate <- round(converged / nplots * 100, 2)
 
-        content <- tags$span(
-          tags$h1(icon("info"), "Prediction Summary", style = "color: orange;"),
-          tags$p("The predictions have been successfully completed and are ready for further analysis in the 'Datasets' module.",
-                 style = "margin-top: 10px;"),
-          icon("grip"), tags$b("Number of plots: "), paste0(nplots), tags$br(),
-          icon("circle-check"), tags$b("Converged Models: "), paste0(converged), tags$br(),
-          icon("circle-xmark"), tags$b("Not Converged Models: "), paste0(notconverged), tags$br(),
-          icon("chart-bar"), tags$b("Convergence Rate: "), paste0(convergencerate, "%"), tags$br()
-        )
+      content <- tags$span(
+        tags$h1(icon("info"), "Prediction Summary", style = "color: orange;"),
+        tags$p("The predictions have been successfully completed and are ready for further analysis in the 'Datasets' module.",
+               style = "margin-top: 10px;"),
+        icon("grip"), tags$b("Number of plots: "), paste0(nplots), tags$br(),
+        icon("circle-check"), tags$b("Converged Models: "), paste0(converged), tags$br(),
+        icon("circle-xmark"), tags$b("Not Converged Models: "), paste0(notconverged), tags$br(),
+        icon("chart-bar"), tags$b("Convergence Rate: "), paste0(convergencerate, "%"), tags$br()
+      )
 
-        show_alert(
-          title = NULL,
-          text = div(content, style = "text-align: left; line-height: 1.5;"),
-          html = TRUE,
-          width = 720,
-          type = "success"
-        )
-      })
-      waiter_hide()
-
-
-
-
-      observe({
-        req(modl())
-        updateSelectInput(session, "plotattribute",
-                          choices = colnames(modl()),
-                          selected = "q90")
-      })
-
-      observe({
-        req(modl())
-        updatePickerInput(session, "histotraits",
-                          choices = colnames(modl()),
-                          selected = NA)
-      })
+      show_alert(
+        title = NULL,
+        text = div(content, style = "text-align: left; line-height: 1.5;"),
+        html = TRUE,
+        width = 720,
+        type = "success"
+      )
+    })
+    waiter_hide()
 
 
-      # Plot the results
-      output$tabresult <- reactable::renderReactable({
-        req(modl())
+
+
+    observe({
+      req(modl())
+      updateSelectInput(session, "plotattribute",
+                        choices = colnames(modl()),
+                        selected = "q90")
+    })
+
+    observe({
+      req(modl())
+      updatePickerInput(session, "histotraits",
+                        choices = colnames(modl()),
+                        selected = NA)
+    })
+
+
+    # Plot the results
+    output$tabresult <- reactable::renderReactable({
+      req(modl())
+      modl() |>
+        dplyr::select(-parms) |>
+        roundcols(digits = 3) |>
+        render_reactable()
+    })
+
+
+
+
+    # Plot the histograms
+    output$histograms <- renderPlotly({
+      req(input$histotraits)
+      req(modl())
+
+      dfhist <-
         modl() |>
-          dplyr::select(-parms) |>
-          roundcols(digits = 3) |>
-          render_reactable()
-      })
+        dplyr::select(dplyr::all_of(input$histotraits)) |>
+        dplyr::ungroup() |>
+        tidyr::pivot_longer(dplyr::all_of(input$histotraits))
+
+
+      p <-
+        ggplot(dfhist, aes(x = value)) +
+        geom_histogram(position = "identity",
+                       fill = "forestgreen") +
+        facet_wrap(~name, scales = "free") +
+        labs(x = "Observed value",
+             y = "Number of plots") +
+        theme_bw(base_size = 18) +
+        theme(panel.grid.minor = element_blank(),
+              legend.position = "bottom")
+      plotly::ggplotly(p)
+    })
+
+
+    observe({
+      levels <- sort(unique(dfactive$df[["unique_plot"]]))
+      updatePickerInput(session, "fittedmodel",
+                        choices = levels)
+
+    })
 
 
 
+    observe({
+      req(modl())
+      # if threshold is not used
+      # models L3, L4 and L5
+      if(input$usethresh){
+        req(input$fittedmodel)
+        dfplot <-
+          dfactive$df |>
+          dplyr::select(dplyr::all_of(c("unique_plot", input$flightdate, input$vegetindex))) |>
+          setNames(c("unique_plot", "doy", "vindex")) |>
+          dplyr::mutate(doy = as.numeric(round(difftime(to_datetime(doy), to_datetime(input$sowing), units = "days")))) |>
+          dplyr::filter(!!dplyr::sym("unique_plot") %in% input$fittedmodel)
 
-      # Plot the histograms
-      output$histograms <- renderPlotly({
-        req(input$histotraits)
-        req(modl())
 
-        dfhist <-
+        dfpars <-
           modl() |>
-          dplyr::select(dplyr::all_of(input$histotraits)) |>
-          dplyr::ungroup() |>
-          tidyr::pivot_longer(dplyr::all_of(input$histotraits))
+          dplyr::filter(unique_plot == input$fittedmodel)
 
+        output$fittedplot <- renderPlot({
+          ggplot(dfplot, aes(x = doy, y = vindex)) +
+            geom_point() +
+            geom_smooth(method = 'loess',
+                        formula = "y ~ x",
+                        se = FALSE) +
+            geom_vline(xintercept = dfpars$maturity, color = "salmon") +
+            geom_hline(yintercept = input$thresh, linetype = 2, color = "salmon") +
+            labs(x = "Days after sowing",
+                 y = input$vegetindex) +
+            theme_bw(base_size = 18) +
+            theme(panel.grid.minor = element_blank(),
+                  legend.position = "bottom")
 
-        p <-
-          ggplot(dfhist, aes(x = value)) +
-          geom_histogram(position = "identity",
-                         fill = "forestgreen") +
-          facet_wrap(~name, scales = "free") +
-          labs(x = "Observed value",
-               y = "Number of plots") +
-          theme_bw(base_size = 18) +
-          theme(panel.grid.minor = element_blank(),
-                legend.position = "bottom")
-        plotly::ggplotly(p)
-      })
-
-
-      observe({
-        levels <- sort(unique(dfactive$df[["unique_plot"]]))
-        updatePickerInput(session, "fittedmodel",
-                          choices = levels)
-
-      })
-
-
-
-      observe({
+        })
+        waiter_hide()
+      } else if(!input$usethresh){
+        req(input$fittedmodel)
         req(modl())
-        # if threshold is not used
-        # models L3, L4 and L5
-        if(input$usethresh){
-          req(input$fittedmodel)
-          dfplot <-
-            dfactive$df |>
-            dplyr::select(dplyr::all_of(c("unique_plot", input$flightdate, input$vegetindex))) |>
-            setNames(c("unique_plot", "doy", "vindex")) |>
-            dplyr::mutate(doy = as.POSIXlt(doy)$yday + 1 -  (as.POSIXlt(input$sowing)$yday + 1)) |>
-            dplyr::filter(!!dplyr::sym("unique_plot") %in% input$fittedmodel)
+        dfplot <-
+          dfactive$df |>
+          dplyr::select(dplyr::all_of(c("unique_plot", input$flightdate, input$vegetindex))) |>
+          setNames(c("unique_plot", "doy", "vindex")) |>
+          dplyr::mutate(doy = as.numeric(round(difftime(to_datetime(doy), to_datetime(input$sowing), units = "days")))) |>
+          dplyr::filter(!!dplyr::sym("unique_plot") %in% input$fittedmodel)
+
+        dfpars <-
+          modl() |>
+          dplyr::filter(unique_plot == input$fittedmodel)
+
+        #
+        # Plot the fitted models
+        observe({
+          if(input$method != "Segmented Regression"){
+            output$fittedplot <- renderPlot({
+
+              df_int <-
+                dplyr::tibble(flights = seq(dfpars$parms[[1]][[1]]$xmin, dfpars$parms[[1]][[1]]$xmax, length.out = 1000),
+                              class = ifelse(flights < dfpars$heading, "Vegetative", "Reproductive")) |>
+                as.data.frame()
+              ypred <- predict(dfpars$parms[[1]][[1]]$modeladj, newdata = df_int)
+              df_int <- dplyr::bind_cols(df_int, data.frame(y = ypred))
 
 
-          dfpars <-
-            modl() |>
-            dplyr::filter(unique_plot == input$fittedmodel)
-
-          output$fittedplot <- renderPlot({
-            ggplot(dfplot, aes(x = doy, y = vindex)) +
-              geom_point() +
-              geom_smooth(method = 'loess',
-                          formula = "y ~ x",
-                          se = FALSE) +
-              geom_vline(xintercept = dfpars$maturity, color = "salmon") +
-              geom_hline(yintercept = input$thresh, linetype = 2, color = "salmon") +
-              labs(x = "Days after sowing",
-                   y = input$vegetindex) +
-              theme_bw(base_size = 18) +
-              theme(panel.grid.minor = element_blank(),
-                    legend.position = "bottom")
-
-          })
-          waiter_hide()
-        } else if(!input$usethresh){
-          req(input$fittedmodel)
-          req(modl())
-
-          dfplot <-
-            dfactive$df |>
-            dplyr::select(dplyr::all_of(c("unique_plot", input$flightdate, input$vegetindex))) |>
-            setNames(c("unique_plot", "doy", "vindex")) |>
-            dplyr::mutate(doy = as.POSIXlt(doy)$yday + 1 -  (as.POSIXlt(input$sowing)$yday + 1)) |>
-            dplyr::filter(!!dplyr::sym("unique_plot") %in% input$fittedmodel)
-
-          dfpars <-
-            modl() |>
-            dplyr::filter(unique_plot == input$fittedmodel)
-
-          #
-          # Plot the fitted models
-          observe({
-            if(input$method != "Segmented Regression"){
-              output$fittedplot <- renderPlot({
-
-                df_int <-
-                  dplyr::tibble(flights = seq(dfpars$parms[[1]][[1]]$xmin, dfpars$parms[[1]][[1]]$xmax, length.out = 1000),
-                                class = ifelse(flights < dfpars$heading, "Vegetative", "Reproductive")) |>
-                  as.data.frame()
-                ypred <- predict(dfpars$parms[[1]][[1]]$modeladj, newdata = df_int)
-                df_int <- dplyr::bind_cols(df_int, data.frame(y = ypred))
-
-
-                pmod <-
-                  ggplot() +
-                  geom_point(aes(x = doy, y = vindex),
-                             data = dfplot) +
-                  geom_function(fun = get_data_info(dfpars, 1, "model"),
-                                args = get_data_info(dfpars, 1, "coefs"),
-                                xlim = c(get_data_info(dfpars, 1, "xmin"), get_data_info(dfpars, 1, "xmax"))) +
-                  geom_ribbon(data = df_int,
-                              aes(x = flights,
-                                  ymin = min(y),
-                                  ymax =  y,
-                                  fill = class),
-                              alpha = 0.5) +
-                  geom_vline(aes(xintercept = dfpars$heading), color = "red") +
-                  geom_vline(xintercept = dfpars$maturity, color = "salmon") +
-                  labs(x = "Days after sowing",
-                       y = input$vegetindex,
-                       fill = "Phase") +
-                  theme_bw(base_size = 18) +
-                  theme(panel.grid.minor = element_blank(),
-                        legend.position = "bottom")
-
-                fd <-
-                  ggplot() +
-                  geom_function(fun = get_data_info(dfpars, 1, "fd"),
-                                args = get_data_info(dfpars, 1, "coefs"),
-                                xlim = c(get_data_info(dfpars, 1, "xmin"), get_data_info(dfpars, 1, "xmax"))) +
-                  labs(x = "Days after sowing",
-                       y = "First derivative") +
-                  geom_vline(aes(xintercept = dfpars$heading), color = "red") +
-                  geom_vline(xintercept = dfpars$maturity, color = "salmon") +
-                  theme_bw(base_size = 18) +
-                  theme(panel.grid.minor = element_blank())
-                #
-                sd <-
-                  ggplot() +
-                  geom_function(fun = get_data_info(dfpars, 1, "sd"),
-                                args = get_data_info(dfpars, 1, "coefs"),
-                                xlim = c(get_data_info(dfpars, 1, "xmin"), get_data_info(dfpars, 1, "xmax"))) +
-                  labs(x =  "Days after sowing",
-                       y = "Second derivative") +
-                  geom_vline(aes(xintercept = dfpars$heading), color = "red") +
-                  geom_vline(xintercept = dfpars$maturity, color = "salmon") +
-                  theme_bw(base_size = 18) +
-                  theme(panel.grid.minor = element_blank())
-
-                output$fderivate <- renderPlot({
-                  fd
-                })
-
-                output$sderivate <- renderPlot({
-                  sd
-                })
-                pmod
-              })
-            } else{
-              output$fittedplot <- renderPlot({
+              pmod <-
                 ggplot() +
-                  geom_point(aes(x = doy, y = vindex),
-                             data = dfplot) +
-                  # add two lines from segmented regression
-                  geom_abline(intercept = dfpars$parms[[1]][[1]]$coefs$intercepts[1],
-                              slope = dfpars$parms[[1]][[1]]$coefs$slopes[1],
-                              color = "red") +
-                  geom_abline(intercept = dfpars$parms[[1]][[1]]$coefs$intercepts[2],
-                              slope = dfpars$parms[[1]][[1]]$coefs$slopes[2],
-                              color = "red") +
-                  geom_vline(xintercept = dfpars$maturity, color = "salmon", linetype = 2) +
-                  labs(x = "Days after sowing",
-                       y = input$vegetindex,
-                       fill = "Phase") +
-                  theme_bw(base_size = 18) +
-                  theme(panel.grid.minor = element_blank(),
-                        legend.position = "bottom")
+                geom_point(aes(x = doy, y = vindex),
+                           data = dfplot) +
+                geom_function(fun = get_data_info(dfpars, 1, "model"),
+                              args = get_data_info(dfpars, 1, "coefs"),
+                              xlim = c(get_data_info(dfpars, 1, "xmin"), get_data_info(dfpars, 1, "xmax"))) +
+                geom_ribbon(data = df_int,
+                            aes(x = flights,
+                                ymin = min(y),
+                                ymax =  y,
+                                fill = class),
+                            alpha = 0.5) +
+                geom_vline(aes(xintercept = dfpars$heading), color = "red") +
+                geom_vline(xintercept = dfpars$maturity, color = "salmon") +
+                labs(x = "Days after sowing",
+                     y = input$vegetindex,
+                     fill = "Phase") +
+                theme_bw(base_size = 18) +
+                theme(panel.grid.minor = element_blank(),
+                      legend.position = "bottom")
 
+              fd <-
+                ggplot() +
+                geom_function(fun = get_data_info(dfpars, 1, "fd"),
+                              args = get_data_info(dfpars, 1, "coefs"),
+                              xlim = c(get_data_info(dfpars, 1, "xmin"), get_data_info(dfpars, 1, "xmax"))) +
+                labs(x = "Days after sowing",
+                     y = "First derivative") +
+                geom_vline(aes(xintercept = dfpars$heading), color = "red") +
+                geom_vline(xintercept = dfpars$maturity, color = "salmon") +
+                theme_bw(base_size = 18) +
+                theme(panel.grid.minor = element_blank())
+              #
+              sd <-
+                ggplot() +
+                geom_function(fun = get_data_info(dfpars, 1, "sd"),
+                              args = get_data_info(dfpars, 1, "coefs"),
+                              xlim = c(get_data_info(dfpars, 1, "xmin"), get_data_info(dfpars, 1, "xmax"))) +
+                labs(x =  "Days after sowing",
+                     y = "Second derivative") +
+                geom_vline(aes(xintercept = dfpars$heading), color = "red") +
+                geom_vline(xintercept = dfpars$maturity, color = "salmon") +
+                theme_bw(base_size = 18) +
+                theme(panel.grid.minor = element_blank())
+
+              output$fderivate <- renderPlot({
+                fd
               })
-            }
-          })
 
-          waiter_hide()
-        }
-
-
-
-      })
-
-
-
-      # Explore the results Map
-      output$map <- renderLeaflet({
-        req(shapefile[[input$shapefiletoexplore]]$data)
-        req(input$plotattribute)
-        if(input$plotattribute %in% colnames(shapefile[[input$shapefiletoexplore]]$data)){
-          if(is.null(basemap$map)){
-            shapefile_view(shapefile[[input$shapefiletoexplore]]$data,
-                           attribute = input$plotattribute,
-                           color_regions = return_colors(input$palplot, reverse = input$palplotrev),
-                           alpha.regions = input$alpharesplot)
+              output$sderivate <- renderPlot({
+                sd
+              })
+              pmod
+            })
           } else{
-            mshp <- shapefile_view(shapefile[[input$shapefiletoexplore]]$data,
-                                   attribute = input$plotattribute,
-                                   color_regions = return_colors(input$palplot, reverse = input$palplotrev),
-                                   alpha.regions = input$alpharesplot)
-            (basemap$map +  mshp)@map
-          }
-        }
+            output$fittedplot <- renderPlot({
+              ggplot() +
+                geom_point(aes(x = doy, y = vindex),
+                           data = dfplot) +
+                # add two lines from segmented regression
+                geom_abline(intercept = dfpars$parms[[1]][[1]]$coefs$intercepts[1],
+                            slope = dfpars$parms[[1]][[1]]$coefs$slopes[1],
+                            color = "red") +
+                geom_abline(intercept = dfpars$parms[[1]][[1]]$coefs$intercepts[2],
+                            slope = dfpars$parms[[1]][[1]]$coefs$slopes[2],
+                            color = "red") +
+                geom_vline(xintercept = dfpars$maturity, color = "salmon", linetype = 2) +
+                labs(x = "Days after sowing",
+                     y = input$vegetindex,
+                     fill = "Phase") +
+                theme_bw(base_size = 18) +
+                theme(panel.grid.minor = element_blank(),
+                      legend.position = "bottom")
 
-      })
+            })
+          }
+        })
+
+        waiter_hide()
+      }
+
+
+
+    })
+
+
+
+    # Explore the results Map
+    output$map <- renderLeaflet({
+      req(shapefile[[input$shapefiletoexplore]]$data)
+      req(input$plotattribute)
+      if(input$plotattribute %in% colnames(shapefile[[input$shapefiletoexplore]]$data)){
+        if(is.null(basemap$map)){
+          shapefile_view(shapefile[[input$shapefiletoexplore]]$data,
+                         attribute = input$plotattribute,
+                         color_regions = return_colors(input$palplot, reverse = input$palplotrev),
+                         alpha.regions = input$alpharesplot)
+        } else{
+          mshp <- shapefile_view(shapefile[[input$shapefiletoexplore]]$data,
+                                 attribute = input$plotattribute,
+                                 color_regions = return_colors(input$palplot, reverse = input$palplotrev),
+                                 alpha.regions = input$alpharesplot)
+          (basemap$map +  mshp)@map
+        }
+      }
+
+    })
     # })
   })
 }
