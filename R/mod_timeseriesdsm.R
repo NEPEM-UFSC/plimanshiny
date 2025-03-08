@@ -97,19 +97,47 @@ mod_timeseriesdsm_ui <- function(id){
                 value = c("5,5")
               )
             ),
-            pickerInput(
-              ns("maskfile"),
-              label = "Mask (optional)",
-              choices = NULL
+            prettyRadioButtons(
+              ns("masktype"),
+              label = "Mask type",
+              choices = c("none", "raster", "threshold"),
+              selected = "none",
+              inline = TRUE
             ),
             conditionalPanel(
-              condition = "input.maskfile != 'none'", ns = ns,
+              condition = "input.masktype == 'raster'", ns = ns,
+              pickerInput(
+                ns("maskfile"),
+                label = "Mask (optional)",
+                choices = "none"
+              ),
               prettyCheckbox(
                 inputId = ns("masksoil"),
                 label = "Mask shows soil?",
                 value = FALSE,
               )
             ),
+            conditionalPanel(
+              condition = "input.masktype == 'threshold'", ns = ns,
+              numericInput(
+                ns("dsmthresh"),
+                label = "CHM threshold",
+                value = 0,
+              )
+            ),
+            # pickerInput(
+            #   ns("maskfile"),
+            #   label = "Mask (optional)",
+            #   choices = NULL
+            # ),
+            # conditionalPanel(
+            #   condition = "input.maskfile != 'none'", ns = ns,
+            #   prettyCheckbox(
+            #     inputId = ns("masksoil"),
+            #     label = "Mask shows soil?",
+            #     value = FALSE,
+            #   )
+            # ),
             prettyCheckbox(
               inputId = ns("croptoext"),
               label = "Crop to the shapefile extend?",
@@ -451,10 +479,10 @@ mod_timeseriesdsm_server <- function(id, shapefile, mosaiclist, basemap, dfs, se
             return()
           } else{
 
-            if(input$maskfile == "none"){
+            if(input$masktype == "none" | input$masktype == "threshold"){
               chmres <- mosaic_chm(dsm, dtm,
                                    verbose = FALSE)
-            } else{
+            } else if(input$masktype == "raster"){
               chmres <- mosaic_chm(dsm = dsm,
                                    dtm = dtm,
                                    mask = mosaiclist[[input$maskfile]]$data,
@@ -477,11 +505,11 @@ mod_timeseriesdsm_server <- function(id, shapefile, mosaiclist, basemap, dfs, se
             )
             return()
           } else{
-            if(input$maskfile == "none"){
+            if(input$masktype == "none" | input$masktype == "threshold"){
               chmres <- mosaic_chm(dsm,
                                    window_size = input$windowsize |> chrv2numv(),
                                    verbose = FALSE)
-            } else{
+            } else if(input$masktype == "raster"){
               chmres <- mosaic_chm(dsm = dsm,
                                    window_size = input$windowsize |> chrv2numv(),
                                    mask = mosaiclist[[input$maskfile]]$data,
@@ -503,11 +531,15 @@ mod_timeseriesdsm_server <- function(id, shapefile, mosaiclist, basemap, dfs, se
         type = "info",
         btn_labels = NA
       )
-
-
+      if(input$masktype == "threshold"){
+        chm_thresh <- input$dsmthresh
+      } else{
+        chm_thresh <- NULL
+      }
       result_plot <-
         map_dfr(chmreact$rast, ~.x |>
-                  mosaic_chm_extract(shapefile = shapefile[[input$activeshape]]$data),
+                  mosaic_chm_extract(shapefile = shapefile[[input$activeshape]]$data,
+                                     chm_threshold = chm_thresh),
                 .id = "date") |>
         dplyr::mutate(date = as.Date(date)) |>
         dplyr::arrange(date, block, plot_id) |>

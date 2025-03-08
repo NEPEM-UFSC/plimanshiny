@@ -139,7 +139,6 @@ plimanshiny_viewer_server <- function(id, mosaic,
   } else{
     marg <- reactiveVal(0)
   }
-  # print(marg)
   moduleServer(id, function(input, output, session) {
 
     needstretch <- reactiveVal(FALSE)

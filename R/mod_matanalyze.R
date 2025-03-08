@@ -504,7 +504,10 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
                         parallel = input$parallel) |>
           modl()
       }
+      req(modl())
+      waiter_hide()
     })
+
     # send to dataset
     observe({
       req(modl())
@@ -566,8 +569,6 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
         type = "success"
       )
     })
-    waiter_hide()
-
 
 
 
@@ -639,6 +640,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
       # models L3, L4 and L5
       if(input$usethresh){
         req(input$fittedmodel)
+        req(modl())
         dfplot <-
           dfactive$df |>
           dplyr::select(dplyr::all_of(c("unique_plot", input$flightdate, input$vegetindex))) |>
@@ -666,7 +668,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
                   legend.position = "bottom")
 
         })
-        waiter_hide()
+        # waiter_hide()
       } else if(!input$usethresh){
         req(input$fittedmodel)
         req(modl())
@@ -774,7 +776,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
           }
         })
 
-        waiter_hide()
+        # waiter_hide()
       }
 
 
@@ -803,7 +805,6 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
       }
 
     })
-    # })
   })
 }
 

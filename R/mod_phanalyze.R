@@ -17,7 +17,6 @@ mod_phanalyze_ui <- function(id){
           collapsible = FALSE,
           width = 12,
           icon = icon("mountain-sun"),
-          height = "790px",
           awesomeRadio(
             inputId = ns("inputdsmtype"),
             label = "Entry method",
@@ -74,17 +73,32 @@ mod_phanalyze_ui <- function(id){
             label = "Shapefile",
             choices = NULL
           ),
-          pickerInput(
-            ns("maskfile"),
-            label = "Mask (optional)",
-            choices = NULL
+          prettyRadioButtons(
+            ns("masktype"),
+            label = "Mask type",
+            choices = c("none", "raster", "threshold"),
+            selected = "none",
+            inline = TRUE
           ),
           conditionalPanel(
-            condition = "input.maskfile != 'none'", ns = ns,
+            condition = "input.masktype == 'raster'", ns = ns,
+            pickerInput(
+              ns("maskfile"),
+              label = "Mask (optional)",
+              choices = "none"
+            ),
             prettyCheckbox(
               inputId = ns("masksoil"),
               label = "Mask shows soil?",
               value = FALSE,
+            )
+          ),
+          conditionalPanel(
+            condition = "input.masktype == 'threshold'", ns = ns,
+            numericInput(
+              ns("dsmthresh"),
+              label = "CHM threshold",
+              value = 0,
             )
           ),
           uiOutput(ns("computearea"))
@@ -519,11 +533,16 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
             ),
             color = "#228B227F"
           )
-
-          if(input$maskfile == "none"){
+          #   ns("masktype"),
+          #   label = "Mask type",
+          #   choices = c("none", "raster", "threshold"),
+          #   selected = "none",
+          #   inline = TRUE
+          # ),
+          if(input$masktype == "none" | input$masktype == "threshold"){
             chmres <- mosaic_chm(dsm, dtm,
                                  verbose = FALSE)
-          } else{
+          } else if(input$masktype == "raster"){
             chmres <- mosaic_chm(dsm = dsm,
                                  dtm = dtm,
                                  mask = mosaic_data[[input$maskfile]]$data,
@@ -568,10 +587,10 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
                 color = "#228B227F"
               )
 
-              if(input$maskfile == "none"){
+              if(input$masktype == "none" | input$masktype == "threshold"){
                 chmres <- mosaic_chm(dsm, points = cpo,
                                      verbose = FALSE)
-              } else{
+              } else if (input$masktype == "raster"){
                 chmres <- mosaic_chm(dsm = dsm,
                                      points = cpo,
                                      mask = mosaic_data[[input$maskfile]]$data,
@@ -605,11 +624,11 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
             color = "#228B227F"
           )
 
-          if(input$maskfile == "none"){
+          if(input$masktype == "none" | input$masktype == "threshold"){
             chmres <- mosaic_chm(dsm,
                                  window_size = input$windowsize |> chrv2numv(),
                                  verbose = FALSE)
-          } else{
+          } else if(input$masktype == "raster"){
             chmres <- mosaic_chm(dsm = dsm,
                                  window_size = input$windowsize |> chrv2numv(),
                                  mask = mosaic_data[[input$maskfile]]$data,
@@ -629,7 +648,11 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
       req(chmreact$rast)
       req(input$basemapplot)
 
-      dftmp <- mosaic_chm_extract(chmres, shapefile[[input$shapefile]]$data)
+      if(input$masktype == "threshold"){
+        dftmp <- mosaic_chm_extract(chmres, shapefile[[input$shapefile]]$data, chm_threshold = input$dsmthresh)
+      } else{
+        dftmp <- mosaic_chm_extract(chmres, shapefile[[input$shapefile]]$data)
+      }
       dfres$df <- dftmp
       updateSelectInput(session, "plotattribute",
                         choices = colnames(dftmp),
