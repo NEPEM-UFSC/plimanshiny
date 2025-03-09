@@ -16,7 +16,15 @@ mod_growthmodels_ui <- function(id) {
           title = "Nonlinear modeling for growth curves",
           collapsible = FALSE,
           width = 12,
-          height = "790px",
+          awesomeRadio(
+            inputId = ns("inputdsmtype"),
+            label = "Entry method",
+            choices = c("Imported Dataset", "Example Dataset"),
+            selected = "Imported Dataset",
+            status = "success",
+            inline = TRUE
+          ),
+          hl(),
           pickerInput(
             ns("dftoedit"),
             label = "Time series data",
@@ -200,6 +208,16 @@ mod_growthmodels_ui <- function(id) {
                        plotOutput(ns("sderivate"), height = "570px") |> add_spinner()
               )
             )
+          ),
+          tabPanel(
+            title = "Trait distribution",
+            pickerInput(
+              ns("histotraitsgm"),
+              label = "Select trait(s) to plot:",
+              choices = NULL,
+              multiple = TRUE
+            ),
+            plotlyOutput(ns("histogramsgm"), height = "680px")  |> add_spinner()
           ),
           tabPanel(
             title = "Summary",
@@ -408,6 +426,22 @@ mod_growthmodels_server <- function(id, dfs){
       )
     })
 
+
+    # The example dataset is a sample of 4 plots obtained after time series processing using the
+    # bisonfly DSM dataset, by Filipe Matias https://github.com/filipematias23/Bison-Fly
+    observeEvent(input$inputdsmtype, {
+      if(input$inputdsmtype == "Example Dataset"){
+        filepath <- file.path(system.file(package = "plimanshiny"), "app/www/timeseries_dsm.csv")
+        dfs[["df_growth_model"]] <- create_reactval("df_growth_model",  read.csv(filepath))
+        observe({
+          updatePickerInput(session, "dftoedit",
+                            choices = c("none", names(dfs)),
+                            selected = "df_growth_model")
+        })
+      }
+    })
+
+
     observe({
       updatePickerInput(session, "dftoedit",
                         choices = c("none", names(dfs)))
@@ -588,6 +622,12 @@ mod_growthmodels_server <- function(id, dfs){
                         choices = levels,
                         selected = levels[[1]])
     })
+    observe({
+      req(models())
+      updatePickerInput(session, "histotraitsgm",
+                        choices = colnames(models()),
+                        selected = NA)
+    })
 
     observe({
       updatePickerInput(session, "plotunique",
@@ -750,6 +790,33 @@ mod_growthmodels_server <- function(id, dfs){
         psd
       })
 
+    })
+
+
+    ### trait distribution
+    # Plot the histograms
+    output$histogramsgm <- renderPlotly({
+      req(input$histotraitsgm)
+      req(models())
+
+      dfhist <-
+        models() |>
+        dplyr::select(dplyr::all_of(input$histotraitsgm)) |>
+        dplyr::ungroup() |>
+        tidyr::pivot_longer(dplyr::all_of(input$histotraitsgm))
+
+
+      p <-
+        ggplot(dfhist, aes(x = value)) +
+        geom_histogram(position = "identity",
+                       fill = "forestgreen") +
+        facet_wrap(~name, scales = "free") +
+        labs(x = "Observed value",
+             y = "Number of plots") +
+        theme_bw(base_size = 18) +
+        theme(panel.grid.minor = element_blank(),
+              legend.position = "bottom")
+      plotly::ggplotly(p)
     })
 
 

@@ -15,6 +15,15 @@ mod_matanalyze_ui <- function(id){
         bs4Card(
           title = "Plant Maturity and Heading",
           collapsible = FALSE,
+          awesomeRadio(
+            inputId = ns("inputmat"),
+            label = "Entry method",
+            choices = c("Imported Dataset", "Example Dataset"),
+            selected = "Imported Dataset",
+            status = "success",
+            inline = TRUE
+          ),
+          hl(),
           width = 12,
           dateInput(
             ns("sowing"),
@@ -385,6 +394,23 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
         )
       }
     })
+
+    # The example dataset is a sample of 10 plots obtained after time series analysis
+    # of vegetation indexes, kindly provided by Leonardo Volpato https://www.linkedin.com/in/leonardo-volpato/
+    observeEvent(input$inputmat, {
+      if(input$inputmat == "Example Dataset"){
+        filepath <- file.path(system.file(package = "plimanshiny"), "app/www/timeseries_vi.csv")
+        dfs[["df_timeseries_vi"]] <- create_reactval("df_timeseries_vi",  read.csv(filepath))
+        observe({
+          updatePickerInput(session, "dftoedit",
+                            choices = c("none", names(dfs)),
+                            selected = "df_timeseries_vi")
+          updateDateInput(session, "sowing",
+                          value = as.Date("2024-11-07"))
+        })
+      }
+    })
+
 
     observe({
       updatePickerInput(session, "dftoedit",
