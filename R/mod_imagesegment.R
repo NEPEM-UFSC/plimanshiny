@@ -120,6 +120,20 @@ mod_imagesegment_ui <- function(id){
               max = 50
             ),
             sliderInput(
+              inputId = ns("erosion"),
+              label = "Erosion",
+              value = 0,
+              min = 0,
+              max = 50
+            ),
+            sliderInput(
+              inputId = ns("dilatation"),
+              label = "Dilatation",
+              value = 0,
+              min = 0,
+              max = 50
+            ),
+            sliderInput(
               inputId = ns("filter"),
               label = "Median filter",
               value = 0,
@@ -323,6 +337,8 @@ mod_imagesegment_server <- function(id, imgdata, settings){
                        invert = input$invertindex,
                        opening = input$opening,
                        closing = input$closing,
+                       erode = input$erosion,
+                       dilate = input$dilatation,
                        filter = input$filter,
                        fill_hull = input$fillhull,
                        windowsize = input$windowsize,
@@ -335,6 +351,8 @@ mod_imagesegment_server <- function(id, imgdata, settings){
                                invert = input$invertindex,
                                opening = input$opening,
                                closing = input$closing,
+                               erode = input$erosion,
+                               dilate = input$dilatation,
                                filter = input$filter,
                                fill_hull = input$fillhull)[["clusters"]]
       }
@@ -362,6 +380,8 @@ mod_imagesegment_server <- function(id, imgdata, settings){
                       opening = input$opening,
                       closing = input$closing,
                       filter = input$filter,
+                      erode = input$erosion,
+                      dilate = input$dilatation,
                       fill_hull = input$fillhull,
                       threshold = parms()$thresval,
                       windowsize = input$windowsize,
@@ -380,9 +400,6 @@ mod_imagesegment_server <- function(id, imgdata, settings){
       )
 
     })
-
-
-
 
   })
 }

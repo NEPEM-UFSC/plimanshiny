@@ -221,6 +221,7 @@ mod_imageanal_ui <- function(id){
                 )
               )
             ),
+            hl(),
             fluidRow(
               col_4(
                 numericInput(
@@ -244,6 +245,23 @@ mod_imageanal_ui <- function(id){
                 )
               )
             ),
+            fluidRow(
+              col_4(
+                numericInput(
+                  inputId = ns("erode"),
+                  label = "Erode",
+                  value = 0
+                )
+              ),
+              col_4(
+                numericInput(
+                  inputId = ns("dilate"),
+                  label = "Dilate",
+                  value = 0
+                )
+              )
+            ),
+            hl(),
             fluidRow(
               col_4(
                 numericInput(
@@ -496,10 +514,21 @@ mod_imageanal_ui <- function(id){
           ),
           tabPanel(
             title = "Results (plot)",
-            leafletOutput(ns("resultsleafl"), height = "720px")  |> add_spinner(),
-            downloadBttn(ns("downloadplotmap"),
-                         label = "Take a shot",
-                         style = "pill")
+            fluidRow(
+              col_6(
+                pickerInput(
+                  ns("attribute"),
+                  label = "Plot attribute",
+                  choices = NULL
+                )
+              ),
+              col_6(
+                downloadBttn(ns("downloadplotmap"),
+                             label = "Take a shot",
+                             style = "pill")
+              )
+            ),
+            leafletOutput(ns("resultsleafl"), height = "680px")  |> add_spinner(),
           ),
           tabPanel(
             title = "Results (raw)",
@@ -644,6 +673,8 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
            opening = input$opening,
            closing = input$closing,
            filter = input$filter,
+           erode = input$erode,
+           dilate = input$dilate,
            bfind = input$back_fore_index,
            frind = input$fore_ref_index,
            refarea =  na.omit(c(as.numeric(input$refareasiz), as.numeric(input$refareacol))),
@@ -696,6 +727,8 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
                     filter = parms()$filter,
                     opening = parms()$opening,
                     closing = parms()$closing,
+                    erode = parms()$erode,
+                    dilate = parms()$dilate,
                     fill_hull = parms()$fillhull,
                     threshold = parms()$thresval,
                     windowsize = input$windowsize)
@@ -757,6 +790,8 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
                           filter = parms()$filter,
                           opening = parms()$opening,
                           closing = parms()$closing,
+                          erode = parms()$erode,
+                          dilate = parms()$dilate,
                           lower_noise = parms()$lower_noise,
                           lower_size = parms()$lower_size,
                           upper_size = parms()$upper_size,
@@ -769,9 +804,9 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
           text = "The image has been analyzed and the results can now be seen in the tabs",
           type = "success"
         )
-
-
-        output$resultsleafl <- renderLeaflet({
+        basemap <- reactiveValues()
+        observe({
+          req(res$contours)
           sf_df <- sf::st_sf(
             geometry = lapply(res$contours, function(x) {
               tmp <- x
@@ -782,9 +817,19 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
             crs = sf::st_crs("EPSG:3857")
           )
           colnames(sf_df) <- gsub("data.", "", colnames(sf_df))
-          (image_view(imgdata$img, max_pixels = input$maxpixel) + mapview::mapview(sf_df,
-                                                                                   zcol = "area",
-                                                                                   col.regions = grDevices::colorRampPalette(c("darkred", "yellow", "darkgreen"))(3)))@map
+          updatePickerInput(session, "attribute",
+                            choices = colnames(sf_df),
+                            selected = "area")
+          basemap$map <- image_view(imgdata$img, max_pixels = input$maxpixel)
+          basemap$df <- sf_df
+        })
+
+        output$resultsleafl <- renderLeaflet({
+          req(basemap$map)
+          features <- basemap$df
+          (basemap$map + mapview::mapview(features,
+                                          zcol = input$attribute,
+                                          col.regions = grDevices::colorRampPalette(c("darkred", "yellow", "darkgreen"))(3)))@map
 
         })
 
@@ -946,6 +991,8 @@ mod_imageanal_server <- function(id, imgdata, dfs, settings){
                             filter = parms()$filter,
                             opening = parms()$opening,
                             closing = parms()$closing,
+                            erode = parms()$erode,
+                            dilate = parms()$dilate,
                             lower_noise = parms()$lower_noise,
                             lower_size = parms()$lower_size,
                             upper_size = parms()$upper_size,
