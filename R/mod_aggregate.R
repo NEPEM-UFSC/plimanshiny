@@ -90,7 +90,7 @@ mod_aggregate_server <- function(id, mosaic_data, r, g, b, basemap, settings){
     })
     observeEvent(input$startaggr, {
       output$mosaicori <- renderLeaflet({
-        if(input$mosaic_to_aggr == "Active mosaic"){
+        if(input$mosaic_to_aggr == "Active mosaic" && !is.null(basemap$map)){
           bcrop <- basemap$map
         } else{
           bcrop <-

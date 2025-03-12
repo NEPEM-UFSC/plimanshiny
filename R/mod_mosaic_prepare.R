@@ -409,10 +409,6 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
               type = "warning"
             )
           }
-          # Update selectInput choices
-          updateSelectInput(session, "mosaictoanalyze",
-                            choices = mosaicnames,
-                            selected = mosaicnames[[1]])
 
         })
       }
@@ -424,7 +420,10 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
       if(input$inputrastertype == "example raster"){
         filepath <- file.path(system.file(package = "plimanshiny"), "app/www/soy_ortho.tif")
         mosaic_data[["example_raster"]] <- create_reactval("example_raster", mosaic_input(filepath, info = FALSE))
-        # Update selectInput choices
+      }
+    })
+    observe({
+      if(length(names(mosaic_data) > 0)){
         mosaicnames <-  setdiff(names(mosaic_data), "mosaic")
         updateSelectInput(session, "mosaictoanalyze",
                           choices = mosaicnames,

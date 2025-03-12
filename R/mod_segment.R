@@ -153,7 +153,7 @@ mod_segment_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, set
     observeEvent(input$startsegment, {
       # Reactive expression to store the cropped mosaic
       segmented_mosaic <- reactiveVal(NULL)
-      if(input$mosaic_to_segment == "Active mosaic"){
+      if(input$mosaic_to_segment == "Active mosaic" && !is.null(basemap$map)){
         mtemp <- mosaic_data$mosaic$data
         basemap <- basemap$map
       } else{

@@ -151,7 +151,7 @@ mod_plotclip_server <- function(id, mosaic_data, shapefile, r, g, b, basemap, se
       shptocrop <- shapefile[[input$shape_to_clip]]$data
 
       updateSelectInput(session, "uniqueid", choices = names(shptocrop))
-      if(input$mosaic_to_clip == "Active mosaic"){
+      if(input$mosaic_to_clip == "Active mosaic"  && !is.null(basemap$map)){
         mosaictocrop <- mosaic_data$mosaic$data
         bcrop <- basemap$map
       } else{

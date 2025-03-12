@@ -138,7 +138,7 @@ mod_hyperspectral_server <- function(id, mosaic_data, r, g, b, maxpixel,  basema
     bmhyp <- reactiveVal()
     observe({
       req(input$hypermosaic)
-      if(input$hypermosaic == "Active mosaic"){
+      if(input$hypermosaic == "Active mosaic" && !is.null(basemap$map)){
         bmhyp(basemap$map)
         mosfile(mosaic_data[["mosaic"]]$data)
       } else{

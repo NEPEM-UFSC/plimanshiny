@@ -123,7 +123,7 @@ mod_crop_server <- function(id, mosaic_data, shapefile, r, g, b, basemap, settin
       if(input$shapemanipula){
         shptocrop <- shapefile[[input$shape_to_crop]]$data
         output$mosaic_cropshp <- renderLeaflet({
-          if(input$mosaic_to_crop == "Active mosaic"){
+          if(input$mosaic_to_crop == "Active mosaic" && !is.null(basemap$map)){
             bcrop <- basemap$map
           } else{
             bcrop <-
@@ -150,7 +150,7 @@ mod_crop_server <- function(id, mosaic_data, shapefile, r, g, b, basemap, settin
           type = "info"
         )
         # Reactive expression to store the cropped mosaic
-        if(input$mosaic_to_crop == "Active mosaic"){
+        if(input$mosaic_to_crop == "Active mosaic" && !is.null(basemap$map)){
           mapcrop <- basemap$map@map
         } else{
           mapcrop <-

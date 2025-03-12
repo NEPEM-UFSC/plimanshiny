@@ -91,7 +91,7 @@ mod_interpolate_server <- function(id, mosaic_data, r, g, b, basemap, settings){
     observeEvent(input$startinterpolating, {
       req(mosaic_data)
       req(input$mosaictointerpolate)
-      if(input$mosaictointerpolate == "Active mosaic"){
+      if(input$mosaictointerpolate == "Active mosaic"  && !is.null(basemap$map)){
         bmap <- basemap$map
       } else{
         bmap <- mosaic_view(mosaic_data[[input$mosaictointerpolate]]$data,

@@ -533,12 +533,6 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
             ),
             color = "#228B227F"
           )
-          #   ns("masktype"),
-          #   label = "Mask type",
-          #   choices = c("none", "raster", "threshold"),
-          #   selected = "none",
-          #   inline = TRUE
-          # ),
           if(input$masktype == "none" | input$masktype == "threshold"){
             chmres <- mosaic_chm(dsm, dtm,
                                  verbose = FALSE)
@@ -600,6 +594,9 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
               chmreact$rast <- chmres$chm
             })
           })
+
+          # mosaic_data[["dtm"]] <- create_reactval("dtm", chmres$chm[[1]])
+          # mosaic_data[["chm"]] <- create_reactval("chm", chmres$chm[[2]])
         }
       }
 
@@ -640,6 +637,10 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
           output$dtmplot <- renderPlot({
             terra::plot(chmres$chm[[1]], col = grDevices::colorRampPalette(c("darkred", "yellow", "darkgreen"))(100))
           })
+
+          # mosaic_data[["dtm"]] <- create_reactval("dtm", chmres$chm[[1]])
+          # mosaic_data[["chm"]] <- create_reactval("chm", chmres$chm[[2]])
+          # print(names(mosaic_data))
 
         }
       }
