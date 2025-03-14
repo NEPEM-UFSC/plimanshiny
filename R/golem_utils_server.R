@@ -973,3 +973,117 @@ to_datetime <- function(date_vector) {
   suppressWarnings(as.POSIXlt(date_vector, tryFormats = formats))
 }
 
+
+# helper functions for plot quality
+
+
+line_on_halfplot <- function(shape) {
+  help_lines <- function(corners){
+    # Compute pairwise distances
+    d1 <- sqrt(sum((corners[1, ] - corners[2, ])^2))  # Edge 1-2
+    d2 <- sqrt(sum((corners[2, ] - corners[3, ])^2))  # Edge 2-3
+    d3 <- sqrt(sum((corners[3, ] - corners[4, ])^2))  # Edge 3-4
+    d4 <- sqrt(sum((corners[4, ] - corners[1, ])^2))  # Edge 4-1
+    if (d1 < d2) {
+      mid1 <- (corners[1, ] + corners[2, ]) / 2
+      mid2 <- (corners[3, ] + corners[4, ]) / 2
+    } else {
+      mid1 <- (corners[2, ] + corners[3, ]) / 2
+      mid2 <- (corners[4, ] + corners[1, ]) / 2
+    }
+    # Define the coordinates of the two points
+    coords <- matrix(c(mid1[1], mid1[2],  # First point (X, Y)
+                       mid2[1], mid2[2]), # Second point (X, Y)
+                     ncol = 2, byrow = TRUE)
+    terra::vect(list(coords), type = "lines")
+  }
+  lines <-
+    do.call(rbind,
+            lapply(1:nrow(shape), function(i){
+              sf::st_coordinates(shape[i, ]) |> help_lines()
+            }))
+  return(lines)
+}
+
+comput_gaps <- function(vals, chm_quantile = 0.25){
+  alturas <- smooth.spline(vals$height, spar = 0.6)$y
+  threshold <-  (max(alturas) + min(alturas)) / 2
+  # threshold <-  quantile(alturas, chm_quantile, na.rm = TRUE)
+  below_threshold <- alturas < threshold
+  # Identificar descidas (cima -> baixo) e subidas (baixo -> cima)
+  descidas <- which(diff(below_threshold) == 1)  # Onde cai
+  subidas <- which(diff(below_threshold) == -1)  # Onde sobe
+
+  # Coeficiente de variação
+  if(length(descidas) == 0 | length(subidas) == 0){
+    vales_fechados <- 0
+    gap_area <- 0
+  } else {
+    # Contar apenas vales fechados (descidas que têm uma subida posterior)
+    vales_fechados <- sum(sapply(descidas, function(d) any(subidas > d)))
+    # Calcular a área dos gaps usando a Regra do Trapézio
+    gap_area <- sum(sapply(seq_along(descidas), function(i) {
+      d <- descidas[i]
+      s <- subidas[subidas > d][1]  # Primeira subida após a descida
+      if (!is.na(s)) {
+        x <- d:s  # Índices da seção abaixo do limiar
+        y <- alturas[x]  # Valores de altura na seção
+        y[y > threshold] <- threshold  # Ajustar os valores para não ultrapassar o limiar
+
+        # Aplicar a Regra do Trapézio: ∫ f(x)dx ≈ ∑ ((y_i + y_(i+1)) / 2) * Δx
+        return(sum((y[-1] + y[-length(y)]) / 2))
+      }
+      return(0)
+    }))
+  }
+  return(data.frame(gaps = vales_fechados,  gap_area = gap_area))
+}
+
+mosaic_chm_quality <- function(chm,
+                               shapefile,
+                               chm_threshold = 0.1,
+                               chm_quantile = 0.3,
+                               plot_quality = c("absolute", "relative")) {
+  plot_quality <- match.arg(plot_quality)
+  custom_summary <- function(values, coverage_fractions, ...) {
+    valids <- na.omit(values)
+    data.frame(
+      cv = mean(valids) / sd(valids),
+      entropy = entropy(valids),
+      coverage = sum(valids > chm_threshold) / length(valids)
+    )
+  }
+  height <- exactextractr::exact_extract(chm$chm[[2]],
+                                         shapefile,
+                                         fun = custom_summary,
+                                         force_df = TRUE,
+                                         progress = FALSE)
+  lines <- line_on_halfplot(shapefile)
+  vals_gaps <-
+    terra::extractAlong(chm$chm$height, lines) |>
+    dplyr::group_by(ID) |>
+    tidyr::nest()
+
+  gaps <- purrr::map_dfr(vals_gaps$data, \(x){ comput_gaps(x, chm_quantile = chm_quantile)})
+
+  dftmp <-
+    dplyr::bind_cols(height, gaps, shapefile) |>
+    sf::st_as_sf() |>
+    dplyr::relocate(unique_id, block, plot_id, row, column, .before = 1) |>
+    dplyr::mutate(plot_quality = sqrt(cv^2  + gaps + (5 * (coverage - 1)^2)) / sqrt(7),
+                  plot_quality = (plot_quality / max(plot_quality, na.rm = TRUE)),
+                  plot_quality = 1 - plot_quality,
+                  .before = geometry)
+
+  # **Adjust `plot_quality` to be relative (0-1)**
+  if(plot_quality == "relative"){
+    min_quality <- min(dftmp$plot_quality, na.rm = TRUE)
+    max_quality <- max(dftmp$plot_quality, na.rm = TRUE)
+
+    dftmp <-
+      dftmp |>
+      dplyr::mutate(plot_quality = (plot_quality - min_quality) / (max_quality - min_quality))
+  }
+  return(dftmp)
+}
+

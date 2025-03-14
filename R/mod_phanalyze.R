@@ -101,6 +101,34 @@ mod_phanalyze_ui <- function(id){
               value = 0,
             )
           ),
+          prettyCheckbox(
+            ns("plotquality"),
+            label = "Plot quality",
+            value = FALSE
+          ),
+          conditionalPanel(
+            condition = "input.plotquality == true", ns = ns,
+            numericInput(
+              ns("chm_threshold"),
+              label = "CHM threshold",
+              value = 0.1,
+            ),
+            sliderInput(
+              ns("chm_quantile"),
+              label = "CHM Quantile for gap identification",
+              min = 0,
+              max = 1,
+              value = 0.3
+            ),
+            prettyRadioButtons(
+              ns("qualitytype"),
+              label = "Quality type",
+              choices = c("absolute", "relative"),
+              selected = "absolute",
+              inline = TRUE
+            )
+          ),
+          hl(),
           uiOutput(ns("computearea"))
         )
       ),
@@ -638,10 +666,6 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
             terra::plot(chmres$chm[[1]], col = grDevices::colorRampPalette(c("darkred", "yellow", "darkgreen"))(100))
           })
 
-          # mosaic_data[["dtm"]] <- create_reactval("dtm", chmres$chm[[1]])
-          # mosaic_data[["chm"]] <- create_reactval("chm", chmres$chm[[2]])
-          # print(names(mosaic_data))
-
         }
       }
 
@@ -653,6 +677,18 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
         dftmp <- mosaic_chm_extract(chmres, shapefile[[input$shapefile]]$data, chm_threshold = input$dsmthresh)
       } else{
         dftmp <- mosaic_chm_extract(chmres, shapefile[[input$shapefile]]$data)
+      }
+      if(input$plotquality){
+        pq <- mosaic_chm_quality(chmres, shapefile[[input$shapefile]]$data,
+                                 chm_threshold = input$chm_threshold,
+                                 chm_quantile = input$chm_quantile,
+                                 plot_quality = input$qualitytype)
+        dftmp <-
+          dplyr::bind_cols(
+            dftmp |> dplyr::select(-dplyr::any_of("coverage")),
+            pq |> dplyr::select(cv:plot_quality) |> sf::st_drop_geometry()
+          ) |>
+          dplyr::mutate(covered_area = plot_area * coverage)
       }
       dfres$df <- dftmp
       updateSelectInput(session, "plotattribute",
