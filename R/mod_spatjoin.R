@@ -174,8 +174,8 @@ mod_spatjoin_server <- function(id, shapefile, settings) {
         # Perform spatial join
         shpemod$res <- switch(input$geometricoper,
                               "intersection" =  sf::st_intersection(shp1(), shp2_transformed),
-                              "difference" = sf::st_join(shp1(), shp2_transformed),
-                              "union" = sf::st_union(shp1(), shp2_transformed))
+                              "difference" = sf::st_difference(shp1(), sf::st_union(shp2_transformed)),
+                              "union" = sf::st_union(shp1(), sf::st_union(shp2_transformed)))
       }
 
       # Render the joined shapefile result
