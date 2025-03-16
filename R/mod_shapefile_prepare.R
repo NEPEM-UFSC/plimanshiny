@@ -212,27 +212,24 @@ mod_shapefile_prepare_ui <- function(id){
                 )
               ),
               fluidRow(
-                col_6(
+                col_3(
                   textInput(ns("ncols"),
-                            label = "Number of columns",
+                            label = "Columns",
                             value = 1)
                 ),
-                col_6(
+                col_3(
                   textInput(ns("nrows"),
-                            label = "Number of rows",
+                            label = "Rows",
                             value = 1)
-                )
-              ),
-              fluidRow(
-                style = "margin-top: -10px;",
-                col_6(
+                ),
+                col_3(
                   textInput(ns("plot_width"),
-                            label = "Plot width",
+                            label = "Width",
                             value = NA)
                 ),
-                col_6(
+                col_3(
                   textInput(ns("plot_height"),
-                            label = "Plot height",
+                            label = "Height",
                             value = NA)
                 )
               ),
@@ -812,23 +809,18 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
         output$shapefile_mapview <- renderLeaflet({
           # req(input$colorshapeimport)
           req(shapefile[[input$shapefiletoanalyze]]$data)
-          if(is.null(basemap$map)){
-            mapp <- mapview::mapview(shapefile[[input$shapefiletoanalyze]]$data,
-                                     color = input$colorstroke,
-                                     col.regions = input$colorshapeimport,
-                                     alpha.regions = input$alphacolorfill,
-                                     legend = FALSE,
-                                     lwd = input$lwdt,
-                                     layer.name = "shapes")
-          } else{
+          mapp <-
+            mapview::mapview(shapefile[[input$shapefiletoanalyze]]$data |> extract_number(plot_id),
+                             zcol = "plot_id",
+                             col.regions = return_colors(input$palplot, n = input$ncolors),
+                             alpha.regions = input$alphacolorfill,
+                             lwd = input$lwdt,
+                             layer.name = "shapes")
+
+          if(!is.null(basemap$map)){
             mapp <-
               basemap$map +
-              mapview::mapview(shapefile[[input$shapefiletoanalyze]]$data |> extract_number(plot_id),
-                               zcol = "plot_id",
-                               col.regions = return_colors(input$palplot, n = input$ncolors),
-                               alpha.regions = input$alphacolorfill,
-                               lwd = input$lwdt,
-                               layer.name = "shapes")
+              mapp
           }
           mapp@map
         })
