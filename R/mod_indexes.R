@@ -114,7 +114,7 @@ mod_indexes_ui <- function(id){
               ),
               col_6(
                 textInput(ns("storeas"),
-                          label = "Save index as...",
+                          label = "Store index as...",
                           value = "index")
               )
             ),
@@ -564,6 +564,16 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
 
     output$indexsync <- renderUI({
       if(settings()$synckmaps & (input$indextosync %in% names(magg$agg))){
+        if(is.null(basemap$map)){
+          basemap$map <-
+            mosaic_view(
+              mosaictmp$mosaic,
+              r = suppressWarnings(as.numeric(r$r)),
+              g = suppressWarnings(as.numeric(g$g)),
+              b = suppressWarnings(as.numeric(b$b)),
+              max_pixels = 5e5
+            )
+        }
         req(basemap$map)
         leafsync::sync(basemap$map@map, mosaic_view(magg$agg[[input$indextosync]],
                                                     index = input$indextosync,

@@ -16,7 +16,6 @@ mod_datasets_ui <- function(id){
           title = "Datasets",
           collapsible = FALSE,
           width = 12,
-          height = "760px",
           actionBttn(
             ns("importdf"),
             label = "Import dataset",

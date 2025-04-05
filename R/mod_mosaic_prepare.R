@@ -249,7 +249,7 @@ mod_mosaic_prepare_ui <- function(id){
           hl(),
           prettyCheckbox(
             inputId = ns("intmap"),
-            label = "Create leaflet map (needed for 'Analyze' step)",
+            label = "Create a leaflet map",
             value = FALSE,
             icon = icon("check"),
             status = "success",
@@ -325,6 +325,9 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
                  }
     )
     slider_range <- reactiveVal()
+    if(settings()$shapefileleaflet){
+      updatePrettyCheckbox(session, "intmap", value = TRUE)
+    }
 
     # GUIA
 

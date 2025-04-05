@@ -966,21 +966,29 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                 dplyr::mutate(unique_id = dplyr::row_number(), .before = 1)
 
             }
-
-            observe({
-              shapefilenames <- setdiff(c("none", names(shapefile)), c("shapefile", "shapefileplot"))
-              shapefile[[input$shapenamebuild]] <- create_reactval(input$shapenamebuild, shptemp)
-              # Update selectInput choices
-              updateSelectInput(session, "shapefiletoanalyze",
-                                choices = shapefilenames,
-                                selected = shapefilenames[[length(shapefilenames)]])
-            })
-            sendSweetAlert(
-              session = session,
-              title = "Shapefile built",
-              text = "The shapefile has been successfully built. You can now download or use it for further analysis.",
-              type = "success"
-            )
+            if(nrow(shptemp) == 0){
+              show_alert(
+                "Oops, something went wrong!",
+                text = "The shapefile appears to be empty. Did you forget to click 'Create/Update'?",
+                type = "error"
+              )
+              return()
+            } else{
+              observe({
+                shapefilenames <- setdiff(c("none", names(shapefile)), c("shapefile", "shapefileplot"))
+                shapefile[[input$shapenamebuild]] <- create_reactval(input$shapenamebuild, shptemp)
+                # Update selectInput choices
+                updateSelectInput(session, "shapefiletoanalyze",
+                                  choices = shapefilenames,
+                                  selected = shapefilenames[[length(shapefilenames)]])
+              })
+              sendSweetAlert(
+                session = session,
+                title = "Shapefile built",
+                text = "The shapefile has been successfully built. You can now download or use it for further analysis.",
+                type = "success"
+              )
+            }
           }
         })
 

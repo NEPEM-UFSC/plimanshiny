@@ -746,6 +746,18 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
       updateSelectInput(session, "availablemasks", choices = c("none", setdiff(names(mosaic_data), "mosaic")), selected = "none")
       updatePickerInput(session, "summarizefunoutput", choices = input$summarizefun, selected = input$summarizefunoutput[[1]])
     })
+    # allow the analysis of an imported raster
+    observe({
+      tmplist1 <-
+        lapply(reactiveValuesToList(mosaic_data), function(x){
+          reactiveValuesToList(x)$data
+        })
+      tmplist1 <- tmplist1[-which(names(tmplist1) == "mosaic")]
+      for(i in seq_along(tmplist1)){
+        index[[names(tmplist1)[i]]] <- create_reactval(names(tmplist1)[i], tmplist1[[i]])
+      }
+    })
+
     observe({
       updateSelectInput(session, "activeindex",
                         choices = names(index))
@@ -754,8 +766,11 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
       updateSelectInput(session, "activeshape",
                         choices = setdiff(names(shapefile), c("shapefile", "shapefileplot")))
     })
-
     maskval <- reactiveValues(mask = NULL)
+
+
+
+
 
     observe({
       req(input$activeindex)
@@ -856,7 +871,7 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
         sendSweetAlert(
           session = session,
           title = "Did you skip any steps?",
-          text = "To analyze the mosaic, ensure that mosaic, index, basemap (leaflet), and shapefile have been correctly computed.",
+          text = "To analyze the mosaic, ensure that mosaic, index, and shapefile have been correctly computed.",
           type = "error"
         )
       }
@@ -874,7 +889,8 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
             mosaic_data$mosaic$data,
             r = suppressWarnings(as.numeric(r$r)),
             g = suppressWarnings(as.numeric(g$g)),
-            b = suppressWarnings(as.numeric(b$b))
+            b = suppressWarnings(as.numeric(b$b)),
+            max_pixels = 500000
           )
         req(basemap$map)
         waiter_hide()

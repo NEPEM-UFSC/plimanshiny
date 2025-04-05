@@ -107,6 +107,8 @@ mod_classify_server <- function(id, mosaic_data, index, dfs){
 
 
     observeEvent(input$classify, {
+      req(input$bandused)
+      req(input$indextoclassify)
       classresults <-
         mosaic_classify(
           mosaic = tmplist()[[input$indextoclassify]][[input$bandused]],
