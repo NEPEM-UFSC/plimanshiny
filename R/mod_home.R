@@ -50,14 +50,6 @@ mod_home_ui <- function(id){
         ),
         fluidRow(
           actionBttn(
-            inputId = ns("similartools"),
-            label = "Similar tools",
-            color = "success",
-            icon = icon("screwdriver-wrench")
-          )
-        ),
-        fluidRow(
-          actionBttn(
             inputId = NS("example", "checkupdate"),  # Ensure proper namespacing
             label = "Check for updates",
             color = "success",
@@ -78,6 +70,14 @@ mod_home_ui <- function(id){
             label = "Reload",
             color = "warning",
             icon = icon("rotate-right")
+          )
+        ),
+        fluidRow(
+          actionBttn(
+            inputId = ns("nepem"),
+            label = "NEPEM",
+            color = "success",
+            icon = icon("internet-explorer")
           )
         ),
 
@@ -292,6 +292,10 @@ mod_home_server <- function(id, settings){
     # Reload app when reload button is clicked
     observeEvent(input$reload, {
       session$reload()
+    })
+
+    observeEvent(input$nepem, {
+      browseURL("https://nepemufsc.com/")
     })
 
     observe({
