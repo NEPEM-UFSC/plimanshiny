@@ -66,7 +66,7 @@ mod_shapefile_prepare_ui <- function(id){
                             swatches = scales::viridis_pal()(10),
                             theme = "monolith",
                             useAsButton = TRUE,
-                            selected = "darkred",
+                            selected = "#FFFFFF2E",
                           )
                         )
                       ),

@@ -68,7 +68,7 @@ mod_shapefilenative_ui <- function(id) {
                               swatches = scales::viridis_pal()(10),
                               theme = "monolith",
                               useAsButton = TRUE,
-                              selected = "#8B000000",
+                              selected = "#FFFFFF2E",
                               opacity = TRUE
                             )
                           )
