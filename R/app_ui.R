@@ -286,6 +286,11 @@ app_ui <- function(request) {
               text = "Growth curves",
               tabName = "growthcurves",
               icon = shiny::icon("chart-line", verify_fa = FALSE)
+            ),
+            bs4SidebarMenuSubItem(
+              text = "NASAPOWER",
+              tabName = "nasapower",
+              icon = shiny::icon("chart-line", verify_fa = FALSE)
             )
           ),
           ### Settings
@@ -471,6 +476,10 @@ app_ui <- function(request) {
           bs4TabItem(
             tabName = "growthcurves",
             mod_growthmodelscurves_ui("growthmodelscurves_1")
+          ),
+          bs4TabItem(
+            tabName = "nasapower",
+            mod_weather_ui("weather_1")
           ),
 
           # Settings

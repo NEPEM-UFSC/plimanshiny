@@ -1,0 +1,326 @@
+#' weather UI Function
+#'
+#' @description A shiny Module.
+#'
+#' @param id,input,output,session Internal parameters for {shiny}.
+#'
+#' @noRd
+#'
+#' @importFrom shiny NS tagList
+mod_weather_ui <- function(id) {
+  ns <- NS(id)
+  tagList(
+    bs4TabCard(
+      width = 12,
+      selected = "Coordinate selection",
+      icon = icon("gears"),
+      status  = "success",
+      type = "tabs",
+      tabPanel(
+        title = "Coordinate selection",
+        fluidRow(
+          col_7(
+            leafletOutput(ns("map2"), height = "700px")
+          ),
+          col_5(
+            dateRangeInput(ns("dates"), "Select the period", start = Sys.Date() - 30, end = Sys.Date()),
+            # botão para condição de usar ou nao nome de municipios
+            # checkboxInput(ns("use_mun"), "Use municipality names", value = FALSE),
+            prettySwitch(
+              inputId = ns("use_mun"),
+              label = "Search by municipality",
+              value = FALSE,
+              status = "success",
+              fill = TRUE
+            ),
+            conditionalPanel(
+              condition = "input.use_mun == true", ns = ns,
+              fluidRow(
+                col_6(
+                  pickerInput(
+                    inputId = ns("state"),
+                    label = "Select the state",
+                    choices = c("AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO",
+                                "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE",
+                                "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP",
+                                "SE", "TO"),
+                    multiple = TRUE,
+                    options = list(
+                      `actions-box` = TRUE,
+                      `live-search` = TRUE
+                    )
+                  )
+                ),
+                col_6(
+                  pickerInput(
+                    inputId = ns("mun"),
+                    label = "Select the municipality",
+                    choices = NULL,
+                    multiple = TRUE,
+                    options = list(
+                      `actions-box` = TRUE,
+                      `live-search` = TRUE
+                    )
+                  )
+                )
+              )
+
+            ),
+            textInput(ns("envname"),
+                      label = "Environment name",
+                      value = ""),
+            prettyRadioButtons(
+              inputId = ns("scale"),
+              label = "Select the scale",
+              choices = c("hourly", "daily", "monthly", "climatology"),
+              selected = "daily",
+              inline = TRUE,
+              status = "success"
+            ),
+            pickerInput(
+              inputId = ns("params"),
+              label = "Select the parameters",
+              choices = NULL,
+              multiple = TRUE,
+              options = list(
+                `actions-box` = TRUE,
+                size = 10
+              )
+            ),
+            shinyWidgets::actionBttn(
+              inputId = ns("get_weather"),
+              label = "Fetch Weather",
+              style = "material-flat",
+              color = "primary", # azul (bootstrap)
+              icon = icon("cloud-sun"),
+              size = "sm"
+            ),
+            DT::dataTableOutput(ns("latlondata"))
+          )
+        )
+      ),
+      tabPanel(
+        title = "weather data",
+        reactable::reactableOutput(ns("weather_table"), height = "700px")
+      )
+    )
+  )
+}
+
+#' weather Server Functions
+#'
+#' @noRd
+mod_weather_server <- function(id, dfs) {
+  moduleServer(id, function(input, output, session) {
+    ns <- session$ns
+
+    # Armazena todos os pontos clicados
+    coords <- reactive({
+      if (length(points$data) == 0) return(NULL)
+      df <- do.call(rbind, points$data)
+      as.data.frame(df)
+    })
+
+    points <- reactiveValues(data = list())
+
+    # Renderiza o mapa inicial
+    output$map2 <- renderLeaflet({
+      leaflet() |>
+        addProviderTiles(providers$OpenStreetMap) |>
+        setView(lng = 0, lat = 0, zoom = 2)
+    })
+
+    # Adiciona um novo ponto ao data.frame existente
+    observeEvent(input$map2_click, {
+      click <- input$map2_click
+      new_point <- data.frame(
+        env = input$envname,
+        lat = round(click$lat, 4),
+        lon = round(click$lng, 4),
+        start = input$dates[[1]],
+        end = input$dates[[2]]
+      )
+      points$data[[length(points$data) + 1]] <- new_point
+    })
+
+    observe({
+      if(input$use_mun) {
+        req(input$state)
+        listmun <-
+          read.csv(file = system.file("app/www/coords_muni.csv", package = "plimanshiny", mustWork = TRUE), sep = ",") |>
+          dplyr::filter(abbrev_state %in% input$state)
+
+        # Atualiza a lista de municípios com base no estado selecionado
+        updatePickerInput(
+          session,
+          "mun",
+          choices = listmun$name_muni,
+          selected = NA
+        )
+      }
+    })
+    observeEvent(input$mun, {
+      req(input$state, input$mun)
+
+      mun_df <- read.csv(file = system.file("app/www/coords_muni.csv", package = "plimanshiny", mustWork = TRUE), sep = ",")
+
+      selected_mun <- dplyr::filter(mun_df,
+                                    abbrev_state %in% input$state,
+                                    name_muni %in% input$mun)
+
+      new_points <- purrr::pmap(
+        list(selected_mun$name_muni, selected_mun$lat, selected_mun$lon),
+        function(env, lat, lon) {
+          data.frame(
+            env = env,
+            lat = round(lat, 4),
+            lon = round(lon, 4),
+            start = input$dates[[1]],
+            end = input$dates[[2]],
+            stringsAsFactors = FALSE
+          )
+        }
+      )
+
+      # Adiciona cada município selecionado como um novo ponto
+      for (pt in new_points) {
+        points$data[[length(points$data) + 1]] <- pt
+      }
+    })
+
+
+
+    # Obtém o clima apenas para o último ponto clicado
+    output$latlondata <- DT::renderDT({
+      req(length(points$data) > 0)
+
+      # monta data.frame dos pontos
+      points_df <- isolate(do.call(rbind, points$data))
+      points_df <- as.data.frame(points_df, stringsAsFactors = FALSE)
+      colnames(points_df) <- c("env", "lat", "lon", "start", "end")
+
+      # round coords
+      points_df$lat <- round(as.numeric(points_df$lat), 4)
+      points_df$lon <- round(as.numeric(points_df$lon), 4)
+
+      # Botões JS
+      points_df <- transform(
+        points_df,
+        Delete = sprintf('<button class="delete-point-btn" id="delete_point_%s">🗑️</button>', seq_len(nrow(points_df)))
+      )
+
+      rownames(points_df) <- NULL
+
+      DT::datatable(
+        points_df,
+        escape = FALSE,
+        selection = "none",
+        options = list(
+          dom = "t",
+          paging = FALSE
+        ),
+        callback = DT::JS(sprintf("
+      table.on('click', '.delete-point-btn', function() {
+        var id = $(this).attr('id');
+        Shiny.setInputValue('%s', {id: id}, {priority: 'event'});
+      });
+    ", ns("delete_point_click")))
+      )
+    })
+
+    observeEvent(input$delete_point_click, {
+      req(input$delete_point_click$id)
+      row_id <- as.numeric(gsub("delete_point_", "", input$delete_point_click$id))
+      isolate({
+        points$data <- points$data[-row_id]
+      })
+    })
+
+    # Atualiza os marcadores sempre que pontos mudarem
+    observe({
+      if(is.null(nrow(coords()))){
+        updateTextInput(session, "envname", value = "ENV_1")
+      } else{
+        updateTextInput(session, "envname", value = paste0("ENV_", nrow(coords()) + 1))
+      }
+      df <- coords()
+      req(nrow(df) > 0)
+      leafletProxy("map2") |>
+        clearMarkers() |>
+        addMarkers(
+          lng = df$lon,
+          lat = df$lat,
+          popup = paste0("Lat: ", df$lat, "<br>Lon: ", df$lon)
+        )
+    })
+
+
+    observe({
+      nasaparams <- read.csv(file = system.file("app/www/nasaparams.csv", package = "plimanshiny", mustWork = TRUE), sep = ",")
+      if(input$scale == "hourly") {
+        suitableparams <- nasaparams[nasaparams$level == "hourly", ]$abbreviation
+        updatePickerInput(session, "params",
+                          choices = suitableparams,
+                          selected = c("T2M", "RH2M", "PRECTOTCORR", "PS", "WS2M"))
+      } else if (input$scale == "daily") {
+        suitableparams <- nasaparams[nasaparams$level == "daily", ]$abbreviation
+        updatePickerInput(session, "params",
+                          choices = suitableparams,
+                          selected = c("T2M", "T2M_MIN", "T2M_MAX", "T2M_RANGE",  "RH2M", "PRECTOTCORR", "PS", "WS2M", "WD2M", "GWETTOP", "GWETROOT"))
+      } else  if(input$scale == "monthly"){
+        suitableparams <- nasaparams[nasaparams$level == "monthly", ]$abbreviation
+        updatePickerInput(session, "params",
+                          choices = suitableparams,
+                          selected = c("T2M", "T2M_MIN", "T2M_MAX", "T2M_RANGE",  "RH2M", "PRECTOTCORR", "PS", "WS2M", "WD2M", "GWETTOP", "GWETROOT"))
+      }
+
+    })
+
+    observeEvent(input$get_weather, {
+      df <- coords()
+      req(nrow(df) > 0)
+
+      waiter_show(
+        html = tagList(
+          spin_google(),
+          h2("Fetching climate data. This may take a few moments...")
+        ),
+        color = "#228B227F"
+      )
+
+      weather <- get_climate(
+        env = df$env,
+        params = input$params,
+        lat = df$lat,
+        lon = df$lon,
+        start = df$start,
+        end = df$end,
+        scale = input$scale
+      )
+      waiter_hide()
+
+      sendSweetAlert(
+        session = session,
+        title = "Weather data successfully retrieved!",
+        text = "The climate information has been loaded and is now available for visualization.",
+        type = "success"
+      )
+
+      output$weather_table <- reactable::renderReactable({
+        weather |>
+          roundcols(digits = 3) |>
+          render_reactable()
+      })
+
+      dfs[["weather"]] <- create_reactval("weather", weather)
+    })
+  })
+}
+
+
+
+## To be copied in the UI
+# mod_weather_ui("weather_1")
+
+## To be copied in the server
+# mod_weather_server("weather_1")

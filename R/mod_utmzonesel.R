@@ -67,6 +67,7 @@ mod_utmzonesel_server <- function(id, settings){
         setView(lng = 0, lat = 0, zoom = 2)
     })
 
+
     # Example function to calculate UTM details using sf
     calculate_utm_details <- function(lat, lon) {
       # Create an sf point in WGS84

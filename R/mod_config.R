@@ -114,6 +114,11 @@ mod_config_ui <- function(id){
                     description = "Enables shapefile creation using Leaflet's rendering tools. When disabled, the shapefile will be generated through a native approach, utilizing rectangle drawings to perform zoom-in operations.",
                     deps = "base64enc",
                     ns = ns),
+      enable_module(mod_id = "nasapower",
+                    mod_name = "Tools for request NASA POWER data",
+                    description = "Tools for request NASA POWER data",
+                    deps = "httr",
+                    ns = ns),
 
       hl(),
       actionButton(ns("save_btn"), label = tagList(icon("save"), "Save Settings"), class = "btn btn-primary"),
@@ -146,7 +151,8 @@ mod_config_server <- function(id, settings){
                              license = FALSE,
                              growthmodels = FALSE,
                              overlayindex = FALSE,
-                             shapefileleaflet = FALSE)
+                             shapefileleaflet = FALSE,
+                             nasapower = FALSE)
     saveRDS(default_settings, settings_file_default)
 
 
@@ -194,6 +200,7 @@ mod_config_server <- function(id, settings){
       updatePrettySwitch(session = session, inputId = "growthmodels", value = settings()$growthmodels)
       updatePrettySwitch(session = session, inputId = "overlayindex", value = settings()$overlayindex)
       updatePrettySwitch(session = session, inputId = "shapefileleaflet", value = settings()$shapefileleaflet)
+      updatePrettySwitch(session = session, inputId = "nasapower", value = settings()$nasapower)
     })
 
     # Reactively save the settings whenever the switch is changed
@@ -212,7 +219,8 @@ mod_config_server <- function(id, settings){
                                growthmodels = input$growthmodels,
                                overlayindex = input$overlayindex,
                                shapefileleaflet = input$shapefileleaflet,
-                               license = TRUE)
+                               license = TRUE,
+                               nasapower = input$nasapower)
       settings(current_settings)  # Update global reactive settings
       saveRDS(current_settings, settings_file_user)
       showNotification("Settings saved successfully! You may need to restart the app to apply changes.", type = "message")
@@ -261,6 +269,9 @@ mod_config_server <- function(id, settings){
 
     observe_dependency("shapefileleaflet", c("base64enc"), ns, input)
     observe_dependency("check_shapefileleaflet", c("base64enc"), ns, input)
+
+    observe_dependency("nasapower", c("httr"), ns, input)
+    observe_dependency("check_nasapower", c("httr"), ns, input)
 
     # Option to reset to default settings
     observeEvent(input$reset_btn, {

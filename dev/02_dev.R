@@ -74,6 +74,7 @@ golem::add_module(name = "georeference")
 golem::add_module(name = "compslider")
 golem::add_module(name = "hyperspectral")
 golem::add_module(name = "classify")
+golem::add_module(name = "wheater")
 
 ## Add packages
 usethis::use_package("shiny")

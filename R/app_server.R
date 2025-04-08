@@ -229,6 +229,10 @@ app_server <- function(input, output, session) {
       module_loaded$compslider <- TRUE
       mod_compslider_server("sliderindex", mosaic_data, index)
     }
+    if(input$tabshome == "nasapower" && is.null(module_loaded$nasapower)){
+      module_loaded$nasapower <- TRUE
+      mod_weather_server("weather_1", dfs)
+    }
 
   })
 }
