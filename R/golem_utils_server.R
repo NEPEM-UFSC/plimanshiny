@@ -412,6 +412,7 @@ render_reactable <- function(df,
                              striped = TRUE,
                              pagination = TRUE,
                              defaultPageSize = 15,
+                             max_width = 400,
                              theme = reactableTheme(
                                cellPadding = "8px 10px",
                                style = list(fontFamily = "-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif"),
@@ -421,14 +422,14 @@ render_reactable <- function(df,
   pars <- read_pars()
   if(pars$sparkline & nrow(df) > 1){
     dcd = colDef(
-      maxWidth = 400,
+      maxWidth = max_width,
       footer = function(values) {
         if (!is.numeric(values)) return()
         sparkline::sparkline(values, type = "box", width = 100, height = 30)
       })
   } else{
     dcd = colDef(
-      maxWidth = 400
+      maxWidth = max_width
     )
   }
 
@@ -1096,7 +1097,8 @@ get_climate <- function(env = NULL,
                         params = c("T2M", "T2M_MIN", "T2M_MAX", "PRECTOT", "RH2M", "WS2M"),
                         scale = c("hourly", "daily", "monthly", "climatology"),
                         parallel = FALSE,
-                        workers = 2) {
+                        workers = 2,
+                        environment = c("r", "shiny")) {
   # Validações iniciais
   stopifnot(length(lat) == length(lon))
   if (is.null(env)) {
@@ -1144,7 +1146,6 @@ get_climate <- function(env = NULL,
   }
 
   fetch_data <- function(lat_i, lon_i, env_i) {
-    # Sys.sleep(runif(1, 0.01, 0.5))  # Espera entre 0.5 e 1.2 segundos
     if (scale %in% c("hourly", "daily", "monthly")) {
       suitableparams <- nasaparams[nasaparams$level == scale, ]$abbreviation
       if (any(!params %in% suitableparams)) {
@@ -1158,19 +1159,19 @@ get_climate <- function(env = NULL,
         start_fmt <- gsub("-", "", start)
         end_fmt <- gsub("-", "", end)
       }
-      url <- glue("https://power.larc.nasa.gov/api/temporal/{scale}/point?parameters={params_str}&community=AG&longitude={lon_i}&latitude={lat_i}&start={start_fmt}&end={end_fmt}&format=CSV")
+      url <- glue::glue("https://power.larc.nasa.gov/api/temporal/{scale}/point?parameters={params_str}&community=AG&longitude={lon_i}&latitude={lat_i}&start={start_fmt}&end={end_fmt}&format=CSV")
     } else {
       suitableparams <- nasaparams[nasaparams$level == "climatology", ]$abbreviation
       if (any(!params %in% suitableparams)) {
         stop("Parâmetros não disponíveis para climatologia: ",
              paste(params[!params %in% suitableparams], collapse = ", "))
       }
-      url <- glue("https://power.larc.nasa.gov/api/temporal/climatology/point?parameters={params_str}&community=AG&longitude={lon_i}&latitude={lat_i}&format=CSV")
+      url <- glue::glue("https://power.larc.nasa.gov/api/temporal/climatology/point?parameters={params_str}&community=AG&longitude={lon_i}&latitude={lat_i}&format=CSV")
     }
 
-    req <- request(url[[1]]) |> req_options(timeout = 30, ssl_verifypeer = 0)
+    req <- httr2::request(url[[1]]) |> httr2::req_options(timeout = 30, ssl_verifypeer = 0)
 
-    resp <- tryCatch(req_perform(req), error = function(e) {
+    resp <- tryCatch(httr2::req_perform(req), error = function(e) {
       warning("Erro ao acessar API para ", env_i, ": ", e$message)
       return(NULL)
     })
@@ -1178,34 +1179,32 @@ get_climate <- function(env = NULL,
     if (is.null(resp)) return(NULL)
 
     file <- tempfile(fileext = ".csv")
-    writeLines(resp_body_string(resp), file)
+    writeLines(httr2::resp_body_string(resp), file)
 
-    dfnasa <- get_cleandata(file) |>
+    dfnasa <-
+      get_cleandata(file) |>
       mutate(ENV = env_i, LAT = lat_i, LON = lon_i, .before = 1)
 
     names(dfnasa)[grepl("PRECTOT", names(dfnasa))] <- "PRECTOT"
     if ("PRECTOT" %in% names(dfnasa) && "EVPTRNS" %in% names(dfnasa)) {
       dfnasa$P_ETP <- dfnasa$PRECTOT - dfnasa$EVPTRNS
     }
-
     if (scale == "hourly") {
       dfnasa <- dfnasa |>
         mutate(
           DATE = as.POSIXct(paste0(YEAR, "-", MO, "-", DY, " ", HR), format = "%Y-%m-%d %H"),
           DOY = as.numeric(format(DATE, "%j")),
-          DFS = DOY - as.numeric(format(as.Date(start), "%j")) + 1
+          DFS = DOY - as.numeric(format(as.Date(start[[1]]), "%j")) + 1
         ) |> select(-DATE) |> relocate(DOY, DFS, .after = HR)
-
       if (all(c("T2M", "RH2M") %in% names(dfnasa))) {
-        dfnasa <- bind_cols(dfnasa, vpd(dfnasa$T2M, dfnasa$RH2M))
+        dfnasa <- dplyr::bind_cols(dfnasa, vpd(dfnasa$T2M, dfnasa$RH2M))
       }
       if ("T2MDEW" %in% names(dfnasa) && "T2M" %in% names(dfnasa)) {
         dfnasa$TH2 <- dfnasa$T2M + (0.36 * dfnasa$T2MDEW) + 41.2
       }
-
     } else if (scale == "daily") {
       if (all(c("T2M", "RH2M") %in% names(dfnasa))) {
-        dfnasa <- bind_cols(dfnasa, vpd(dfnasa$T2M, dfnasa$RH2M))
+        dfnasa <- dplyr::bind_cols(dfnasa, vpd(dfnasa$T2M, dfnasa$RH2M))
       }
       if ("T2M" %in% names(dfnasa) && "RH2M" %in% names(dfnasa)) {
         dfnasa$TH1 <- (1.8 * dfnasa$T2M + 32) - (0.55 - 0.0055 * dfnasa$RH2M) * (1.8 * dfnasa$T2M - 26)
@@ -1219,34 +1218,59 @@ get_climate <- function(env = NULL,
         dfnasa$RTA <- round(rad_data$Ra, 3)
       }
 
-      dfnasa <- dfnasa |>
-        relocate(DATE, .after = LON) |>
-        select(-YEAR) |>
-        separate_wider_delim(DATE, names = c("YEAR", "MO", "DY"), delim = "-") |>
-        mutate(DFS = 1:nrow(dfnasa), .after = DOY)
+      dfnasa <-
+        dfnasa |>
+        dplyr::relocate(DATE, .after = LON) |>
+        dplyr::select(-YEAR) |>
+        tidyr::separate_wider_delim(DATE, names = c("YEAR", "MO", "DY"), delim = "-") |>
+        dplyr::mutate(DFS = 1:nrow(dfnasa), .after = DOY)
     }
-
     dfnasa[dfnasa == -999.00] <- NA
     return(dfnasa)
   }
 
   # Plano de execução
   if (parallel) {
-    plan(multisession, workers = workers)
+    future::plan(future::multisession, workers = workers)
   } else {
-    plan(sequential)
+    future::plan(future::sequential)
   }
-  on.exit(plan(sequential))
+  on.exit(future::plan(future::sequential))
 
-  progressr::withProgressShiny({
-    message = "Fetching data for"
-    p <- progressr::progressor(steps = length(lat))
-    result_list <- furrr::future_map(seq_along(lat), function(i) {
-      p(sprintf("%s", env[i]))
-      fetch_data(lat[i], lon[i], env[i])
+
+
+  if(environment[[1]] == "shiny"){
+    progressr::withProgressShiny({
+      p <- progressr::progressor(steps = length(lat))
+      result_list <- furrr::future_map(seq_along(lat), function(i) {
+        if(parallel){
+          p(message = glue::glue("{env[i]}"))
+        } else{
+          p(message = glue::glue("{env[i]} ({i} of {length(lat)})"))
+        }
+        fetch_data(lat[i], lon[i], env[i])
+      },
+      .options = furrr::furrr_options(seed = TRUE)
+      )
     },
-    .options = furrr_options(seed = TRUE)
-    )
-  })
-  return(bind_rows(result_list))
+    message = "Fetching data for",
+    detail = "...")
+  } else{
+    progressr::handlers("cli")
+    progressr::with_progress({
+      p <- progressr::progressor(steps = length(lat))
+      result_list <- furrr::future_map(seq_along(lat), function(i) {
+        if(parallel){
+          p(message = glue::glue("{env[i]}"))
+        } else{
+          p(message = glue::glue("{env[i]} ({i} of {length(lat)})"))
+        }
+        fetch_data(lat[i], lon[i], env[i])
+      },
+      .options = furrr::furrr_options(seed = TRUE)
+      )
+    })
+  }
+
+  return(dplyr::bind_rows(result_list))
 }

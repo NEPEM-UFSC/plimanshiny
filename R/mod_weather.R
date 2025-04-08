@@ -9,6 +9,7 @@
 #' @importFrom shiny NS tagList
 mod_weather_ui <- function(id) {
   ns <- NS(id)
+
   tagList(
     bs4TabCard(
       width = 12,
@@ -36,7 +37,7 @@ mod_weather_ui <- function(id) {
                 # checkboxInput(ns("use_mun"), "Use municipality names", value = FALSE),
                 prettySwitch(
                   inputId = ns("use_mun"),
-                  label = "Search by municipality",
+                  label = "Search by municipality (Brazil only)",
                   value = FALSE,
                   status = "success",
                   fill = TRUE
@@ -100,11 +101,11 @@ mod_weather_ui <- function(id) {
                   col_4(
                     shinyWidgets::actionBttn(
                       inputId = ns("get_weather"),
-                      label = "Fetch Weather",
+                      label = "Fetch data",
                       style = "material-flat",
                       color = "primary", # azul (bootstrap)
                       icon = icon("cloud-sun"),
-                      size = "sm"
+                      size = "md"
                     ),
                   ),
                   col_4(
@@ -114,7 +115,7 @@ mod_weather_ui <- function(id) {
                       style = "material-flat",
                       color = "primary",
                       icon = icon("eraser"),
-                      size = "sm"
+                      size = "md"
                     ),
                   ),
                   col_2(
@@ -146,8 +147,8 @@ mod_weather_ui <- function(id) {
         )
       ),
       tabPanel(
-        title = "weather data",
-        reactable::reactableOutput(ns("weather_table"), height = "700px")
+        title = "Weather data",
+        reactable::reactableOutput(ns("weather_table"), height = "720px")
       )
     )
   )
@@ -314,7 +315,7 @@ mod_weather_server <- function(id, dfs) {
         addMarkers(
           lng = df$lon,
           lat = df$lat,
-          popup = paste0("Lat: ", df$lat, "<br>Lon: ", df$lon)
+          popup = paste0("Env:", df$env, "<br>Lat: ", df$lat, "<br>Lon: ", df$lon)
         )
     })
 
@@ -353,7 +354,8 @@ mod_weather_server <- function(id, dfs) {
         end = df$end,
         scale = input$scale,
         parallel = input$parallel,
-        workers = input$ncores
+        workers = input$ncores,
+        environment = "shiny"
       )
 
       sendSweetAlert(
@@ -366,7 +368,7 @@ mod_weather_server <- function(id, dfs) {
       output$weather_table <- reactable::renderReactable({
         weather |>
           roundcols(digits = 3) |>
-          render_reactable()
+          render_reactable(max_width = NULL)
       })
 
       dfs[["weather"]] <- create_reactval("weather", weather)
