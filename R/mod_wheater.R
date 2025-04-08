@@ -20,82 +20,128 @@ mod_weather_ui <- function(id) {
         title = "Coordinate selection",
         fluidRow(
           col_7(
-            leafletOutput(ns("map2"), height = "700px")
+            leafletOutput(ns("map2"), height = "740px")
           ),
           col_5(
-            dateRangeInput(ns("dates"), "Select the period", start = Sys.Date() - 30, end = Sys.Date()),
-            # botão para condição de usar ou nao nome de municipios
-            # checkboxInput(ns("use_mun"), "Use municipality names", value = FALSE),
-            prettySwitch(
-              inputId = ns("use_mun"),
-              label = "Search by municipality",
-              value = FALSE,
-              status = "success",
-              fill = TRUE
-            ),
-            conditionalPanel(
-              condition = "input.use_mun == true", ns = ns,
-              fluidRow(
-                col_6(
-                  pickerInput(
-                    inputId = ns("state"),
-                    label = "Select the state",
-                    choices = c("AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO",
-                                "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE",
-                                "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP",
-                                "SE", "TO"),
-                    multiple = TRUE,
-                    options = list(
-                      `actions-box` = TRUE,
-                      `live-search` = TRUE
+            bs4TabCard(
+              width = 12,
+              selected = "Input Parameters",
+              icon = icon("gears"),
+              status  = "success",
+              type = "tabs",
+              tabPanel(
+                title = "Input Parameters",
+                dateRangeInput(ns("dates"), "Select the period", start = Sys.Date() - 30, end = Sys.Date()),
+                # botão para condição de usar ou nao nome de municipios
+                # checkboxInput(ns("use_mun"), "Use municipality names", value = FALSE),
+                prettySwitch(
+                  inputId = ns("use_mun"),
+                  label = "Search by municipality",
+                  value = FALSE,
+                  status = "success",
+                  fill = TRUE
+                ),
+                conditionalPanel(
+                  condition = "input.use_mun == true", ns = ns,
+                  fluidRow(
+                    col_6(
+                      pickerInput(
+                        inputId = ns("state"),
+                        label = "Select the state",
+                        choices = c("AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO",
+                                    "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE",
+                                    "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP",
+                                    "SE", "TO"),
+                        multiple = TRUE,
+                        options = list(
+                          `actions-box` = TRUE,
+                          `live-search` = TRUE
+                        )
+                      )
+                    ),
+                    col_6(
+                      pickerInput(
+                        inputId = ns("mun"),
+                        label = "Select the municipality",
+                        choices = NULL,
+                        multiple = TRUE,
+                        options = list(
+                          `actions-box` = TRUE,
+                          `live-search` = TRUE
+                        )
+                      )
+                    )
+                  )
+
+                ),
+                textInput(ns("envname"),
+                          label = "Environment name",
+                          value = ""),
+                prettyRadioButtons(
+                  inputId = ns("scale"),
+                  label = "Select the scale",
+                  choices = c("hourly", "daily", "monthly", "climatology"),
+                  selected = "daily",
+                  inline = TRUE,
+                  status = "success"
+                ),
+                pickerInput(
+                  inputId = ns("params"),
+                  label = "Select the parameters",
+                  choices = NULL,
+                  multiple = TRUE,
+                  options = list(
+                    `actions-box` = TRUE,
+                    `live-search` = TRUE,
+                    size = 20
+                  )
+                ),
+                fluidRow(
+                  col_4(
+                    shinyWidgets::actionBttn(
+                      inputId = ns("get_weather"),
+                      label = "Fetch Weather",
+                      style = "material-flat",
+                      color = "primary", # azul (bootstrap)
+                      icon = icon("cloud-sun"),
+                      size = "sm"
+                    ),
+                  ),
+                  col_4(
+                    shinyWidgets::actionBttn(
+                      inputId = ns("clear_points"),
+                      label = "Clear points",
+                      style = "material-flat",
+                      color = "primary",
+                      icon = icon("eraser"),
+                      size = "sm"
+                    ),
+                  ),
+                  col_2(
+                    prettyCheckbox(
+                      inputId = ns("parallel"),
+                      label = "Parallel",
+                      value = FALSE,
+                    )
+                  ),
+                  col_2(
+                    numericInput(
+                      inputId = ns("ncores"),
+                      label = "Cores",
+                      value = 1,
+                      min = 1,
+                      max = 6,
+                      step = 1
                     )
                   )
                 ),
-                col_6(
-                  pickerInput(
-                    inputId = ns("mun"),
-                    label = "Select the municipality",
-                    choices = NULL,
-                    multiple = TRUE,
-                    options = list(
-                      `actions-box` = TRUE,
-                      `live-search` = TRUE
-                    )
-                  )
-                )
-              )
 
-            ),
-            textInput(ns("envname"),
-                      label = "Environment name",
-                      value = ""),
-            prettyRadioButtons(
-              inputId = ns("scale"),
-              label = "Select the scale",
-              choices = c("hourly", "daily", "monthly", "climatology"),
-              selected = "daily",
-              inline = TRUE,
-              status = "success"
-            ),
-            pickerInput(
-              inputId = ns("params"),
-              label = "Select the parameters",
-              choices = NULL,
-              multiple = TRUE,
-              options = list(
-                `actions-box` = TRUE,
-                size = 10
+              ),
+              tabPanel(
+                title = "Selected points",
+                DT::dataTableOutput(ns("latlondata"), height = "560px")
               )
-            ),
-            shinyWidgets::actionBttn(
-              inputId = ns("get_weather"),
-              label = "Fetch Weather",
-              style = "material-flat",
-              color = "primary", # azul (bootstrap)
-              icon = icon("cloud-sun"),
-              size = "sm"
-            ),
-            DT::dataTableOutput(ns("latlondata"))
+            )
           )
         )
       ),
@@ -114,6 +160,17 @@ mod_weather_server <- function(id, dfs) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
+    observe({
+      if(input$parallel) {
+        shinyjs::enable("ncores")
+        ncore <- parallel::detectCores()
+        updateNumericInput(session, "ncores",
+                           value = ncore - 3,
+                           max = ncore)
+      } else {
+        shinyjs::disable("ncores")
+      }
+    })
     # Armazena todos os pontos clicados
     coords <- reactive({
       if (length(points$data) == 0) return(NULL)
@@ -159,6 +216,11 @@ mod_weather_server <- function(id, dfs) {
         )
       }
     })
+    observeEvent(input$clear_points, {
+      points$data <- list()
+      leafletProxy("map2") |>
+        clearMarkers()
+    })
     observeEvent(input$mun, {
       req(input$state, input$mun)
 
@@ -166,7 +228,8 @@ mod_weather_server <- function(id, dfs) {
 
       selected_mun <- dplyr::filter(mun_df,
                                     abbrev_state %in% input$state,
-                                    name_muni %in% input$mun)
+                                    name_muni %in% input$mun) |>
+        dplyr::arrange(abbrev_state, name_muni)
 
       new_points <- purrr::pmap(
         list(selected_mun$name_muni, selected_mun$lat, selected_mun$lon),
@@ -216,7 +279,8 @@ mod_weather_server <- function(id, dfs) {
         escape = FALSE,
         selection = "none",
         options = list(
-          dom = "t",
+          scrollY = "560px",
+          scrollCollapse = TRUE,
           paging = FALSE
         ),
         callback = DT::JS(sprintf("
@@ -280,14 +344,6 @@ mod_weather_server <- function(id, dfs) {
       df <- coords()
       req(nrow(df) > 0)
 
-      waiter_show(
-        html = tagList(
-          spin_google(),
-          h2("Fetching climate data. This may take a few moments...")
-        ),
-        color = "#228B227F"
-      )
-
       weather <- get_climate(
         env = df$env,
         params = input$params,
@@ -295,9 +351,10 @@ mod_weather_server <- function(id, dfs) {
         lon = df$lon,
         start = df$start,
         end = df$end,
-        scale = input$scale
+        scale = input$scale,
+        parallel = input$parallel,
+        workers = input$ncores
       )
-      waiter_hide()
 
       sendSweetAlert(
         session = session,

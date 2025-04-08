@@ -270,8 +270,8 @@ mod_config_server <- function(id, settings){
     observe_dependency("shapefileleaflet", c("base64enc"), ns, input)
     observe_dependency("check_shapefileleaflet", c("base64enc"), ns, input)
 
-    observe_dependency("nasapower", c("httr"), ns, input)
-    observe_dependency("check_nasapower", c("httr"), ns, input)
+    observe_dependency("nasapower", c("httr2", "furrr", "progressr"), ns, input)
+    observe_dependency("check_nasapower", c("httr2", "furrr", "progressr"), ns, input)
 
     # Option to reset to default settings
     observeEvent(input$reset_btn, {
