@@ -1098,6 +1098,11 @@ get_climate <- function(env = NULL,
                         scale = c("hourly", "daily", "monthly", "climatology"),
                         parallel = FALSE,
                         workers = 2,
+                        progress = TRUE,
+                        tbase_lower = 9,
+                        tbase_upper = 45,
+                        toptm_lower = 26,
+                        toptm_upper = 32,
                         environment = c("r", "shiny")) {
   # Validações iniciais
   stopifnot(length(lat) == length(lon))
@@ -1237,29 +1242,42 @@ get_climate <- function(env = NULL,
   }
   on.exit(future::plan(future::sequential))
 
-
-
-  if(environment[[1]] == "shiny"){
-    progressr::withProgressShiny({
-      p <- progressr::progressor(steps = length(lat))
-      result_list <- furrr::future_map(seq_along(lat), function(i) {
-        if(parallel){
-          p(message = glue::glue("{env[i]}"))
-        } else{
-          p(message = glue::glue("{env[i]} ({i} of {length(lat)})"))
-        }
-        fetch_data(lat[i], lon[i], env[i])
+  if(progress){
+    if(environment[[1]] == "shiny"){
+      progressr::withProgressShiny({
+        p <- progressr::progressor(steps = length(lat))
+        result_list <- furrr::future_map(seq_along(lat), function(i) {
+          if(parallel){
+            p(message = glue::glue("{env[i]}"))
+          } else{
+            p(message = glue::glue("{env[i]} ({i} of {length(lat)})"))
+          }
+          fetch_data(lat[i], lon[i], env[i])
+        },
+        .options = furrr::furrr_options(seed = TRUE)
+        )
       },
-      .options = furrr::furrr_options(seed = TRUE)
-      )
-    },
-    message = "Fetching data for",
-    detail = "...")
+      message = "Fetching data for",
+      detail = "...")
+    } else{
+      progressr::handlers("cli")
+      progressr::with_progress({
+        p <- progressr::progressor(steps = length(lat))
+        result_list <- furrr::future_map(seq_along(lat), function(i) {
+          if(parallel){
+            p(message = glue::glue("{env[i]}"))
+          } else{
+            p(message = glue::glue("{env[i]} ({i} of {length(lat)})"))
+          }
+          fetch_data(lat[i], lon[i], env[i])
+        },
+        .options = furrr::furrr_options(seed = TRUE)
+        )
+      })
+    }
   } else{
-    progressr::handlers("cli")
-    progressr::with_progress({
-      p <- progressr::progressor(steps = length(lat))
-      result_list <- furrr::future_map(seq_along(lat), function(i) {
+    result_list <-
+      furrr::future_map(seq_along(lat), function(i) {
         if(parallel){
           p(message = glue::glue("{env[i]}"))
         } else{
@@ -1269,8 +1287,119 @@ get_climate <- function(env = NULL,
       },
       .options = furrr::furrr_options(seed = TRUE)
       )
-    })
   }
 
   return(dplyr::bind_rows(result_list))
+}
+
+
+gdd_ometto_frue <- function(df,
+                            Tbase = 10,
+                            Tceil = 40,
+                            Topt1 = 26,
+                            Topt2 = 32) {
+  stopifnot(all(c("T2M_MAX", "T2M_MIN") %in% names(df)))
+
+  Tb <- Tbase
+  TB <- Tceil
+  df <- df |>
+    dplyr::mutate(
+      # Temperatura média (real ou estimada)
+      Tmed = dplyr::case_when(
+        "T2M" %in% names(df) ~ dplyr::if_else(is.na(T2M), (T2M_MAX + T2M_MIN) / 2, T2M),
+        TRUE ~ (T2M_MAX + T2M_MIN) / 2
+      ),
+
+      # GDD: usa Tmed quando presente, caso contrário calcula com Ometto
+      GDD = dplyr::case_when(
+        "T2M" %in% names(df) & !is.na(T2M) ~ pmax(pmin(Tmed, Tceil), Tbase) - Tbase,
+        Tceil > T2M_MAX & T2M_MAX > T2M_MIN & T2M_MIN > Tbase ~ (T2M_MAX - T2M_MIN) / 2 + T2M_MIN - Tbase,
+        Tceil > T2M_MAX & T2M_MAX > Tbase & Tbase > T2M_MIN ~ ((T2M_MAX - Tbase)^2) / (2 * (T2M_MAX - T2M_MIN)),
+        Tceil > Tbase & Tbase > T2M_MAX & T2M_MAX > T2M_MIN ~ 0,
+        T2M_MAX > Tceil & Tceil > T2M_MIN & T2M_MIN > Tbase ~
+          (2 * (T2M_MAX - T2M_MIN) * (T2M_MIN - Tbase) + (T2M_MAX - T2M_MIN)^2 - (T2M_MAX - Tceil)) / (2 * (T2M_MAX - T2M_MIN)),
+        T2M_MAX > Tceil & Tceil > Tbase & Tbase > T2M_MIN ~
+          0.5 * (((T2M_MAX - Tbase)^2 - (T2M_MAX - Tceil)^2) / (T2M_MAX - T2M_MIN)),
+        TRUE ~ 0
+      ),
+      # FRUE: com base em Tmed
+      FRUE = dplyr::case_when(
+        Tmed < Topt1 ~ (Tmed - Tbase) / (Topt1 - Tbase),
+        Tmed > Topt2 ~ (Tmed - Topt2) / (Tceil - Topt2),
+        TRUE ~ 1
+      ),
+      FRUE = pmax(pmin(FRUE, 1), 0)
+    ) |>
+    dplyr::mutate(
+      GDD_CUMSUM = cumsum(GDD),
+      RTA_CUMSUM = cumsum(RTA),
+    ) |>
+    dplyr::ungroup()
+  return(df)
+}
+
+get_weather_info <- function(df){
+  df2 <-
+    df  |>
+    sf::st_as_sf(coords = c("x", "y"), crs = 32721) |>
+    sf::st_transform(crs = 4326) |>
+    sf::st_bbox()
+  start <- min(df$date)
+  end <- max(df$date)
+  return(list(lat = mean(df2[c("ymin", "ymax")]),
+              lon = mean(df2[c("xmin", "xmax")]),
+              start = as.character(start),
+              end = as.character(end))
+  )
+}
+envirotype <- function(data,
+                       datas,
+                       fases = c("01 Estabelecimento", "02 Vegetativo", "03 Floração", "04 Reprodutivo"),
+                       var = "T2M_MAX",
+                       breaks = c(10, 15, 20, 25, 30),
+                       labels = NULL){
+
+  create_stage_labels <- function(df, datas, fases) {
+    stopifnot(length(fases) == length(datas))
+    lim_inf <- datas
+    lim_sup <- c(datas[-1] - 1, Inf)
+
+    stage_exprs <- purrr::map2(lim_inf, lim_sup, function(from, to) {
+      rlang::expr(dplyr::between(DFS, !!from, !!to) ~ !!fases[which(lim_inf == from)])
+    })
+    stage_case_when <- rlang::expr(dplyr::case_when(!!!stage_exprs))
+    df |> dplyr::mutate(stage = !!stage_case_when)
+  }
+
+  create_class <- function(data, var, .breaks, .labels) {
+    var <- rlang::enquo(var)
+    .breaks <- unique(c(-Inf, .breaks, Inf))
+    if (is.null(.labels)) {
+      .labels <- purrr::map_chr(seq_along(.breaks[-1]), function(i) {
+        left <- .breaks[i]
+        right <- .breaks[i + 1]
+        if (is.infinite(left)) glue::glue("< {right}")
+        else if (is.infinite(right)) glue::glue("≥ {left}")
+        else glue::glue("{left}–{right}")
+      })
+    }
+    data |>
+      dplyr::group_by(stage) |>
+      dplyr::group_modify(~{
+        x <- dplyr::pull(dplyr::select(.x, !!var)) |> na.omit()
+        xcut <- cut(x, breaks = .breaks, labels = .labels, include.lowest = TRUE, right = FALSE)
+        out <- data.frame(xcut = xcut)
+        out |>
+          dplyr::group_by(xcut) |>
+          dplyr::summarise(Freq = dplyr::n(), .groups = "drop") |>
+          dplyr::mutate(fr = Freq / sum(Freq))
+      })
+  }
+
+  data |>
+    create_stage_labels(datas = datas, fases = fases) |>
+    dplyr::group_by(ENV) |>
+    tidyr::nest() |>
+    dplyr::mutate(classes = purrr::map(data, ~create_class(.x, var = var, .breaks = breaks, .labels = labels))) |>
+    tidyr::unnest(classes)
 }

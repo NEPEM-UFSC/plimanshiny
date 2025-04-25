@@ -24,21 +24,64 @@ mod_growthmodels_ui <- function(id) {
             status = "success",
             inline = TRUE
           ),
-          hl(),
           pickerInput(
             ns("dftoedit"),
             label = "Time series data",
             choices = NULL
           ),
-          pickerInput(
-            ns("flightdate"),
-            label = "Flight date",
-            choices = NULL
+          hl(),
+          prettyCheckbox(
+            inputId = ns("useclimate"),
+            label = "Fetch weather data",
+            value = FALSE,
+            shape = "curve",
+            status = "success",
+            icon = icon("check"),
+            animation = "rotate"
           ),
-          pickerInput(
-            ns("traittomodel"),
-            label = "Trait to model",
-            choices = NULL
+          conditionalPanel(
+            condition = "input.useclimate == true", ns = ns,
+            fluidRow(
+              col_4(
+                numericInput(ns("basemin"),
+                             label = "Tbase lower",
+                             value = 10,
+                             step = 0.1)
+              ),
+              col_4(
+                numericInput(ns("baseupp"),
+                             label = "Tbase upper",
+                             value = 40,
+                             step = 0.1)
+              ),
+              col_4(
+                actionBttn(
+                  inputId = ns("getweather"),
+                  label = "Fetch",
+                  icon = icon("cloud-sun-rain"),
+                  status = "success",
+                  gradient = TRUE,
+                  flat = TRUE
+                )
+              )
+            )
+          ),
+          hl(),
+          fluidRow(
+            col_6(
+              pickerInput(
+                ns("flightdate"),
+                label = "Predictor",
+                choices = NULL
+              )
+            ),
+            col_6(
+              pickerInput(
+                ns("traittomodel"),
+                label = "Trait to model",
+                choices = NULL
+              )
+            )
           ),
           pickerInput(
             ns("growthmodel"),
@@ -458,6 +501,29 @@ mod_growthmodels_server <- function(id, dfs){
       }
     })
 
+
+    observeEvent(input$getweather, {
+      req(dfactive$df)
+      climateinfo <- get_weather_info(dfactive$df)
+
+      dfclimate <-
+        get_climate(lat = climateinfo$lat,
+                    lon = climateinfo$lon,
+                    env = "Timeseries",
+                    start = climateinfo$start,
+                    end = climateinfo$end,
+                    scale = "daily",
+                    params = c("T2M", "T2M_MIN", "T2M_MAX"),
+                    environment = "shiny") |>
+        gdd_ometto_frue(Tbase = input$basemin,
+                        Tceil = input$baseupp) |>
+        tidyr::unite("date", c("YEAR", "MO", "DY"), sep = "-") |>
+        dplyr::mutate(date = lubridate::ymd(date))
+      dfactive$df <- dplyr::left_join(dfactive$df, dfclimate, by = dplyr::join_by(date))
+      assign("dfactive", dfactive$df, envir = .GlobalEnv)
+    })
+
+
     observe({
       req(dfactive$df)
       updatePickerInput(session, "traittomodel",
@@ -513,23 +579,28 @@ mod_growthmodels_server <- function(id, dfs){
         switch(
           .x,
           "Logistic 3P" = mod_logistic_3P(dftomodel,
-                                          predictor = input$traittomodel,
+                                          predictor = input$flightdate,
+                                          dependent = input$traittomodel,
                                           sowing_date = min(dftomodel$date),
                                           parallel = input$parallel),
           "Logistic 4P" = mod_logistic_4P(dftomodel,
-                                          predictor = input$traittomodel,
+                                          predictor = input$flightdate,
+                                          dependent = input$traittomodel,
                                           sowing_date = min(dftomodel$date),
                                           parallel = input$parallel),
           "Gompertz" = mod_gompertz(dftomodel,
-                                    predictor = input$traittomodel,
+                                    predictor = input$flightdate,
+                                    dependent = input$traittomodel,
                                     sowing_date = min(dftomodel$date),
                                     parallel = input$parallel),
           "Weibull" = mod_weibull(dftomodel,
-                                  predictor = input$traittomodel,
+                                  predictor = input$flightdate,
+                                  dependent = input$traittomodel,
                                   sowing_date = min(dftomodel$date),
                                   parallel = input$parallel),
           "Von Bertalanffy" = mod_vonbert(dftomodel,
-                                          predictor = input$traittomodel,
+                                          predictor = input$flightdate,
+                                          dependent = input$traittomodel,
                                           sowing_date = min(dftomodel$date),
                                           parallel = input$parallel),
           "Exponential" = mod_exponential(dftomodel,
@@ -541,37 +612,45 @@ mod_growthmodels_server <- function(id, dfs){
                                       sowing_date = min(dftomodel$date),
                                       parallel = input$parallel),
           "Trans-Gompertz" = mod_transgompertz(dftomodel,
-                                               predictor = input$traittomodel,
+                                               predictor = input$flightdate,
+                                               dependent = input$traittomodel,
                                                sowing_date = min(dftomodel$date),
                                                parallel = input$parallel),
           "Sinusoidal" = mod_sinusoidal(dftomodel,
-                                        predictor = input$traittomodel,
+                                        predictor = input$flightdate,
+                                        dependent = input$traittomodel,
                                         sowing_date = min(dftomodel$date),
                                         parallel = input$parallel),
           "Asymptotic" = mod_asymptotic(dftomodel,
-                                        predictor = input$traittomodel,
+                                        predictor = input$flightdate,
+                                        dependent = input$traittomodel,
                                         sowing_date = min(dftomodel$date),
                                         parallel = input$parallel),
           "Asymmetric Gaussian" = mod_agauss(dftomodel,
-                                             predictor = input$traittomodel,
+                                             predictor = input$flightdate,
+                                             dependent = input$traittomodel,
                                              sowing_date = min(dftomodel$date),
                                              parallel = input$parallel),
           "Beta growth" = mod_beta(dftomodel,
-                                   predictor = input$traittomodel,
+                                   predictor = input$flightdate,
+                                   dependent = input$traittomodel,
                                    sowing_date = min(dftomodel$date),
                                    parallel = input$parallel),
           "Hill" = mod_hill(dftomodel,
-                            predictor = input$traittomodel,
+                            predictor = input$flightdate,
+                            dependent = input$traittomodel,
                             sowing_date = min(dftomodel$date),
                             parallel = input$parallel),
           "Exponential-Plateau" = mod_expplat(dftomodel,
-                                              predictor = input$traittomodel,
+                                              predictor = input$flightdate,
+                                              dependent = input$traittomodel,
                                               sowing_date = min(dftomodel$date),
                                               parallel = input$parallel),
           "Expolinear" = mod_explinear(dftomodel,
-                                               predictor = input$traittomodel,
-                                               sowing_date = min(dftomodel$date),
-                                               parallel = input$parallel)
+                                       predictor = input$flightdate,
+                                       dependent = input$traittomodel,
+                                       sowing_date = min(dftomodel$date),
+                                       parallel = input$parallel)
         )
       }) |>
         purrr::map_dfr(~.x) |>
@@ -666,10 +745,14 @@ mod_growthmodels_server <- function(id, dfs){
         dfplot <-
           dfactive$df |>
           dplyr::filter(unique_plot %in% input$plotmultiple) |>
-          dplyr::select(dplyr::all_of(c("unique_plot", "date", input$traittomodel))) |>
-          dplyr::mutate(date = as.integer(difftime(date, min(date), units = "days")) + 1) |>
+          dplyr::select(dplyr::all_of(c("unique_plot", input$flightdate, input$traittomodel))) |>
           setNames(c("color", "doy", "vindex"))
 
+        if(input$flightdate == "date"){
+          dfplot <-
+            dfplot |>
+            dplyr::mutate(doy = as.integer(difftime(doy, min(doy), units = "days")) + 1)
+        }
 
         colorlevels(dfpars$unique_plot)
 
@@ -686,7 +769,7 @@ mod_growthmodels_server <- function(id, dfs){
                           linewidth = 1.5)
 
           }) +
-          labs(x = "Days after first flight",
+          labs(x = input$flightdate,
                y = input$traittomodel,
                color = "") +
           theme_bw(base_size = 24) +
@@ -706,9 +789,14 @@ mod_growthmodels_server <- function(id, dfs){
         dfplot <-
           dfactive$df |>
           dplyr::filter(unique_plot == input$plotunique) |>
-          dplyr::select(dplyr::all_of(c("unique_plot", "date", input$traittomodel))) |>
-          dplyr::mutate(date = as.integer(difftime(date, min(date), units = "days")) + 1) |>
+          dplyr::select(dplyr::all_of(c("unique_plot", input$flightdate, input$traittomodel))) |>
           setNames(c("color", "doy", "vindex"))
+
+        if(input$flightdate == "date"){
+          dfplot <-
+            dfplot |>
+            dplyr::mutate(doy = as.integer(difftime(doy, min(doy), units = "days")) + 1)
+        }
 
         colorlevels(dfpars$model)
 
@@ -725,7 +813,7 @@ mod_growthmodels_server <- function(id, dfs){
                           linewidth = 1.5)
 
           }) +
-          labs(x = "Days after first flight",
+          labs(x = input$flightdate,
                y = input$traittomodel,
                color = "") +
           theme_bw(base_size = 24) +
@@ -753,7 +841,7 @@ mod_growthmodels_server <- function(id, dfs){
         }) +
         labs(
           color = NULL,
-          x = "Days after first flight",
+          x = input$flightdate,
           y = "1st Derivative (Units/Day)"
         ) +
         theme_bw(base_size = 24) +
@@ -779,7 +867,7 @@ mod_growthmodels_server <- function(id, dfs){
         }) +
         labs(
           color = NULL,
-          x = "Days after first flight",
+          x = input$flightdate,
           y = "2nd Derivative (Units/Day²)"
         ) +
         theme_bw(base_size = 24) +

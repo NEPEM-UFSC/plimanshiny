@@ -149,6 +149,65 @@ mod_weather_ui <- function(id) {
       tabPanel(
         title = "Weather data",
         reactable::reactableOutput(ns("weather_table"), height = "720px")
+      ),
+      tabPanel(
+        title = "Distribution",
+        fluidRow(
+          col_4(
+            pickerInput(ns("variable"),
+                        label = "Select the variable",
+                        choices = NULL,
+                        selected = NULL,
+                        options = list(
+                          `actions-box` = TRUE,
+                          `live-search` = TRUE
+                        )
+            )
+          ),
+          col_4(
+            pickerInput(ns("facet"),
+                        label = "Facet by",
+                        choices = NULL,
+                        selected = NULL,
+                        options = list(
+                          `actions-box` = TRUE,
+                          `live-search` = TRUE
+                        )
+            )
+          )
+        ),
+        plotOutput(ns("envirotypes_dist"), height = "560px")
+      ),
+      tabPanel(
+        title = "Envirotypes",
+        fluidRow(
+          col_6(
+            "Envirotypes",
+            fluidRow(
+              col_3(
+                textInput(ns("quantiles"),
+                          label = "Quantiles")
+              ),
+              col_3(
+                textInput(ns("quantiles_label"),
+                          label = "Quantile labels (labels)")
+              ),
+              col_3(
+                textInput(ns("cropdates"),
+                          label = "Crop stages")
+              ),
+              col_3(
+                textInput(ns("cropdates_label"),
+                          label = "Crop stages (labels)")
+              )
+            ),
+            plotOutput(ns("envirotypes"), height = "700px")
+          ),
+          col_6(
+            "Dataset",
+            reactable::reactableOutput(ns("dataenviro"), height = "720px")
+          )
+        )
       )
     )
   )
@@ -166,7 +225,7 @@ mod_weather_server <- function(id, dfs) {
         shinyjs::enable("ncores")
         ncore <- parallel::detectCores()
         updateNumericInput(session, "ncores",
-                           value = ncore - 3,
+                           value = min(c(ncore, 5)),
                            max = ncore)
       } else {
         shinyjs::disable("ncores")
@@ -341,10 +400,11 @@ mod_weather_server <- function(id, dfs) {
 
     })
 
+    resclimate <- reactiveVal()
+
     observeEvent(input$get_weather, {
       df <- coords()
       req(nrow(df) > 0)
-
       weather <- get_climate(
         env = df$env,
         params = input$params,
@@ -357,22 +417,104 @@ mod_weather_server <- function(id, dfs) {
         workers = input$ncores,
         environment = "shiny"
       )
-
+      resclimate(weather)
+      assign("weather", weather, envir = .GlobalEnv)
+      dfs[["weather"]] <- create_reactval("weather", weather)
       sendSweetAlert(
         session = session,
         title = "Weather data successfully retrieved!",
         text = "The climate information has been loaded and is now available for visualization.",
         type = "success"
       )
+    })
 
-      output$weather_table <- reactable::renderReactable({
-        weather |>
+    ### SHOW CLIMATE DATA
+    output$weather_table <- reactable::renderReactable({
+      req(resclimate())
+      resclimate() |>
+        roundcols(digits = 3) |>
+        render_reactable(max_width = NULL)
+    })
+
+    observe({
+      req(resclimate())  # assegura que ambos existem
+      updatePickerInput(session, "variable",
+                        choices = colnames(resclimate()),
+                        selected = NULL)
+    })
+    observe({
+      updatePickerInput(session, "facet",
+                        choices = colnames(resclimate()),
+                        selected = NULL)
+    })
+
+
+    output$envirotypes_dist <- renderPlot({
+      req(input$variable, input$facet)
+      ggplot(resclimate(), aes(x = !!rlang::sym(input$variable))) +
+        facet_wrap(as.formula(paste0("~", input$facet)), ncol = 1) +
+        geom_density(fill = "steelblue", alpha = 0.6) +
+        theme_minimal(base_size = 16) +
+        theme(axis.text.y = element_text(angle = 0)) +
+        labs(
+          x = input$variable,
+          y = "Densidade",
+          fill = NULL
+        )
+    })
+
+
+    output$envirotypes <- renderPlot({
+      req(input$quantiles, input$cropdates, input$cropdates_label)
+      quantiles <- as.numeric(unlist(strsplit(input$quantiles, ",")))
+      quantiles_label <- unlist(strsplit(input$quantiles_label, ","))
+      cropdates <- as.numeric(unlist(strsplit(input$cropdates, ",")))
+      cropdates_label <- unlist(strsplit(input$cropdates_label, ","))
+
+
+      dfenviro <-
+        envirotype(
+          resclimate() |> drop_na(),
+          datas = cropdates,
+          fases = cropdates_label,
+          var = input$variable,
+          breaks = quantiles,
+          labels = NULL
+        ) |>
+        tidyr::drop_na()
+
+
+      output$dataenviro <- reactable::renderReactable({
+        dfenviro |>
+          dplyr::select(ENV, stage, xcut, Freq, fr) |>
+          setNames(c("Environment", "Crop stage", "Envirotype", "Frequency", "Relative frequency")) |>
           roundcols(digits = 3) |>
           render_reactable(max_width = NULL)
       })
 
-      dfs[["weather"]] <- create_reactval("weather", weather)
+      ggplot(dfenviro) +
+        geom_bar(aes(x=Freq,  y = ENV, fill = xcut),
+                 position = "fill",
+                 stat = "identity",
+                 width = 1,
+                 color = "white",
+                 size=.2) +
+        facet_wrap(~stage, ncol = 1) +
+        theme_minimal(base_size = 16) +
+        scale_y_discrete(expand = c(0,0))+
+        scale_x_continuous(expand = c(0,0))+
+        labs(x = 'Relative frequency',
+             y = "Environment",
+             fill='Envirotype')+
+        theme(axis.title = element_text(size=12),
+              legend.text = element_text(size=9),
+              strip.text = element_text(size=12),
+              legend.title = element_text(size=12),
+              strip.background = element_rect(fill="gray95",size=1)) +
+        theme(legend.position = "bottom")
     })
+
+
   })
 }
 

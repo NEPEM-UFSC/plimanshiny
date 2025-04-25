@@ -290,7 +290,7 @@ app_ui <- function(request) {
             bs4SidebarMenuSubItem(
               text = "NASAPOWER",
               tabName = "nasapower",
-              icon = shiny::icon("chart-line", verify_fa = FALSE)
+              icon = shiny::icon("earth-americas", verify_fa = FALSE)
             )
           ),
           ### Settings

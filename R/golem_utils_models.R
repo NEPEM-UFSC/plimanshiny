@@ -53,7 +53,7 @@ mod_L3 <- function(data,
 
   # Parallel or Sequential Plan
   if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else {
     future::plan(future::sequential)
   }
@@ -279,7 +279,7 @@ mod_L4 <- function(data,
 
   # Parallel or Sequential Plan
   if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else {
     future::plan(future::sequential)
   }
@@ -304,8 +304,8 @@ mod_L4 <- function(data,
 
       model <- try(
         nls( y ~ SSfpl(flights, A, B, xmid, scal),
-            data = data.frame(flights, y),
-            control = nls.control(maxiter = 1000)),
+             data = data.frame(flights, y),
+             control = nls.control(maxiter = 1000)),
         silent = TRUE
       )
 
@@ -594,7 +594,7 @@ mod_L5 <- function(data,
 
   # Parallel or Sequential Plan
   if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else {
     future::plan(future::sequential)
   }
@@ -888,7 +888,7 @@ mod_loess <-  function(data,
 
   # Apply the model
   if(parallel){
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else{
     future::plan(future::sequential)
   }
@@ -989,7 +989,7 @@ mod_segmented <- function(data,
 
   # Set parallel or sequential plan
   if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else {
     future::plan(future::sequential)
   }
@@ -1117,7 +1117,7 @@ mod_segmented2 <- function(data,
 
   # Set parallel or sequential plan
   if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else {
     future::plan(future::sequential)
   }
@@ -1179,7 +1179,7 @@ mod_segmented2 <- function(data,
 
 
 
-########### GROWTH MODELS ##########
+####################################### GROWTH MODELS ####################################
 # Define the Weibull Growth Model
 modfun_weibull <- function(x, Asym, Drop, lrc, pwr) {
   Asym - Drop * exp(-exp(lrc) * x^pwr)
@@ -1196,21 +1196,21 @@ sdfun_weibull <- function(x, Asym, Drop, lrc, pwr) {
 }
 
 mod_weibull <- function(data,
-                        flight_date = "date",
-                        predictor = "median.NDVI",
+                        predictor = "date",
+                        dependent = "median.NDVI",
                         sowing_date = NULL,
                         parallel = FALSE) {
   # Prepare data
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
     tidyr::nest()
 
   # Parallel or Sequential Plan
   if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else {
     future::plan(future::sequential)
   }
@@ -1219,117 +1219,122 @@ mod_weibull <- function(data,
   `%dofut%` <- doFuture::`%dofuture%`
 
   # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
-    if (!is.null(sowing_date)) {
-      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
+  results_list <- foreach::foreach(i = seq_along(dftemp$data),
+                                   .combine = dplyr::bind_rows,
+                                   .options.future = list(seed = TRUE)) %dofut% {
+                                     df <- as.data.frame(dftemp$data[[i]])
 
+                                     # Handle x (predictor)
+                                     if (predictor == "date") {
+                                       if (!is.null(sowing_date)) {
+                                         x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+                                           as.numeric() |> round()
+                                       } else {
+                                         x <- to_datetime(df[[predictor]])$yday + 1
+                                       }
+                                     } else {
+                                       x <- df[[predictor]]
+                                     }
 
-    } else {
-      flights <- to_datetime(df$date)$yday + 1
-    }
+                                     y <- df |> dplyr::pull(!!rlang::sym(dependent))
 
-    fflight <- min(flights)
-    lflight <- max(flights) + 20
-    flights_seq <- fflight:lflight
-    y <- df |> dplyr::pull(!!rlang::sym(predictor))
-    x <- flights + 1
+                                     fflight <- min(x)
+                                     lflight <- max(x) + 20
 
-    result <- tryCatch({
-      # Fit Weibull model
-      model <- nls(y ~ SSweibull(x, Asym, Drop, lrc, pwr),
-                   control = nls.control(maxiter = 1000),
-                   data = data.frame(x, y))
+                                     result <- tryCatch({
+                                       # Fit Weibull model
+                                       model <- nls(y ~ SSweibull(x, Asym, Drop, lrc, pwr),
+                                                    control = nls.control(maxiter = 1000),
+                                                    data = data.frame(x, y))
 
-      coefs <- coef(model)
-      gofval <- gof(model, y)
+                                       coefs <- coef(model)
+                                       gofval <- gof(model, y)
 
-      # Area under curve
-      int1 <- integrate(modfun_weibull,
-                        lower = fflight,
-                        upper = lflight,
-                        Asym = coefs[[1]],
-                        Drop = coefs[[2]],
-                        lrc = coefs[[3]],
-                        pwr = coefs[[4]])
+                                       # Area under the curve
+                                       auc <- integrate(modfun_weibull,
+                                                        lower = fflight,
+                                                        upper = lflight,
+                                                        Asym = coefs[["Asym"]],
+                                                        Drop = coefs[["Drop"]],
+                                                        lrc = coefs[["lrc"]],
+                                                        pwr = coefs[["pwr"]])
 
-      # critical points
-      # inflection point
-      fdopt_result <-
-        optimize(fdfun_weibull,
-                 Asym = coefs[[1]],
-                 Drop = coefs[[2]],
-                 lrc = coefs[[3]],
-                 pwr = coefs[[4]],
-                 interval = c(fflight, lflight),
-                 maximum = TRUE)
+                                       # Critical points
+                                       fdopt_result <- optimize(fdfun_weibull,
+                                                                Asym = coefs[["Asym"]],
+                                                                Drop = coefs[["Drop"]],
+                                                                lrc = coefs[["lrc"]],
+                                                                pwr = coefs[["pwr"]],
+                                                                interval = c(fflight, lflight),
+                                                                maximum = TRUE)
 
-      # maximum acceleration
-      sdopt_result <-
-        optimize(sdfun_weibull,
-                 Asym = coefs[[1]],
-                 Drop = coefs[[2]],
-                 lrc = coefs[[3]],
-                 pwr = coefs[[4]],
-                 interval = c(fflight, lflight),
-                 maximum = TRUE)
+                                       sdopt_result <- optimize(sdfun_weibull,
+                                                                Asym = coefs[["Asym"]],
+                                                                Drop = coefs[["Drop"]],
+                                                                lrc = coefs[["lrc"]],
+                                                                pwr = coefs[["pwr"]],
+                                                                interval = c(fflight, lflight),
+                                                                maximum = TRUE)
 
-      # maximum deceleration
-      sdopt_result2 <-
-        optimize(sdfun_weibull,
-                 Asym = coefs[[1]],
-                 Drop = coefs[[2]],
-                 lrc = coefs[[3]],
-                 pwr = coefs[[4]],
-                 interval = c(fflight, lflight),
-                 maximum = FALSE)
+                                       sdopt_result2 <- optimize(sdfun_weibull,
+                                                                 Asym = coefs[["Asym"]],
+                                                                 Drop = coefs[["Drop"]],
+                                                                 lrc = coefs[["lrc"]],
+                                                                 pwr = coefs[["pwr"]],
+                                                                 interval = c(fflight, lflight),
+                                                                 maximum = FALSE)
 
-      # Return results
-      tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Weibull",
-        asymptote = coefs[[1]],
-        auc = int1$value,
-        xinfp = fdopt_result$maximum,
-        yinfp = fdopt_result$objective,
-        xmace = sdopt_result$maximum,
-        ymace = sdopt_result$objective,
-        xmdes = sdopt_result2$minimum,
-        ymdes = sdopt_result2$objective,
-        aic = gofval[[1]],
-        rmse = gofval[[2]],
-        mae = gofval[[3]],
-        parms = list(model = modfun_weibull,
-                     modeladj = model,
-                     fd = fdfun_weibull,
-                     sd = sdfun_weibull,
-                     coefs = list(Asym = coefs[[1]],
-                                  Drop = coefs[[2]],
-                                  lrc = coefs[[3]],
-                                  pwr = coefs[[4]]), xmin = fflight, xmax = lflight)
-      )
-    }, error = function(e) {
-      # Return NA values if model fails
-      tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Weibull",
-        asymptote = NA_real_,
-        auc = NA_real_,
-        xinfp = NA_real_,
-        yinfp = NA_real_,
-        xmace = NA_real_,
-        ymace = NA_real_,
-        xmdes = NA_real_,
-        ymdes = NA_real_,
-        aic = NA_real_,
-        rmse = NA_real_,
-        mae = NA_real_,
-        parms = NA
-      )
-    })
+                                       tibble::tibble(
+                                         unique_plot = dftemp$unique_plot[i],
+                                         model = "Weibull",
+                                         asymptote = coefs[["Asym"]],
+                                         auc = auc$value,
+                                         xinfp = fdopt_result$maximum,
+                                         yinfp = fdopt_result$objective,
+                                         xmace = sdopt_result$maximum,
+                                         ymace = sdopt_result$objective,
+                                         xmdes = sdopt_result2$minimum,
+                                         ymdes = sdopt_result2$objective,
+                                         aic = gofval$AIC,
+                                         rmse = gofval$RMSE,
+                                         mae = gofval$MAE,
+                                         parms = list(
+                                           model = modfun_weibull,
+                                           modeladj = model,
+                                           fd = fdfun_weibull,
+                                           sd = sdfun_weibull,
+                                           coefs = list(
+                                             Asym = coefs[["Asym"]],
+                                             Drop = coefs[["Drop"]],
+                                             lrc = coefs[["lrc"]],
+                                             pwr = coefs[["pwr"]]
+                                           ),
+                                           xmin = fflight,
+                                           xmax = lflight
+                                         )
+                                       )
+                                     }, error = function(e) {
+                                       tibble::tibble(
+                                         unique_plot = dftemp$unique_plot[i],
+                                         model = "Weibull",
+                                         asymptote = NA_real_,
+                                         auc = NA_real_,
+                                         xinfp = NA_real_,
+                                         yinfp = NA_real_,
+                                         xmace = NA_real_,
+                                         ymace = NA_real_,
+                                         xmdes = NA_real_,
+                                         ymdes = NA_real_,
+                                         aic = NA_real_,
+                                         rmse = NA_real_,
+                                         mae = NA_real_,
+                                         parms = NA
+                                       )
+                                     })
 
-    result
-  }
+                                     result
+                                   }
+
   results <-
     results_list |>
     tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
@@ -1418,8 +1423,8 @@ sdfun_gompertz <- function(x, Asym, b2, b3) {
 }
 
 mod_gompertz <- function(data,
-                         flight_date = "date",
-                         predictor = "median.NDVI",
+                         predictor = "date",
+                         dependent = "median.NDVI",
                          sowing_date = NULL,
                          parallel = FALSE) {
 
@@ -1427,13 +1432,13 @@ mod_gompertz <- function(data,
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
     tidyr::nest()
 
   # Parallel or Sequential Plan
   if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else {
     future::plan(future::sequential)
   }
@@ -1444,17 +1449,23 @@ mod_gompertz <- function(data,
   # Fit model for each group
   results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
-    if (!is.null(sowing_date)) {
-      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
+
+    # Predictor variable (x)
+    if (predictor == "date") {
+      if (!is.null(sowing_date)) {
+        x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+          as.numeric() |> round()
+      } else {
+        x <- to_datetime(df[[predictor]])$yday + 1
+      }
     } else {
-      flights <- to_datetime(df$date)$yday + 1
+      x <- df[[predictor]]
     }
 
-    fflight <- min(flights)
-    lflight <- max(flights) + 20
-    flights_seq <- fflight:lflight
-    y <- df |> dplyr::pull(!!rlang::sym(predictor))
-    x <- flights
+    y <- df |> dplyr::pull(!!rlang::sym(dependent))
+
+    fflight <- min(x)
+    lflight <- max(x) + 20
 
     result <- tryCatch({
       # Fit Gompertz model
@@ -1466,67 +1477,67 @@ mod_gompertz <- function(data,
       gofval <- gof(model, y)
 
       # Area under curve
-      int1 <-
-        integrate(modfun_gompertz,
-                  lower = fflight,
-                  upper = lflight,
-                  Asym = coefs[[1]],
-                  b2 = coefs[[2]],
-                  b3 = coefs[[3]])
+      auc <- integrate(modfun_gompertz,
+                       lower = fflight,
+                       upper = lflight,
+                       Asym = coefs[["Asym"]],
+                       b2 = coefs[["b2"]],
+                       b3 = coefs[["b3"]])
 
       # critical points
-      fdopt_result <-
-        optimize(fdfun_gompertz,
-                 Asym = coefs[[1]],
-                 b2 = coefs[[2]],
-                 b3 = coefs[[3]],
-                 interval = c(fflight, lflight),
-                 maximum = TRUE)
+      fdopt_result <- optimize(fdfun_gompertz,
+                               Asym = coefs[["Asym"]],
+                               b2 = coefs[["b2"]],
+                               b3 = coefs[["b3"]],
+                               interval = c(fflight, lflight),
+                               maximum = TRUE)
 
       # maximum acceleration
-      sdopt_result <-
-        optimize(sdfun_gompertz,
-                 Asym = coefs[[1]],
-                 b2 = coefs[[2]],
-                 b3 = coefs[[3]],
-                 interval = c(fflight, lflight),
-                 maximum = TRUE)
+      sdopt_result <- optimize(sdfun_gompertz,
+                               Asym = coefs[["Asym"]],
+                               b2 = coefs[["b2"]],
+                               b3 = coefs[["b3"]],
+                               interval = c(fflight, lflight),
+                               maximum = TRUE)
 
       # maximum deceleration
-      sdopt_result2 <-
-        optimize(sdfun_gompertz,
-                 Asym = coefs[[1]],
-                 b2 = coefs[[2]],
-                 b3 = coefs[[3]],
-                 interval = c(fflight, lflight),
-                 maximum = FALSE)
-
+      sdopt_result2 <- optimize(sdfun_gompertz,
+                                Asym = coefs[["Asym"]],
+                                b2 = coefs[["b2"]],
+                                b3 = coefs[["b3"]],
+                                interval = c(fflight, lflight),
+                                maximum = FALSE)
 
       # Return results
       tibble::tibble(
         unique_plot = dftemp$unique_plot[i],
         model = "Gompertz",
-        asymptote = coefs[[1]],
-        auc = int1$value,
+        asymptote = coefs[["Asym"]],
+        auc = auc$value,
         xinfp = fdopt_result$maximum,
         yinfp = fdopt_result$objective,
         xmace = sdopt_result$maximum,
         ymace = sdopt_result$objective,
         xmdes = sdopt_result2$minimum,
         ymdes = sdopt_result2$objective,
-        aic = gofval[[1]],
-        rmse = gofval[[2]],
-        mae = gofval[[3]],
-        parms = list(model = modfun_gompertz,
-                     modeladj = model,
-                     fd = fdfun_gompertz,
-                     sd = sdfun_gompertz,
-                     coefs = list(Asym = coefs[[1]],
-                                  b2 = coefs[[2]],
-                                  b3 = coefs[[3]]), xmin = fflight, xmax = lflight)
+        aic = gofval$AIC,
+        rmse = gofval$RMSE,
+        mae = gofval$MAE,
+        parms = list(
+          model = modfun_gompertz,
+          modeladj = model,
+          fd = fdfun_gompertz,
+          sd = sdfun_gompertz,
+          coefs = list(
+            Asym = coefs[["Asym"]],
+            b2 = coefs[["b2"]],
+            b3 = coefs[["b3"]]
+          ),
+          xmin = fflight,
+          xmax = lflight
+        )
       )
     }, error = function(e) {
-      # Return NA values if model fails
       tibble::tibble(
         unique_plot = dftemp$unique_plot[i],
         model = "Gompertz",
@@ -1555,6 +1566,7 @@ mod_gompertz <- function(data,
 
   return(results)
 }
+
 
 
 # Gompertz model equation
@@ -1621,21 +1633,21 @@ help_mod_gompertz <- function() {
 
 ############## LOGISTIC MODEL 3 PARAMETERS - GROWTH MODELS #############
 mod_logistic_3P <- function(data,
-                            flight_date = "date",
-                            predictor = "median.NDVI",
+                            predictor = "date",
+                            dependent = "median.NDVI",
                             sowing_date = NULL,
                             parallel = FALSE) {
   # Prepare data
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
     tidyr::nest()
 
   # Parallel or Sequential Plan
   if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else {
     future::plan(future::sequential)
   }
@@ -1646,15 +1658,19 @@ mod_logistic_3P <- function(data,
   # Fit model for each group
   results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
-    if (!is.null(sowing_date)) {
-      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
-    } else {
-      flights <- to_datetime(df$date)$yday + 1
+    if(predictor == "date"){
+      if (!is.null(sowing_date)) {
+        flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
+      } else {
+        flights <- to_datetime(df$date)$yday + 1
+      }
+    } else{
+      flights <- df[[predictor]]
     }
 
     fflight <- min(flights)
     lflight <- max(flights) + 20
-    y <- df |> dplyr::pull(!!rlang::sym(predictor))
+    y <- df |> dplyr::pull(!!rlang::sym(dependent))
     x <- flights
 
     result <- tryCatch({
@@ -1759,6 +1775,7 @@ mod_logistic_3P <- function(data,
   return(results)
 }
 
+
 help_mod_L3_gm <- function() {
   div(
     style = "font-family: Arial, sans-serif; line-height: 1.5;",
@@ -1810,22 +1827,21 @@ help_mod_L3_gm <- function() {
 
 ############## LOGISTIC MODEL 4 PARAMETERS - GROWTH MODELS #############
 mod_logistic_4P <- function(data,
-                            flight_date = "date",
-                            predictor = "q90",
+                            predictor = "date",
+                            dependent = "median.NDVI",
                             sowing_date = NULL,
                             parallel = FALSE) {
   # Prepare data
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
     tidyr::nest()
 
-
   # Parallel or Sequential Plan
   if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else {
     future::plan(future::sequential)
   }
@@ -1837,23 +1853,26 @@ mod_logistic_4P <- function(data,
   results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
 
-    if (!is.null(sowing_date)) {
-      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
+    if (predictor == "date") {
+      if (!is.null(sowing_date)) {
+        flights <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+          as.numeric() |> round()
+      } else {
+        flights <- to_datetime(df[[predictor]])$yday + 1
+      }
     } else {
-      flights <- to_datetime(df$date)$yday + 1
+      flights <- df[[predictor]]
     }
 
     fflight <- min(flights)
     lflight <- max(flights) + 20
-    y <- df |> dplyr::pull(!!rlang::sym(predictor))
+    y <- df |> dplyr::pull(!!rlang::sym(dependent))
 
-    # Use tryCatch to handle model fitting errors
     result <- tryCatch({
-
       model <- try(
-        nls( y ~ SSfpl(flights, a, b, xmid, scal),
-             data = data.frame(flights, y),
-             control = nls.control(maxiter = 1000)),
+        nls(y ~ SSfpl(flights, a, b, xmid, scal),
+            data = data.frame(flights, y),
+            control = nls.control(maxiter = 1000)),
         silent = TRUE
       )
 
@@ -1865,47 +1884,25 @@ mod_logistic_4P <- function(data,
       }
 
       coefslog <- coef(model)
-      a <- coefslog[1]
-      b <- coefslog[2]
-      xmid <- coefslog[3]
-      scal <- coefslog[4]
+      a <- coefslog[["a"]]
+      b <- coefslog[["b"]]
+      xmid <- coefslog[["xmid"]]
+      scal <- coefslog[["scal"]]
 
-      # Goodness of fit
       gofval <- gof(model, y)
 
-      # Area under curve
-      auc <- integrate(modfun_L4, lower = fflight, upper = lflight, a = a, b = b, xmid = xmid, scal = scal)
-      # critical points
-      fdopt_result <-
-        optimize(fdfun_L4,
-                 a = a,
-                 b = b,
-                 xmid = xmid,
-                 scal = scal,
-                 interval = c(fflight, lflight),
-                 maximum = TRUE)
+      auc <- integrate(modfun_L4, lower = fflight, upper = lflight,
+                       a = a, b = b, xmid = xmid, scal = scal)
 
-      # maximum acceleration
-      sdopt_result <-
-        optimize(sdfun_L4,
-                 a = a,
-                 b = b,
-                 xmid = xmid,
-                 scal = scal,
-                 interval = c(fflight, lflight),
-                 maximum = TRUE)
+      fdopt_result <- optimize(fdfun_L4, a = a, b = b, xmid = xmid, scal = scal,
+                               interval = c(fflight, lflight), maximum = TRUE)
 
-      # maximum deceleration
-      sdopt_result2 <-
-        optimize(sdfun_L4,
-                 a = a,
-                 b = b,
-                 xmid = xmid,
-                 scal = scal,
-                 interval = c(fflight, lflight),
-                 maximum = FALSE)
+      sdopt_result <- optimize(sdfun_L4, a = a, b = b, xmid = xmid, scal = scal,
+                               interval = c(fflight, lflight), maximum = TRUE)
 
-      # Return results
+      sdopt_result2 <- optimize(sdfun_L4, a = a, b = b, xmid = xmid, scal = scal,
+                                interval = c(fflight, lflight), maximum = FALSE)
+
       tibble::tibble(
         unique_plot = dftemp$unique_plot[i],
         model = "Logistic 4P",
@@ -1920,15 +1917,17 @@ mod_logistic_4P <- function(data,
         aic = gofval$AIC,
         rmse = gofval$RMSE,
         mae = gofval$MAE,
-        parms = list(model = modfun_L4,
-                     modeladj = model,
-                     fd = fdfun_L4,
-                     sd = sdfun_L4,
-                     coefs = list(a = a, b = b, xmid = xmid, scal = scal),
-                     xmin = fflight, xmax = lflight)
+        parms = list(
+          model = modfun_L4,
+          modeladj = model,
+          fd = fdfun_L4,
+          sd = sdfun_L4,
+          coefs = list(a = a, b = b, xmid = xmid, scal = scal),
+          xmin = fflight,
+          xmax = lflight
+        )
       )
     }, error = function(e) {
-      # Return NA values if model fitting fails
       tibble::tibble(
         unique_plot = dftemp$unique_plot[i],
         model = "Logistic 4P",
@@ -1957,6 +1956,7 @@ mod_logistic_4P <- function(data,
 
   return(results)
 }
+
 
 # Logistic
 help_mod_L4_gm <- function() {
@@ -2060,21 +2060,21 @@ SSvonBertalanffy <- selfStart(
 )
 
 mod_vonbert <- function(data,
-                        flight_date = "date",
-                        predictor = "median.NDVI",
+                        predictor = "date",
+                        dependent = "median.NDVI",
                         sowing_date = NULL,
                         parallel = FALSE) {
   # Prepare data
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
     tidyr::nest()
 
   # Parallel or Sequential Plan
   if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else {
     future::plan(future::sequential)
   }
@@ -2083,112 +2083,112 @@ mod_vonbert <- function(data,
   `%dofut%` <- doFuture::`%dofuture%`
 
   # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
-    if (!is.null(sowing_date)) {
-      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
-    } else {
-      flights <- to_datetime(df$date)$yday + 1
-    }
+  results_list <- foreach::foreach(i = seq_along(dftemp$data),
+                                   .combine = dplyr::bind_rows,
+                                   .options.future = list(seed = TRUE)) %dofut% {
+                                     df <- as.data.frame(dftemp$data[[i]])
 
-    fflight <- min(flights)
-    lflight <- max(flights) + 20
-    y <- df |> dplyr::pull(!!rlang::sym(predictor))
-    x <- flights
+                                     if (predictor == "date") {
+                                       if (!is.null(sowing_date)) {
+                                         x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+                                           as.numeric() |> round()
+                                       } else {
+                                         x <- to_datetime(df[[predictor]])$yday + 1
+                                       }
+                                     } else {
+                                       x <- df[[predictor]]
+                                     }
 
-    result <- tryCatch({
-      # Fit Gompertz model
-      model <- nls(y ~ SSvonBertalanffy(x, Linf, k, t0),
-                   control = nls.control(maxiter = 1000),
-                   data = data.frame(x, y))
+                                     fflight <- min(x)
+                                     lflight <- max(x) + 20
+                                     y <- df |> dplyr::pull(!!rlang::sym(dependent))
 
-      coefs <- coef(model)
-      gofval <- gof(model, y)
+                                     result <- tryCatch({
+                                       # Fit Von Bertalanffy model
+                                       model <- nls(y ~ SSvonBertalanffy(x, Linf, k, t0),
+                                                    control = nls.control(maxiter = 1000),
+                                                    data = data.frame(x, y))
 
-      # Area under curve
-      int1 <-
-        integrate(modfun_vonbert,
-                  lower = fflight,
-                  upper = lflight,
-                  Linf = coefs[[1]],
-                  k = coefs[[2]],
-                  t0 = coefs[[3]])
+                                       coefs <- coef(model)
+                                       gofval <- gof(model, y)
 
-      # critical points
-      fdopt_result <-
-        optimize(fdfun_vonbert,
-                 Linf = coefs[[1]],
-                 k = coefs[[2]],
-                 t0 = coefs[[3]],
-                 interval = c(fflight, lflight),
-                 maximum = TRUE)
+                                       # Area under the curve
+                                       auc <- integrate(modfun_vonbert,
+                                                        lower = fflight, upper = lflight,
+                                                        Linf = coefs[["Linf"]],
+                                                        k = coefs[["k"]],
+                                                        t0 = coefs[["t0"]])
 
-      # maximum acceleration
-      sdopt_result <-
-        optimize(sdfun_vonbert,
-                 Linf = coefs[[1]],
-                 k = coefs[[2]],
-                 t0 = coefs[[3]],
-                 interval = c(fflight, lflight),
-                 maximum = TRUE)
+                                       # Critical points
+                                       fdopt_result <- optimize(fdfun_vonbert,
+                                                                Linf = coefs[["Linf"]],
+                                                                k = coefs[["k"]],
+                                                                t0 = coefs[["t0"]],
+                                                                interval = c(fflight, lflight),
+                                                                maximum = TRUE)
 
-      # maximum deceleration
-      sdopt_result2 <-
-        optimize(sdfun_vonbert,
-                 Linf = coefs[[1]],
-                 k = coefs[[2]],
-                 t0 = coefs[[3]],
-                 interval = c(fflight, lflight),
-                 maximum = FALSE)
+                                       # Max acceleration
+                                       sdopt_result <- optimize(sdfun_vonbert,
+                                                                Linf = coefs[["Linf"]],
+                                                                k = coefs[["k"]],
+                                                                t0 = coefs[["t0"]],
+                                                                interval = c(fflight, lflight),
+                                                                maximum = TRUE)
 
+                                       # Max deceleration
+                                       sdopt_result2 <- optimize(sdfun_vonbert,
+                                                                 Linf = coefs[["Linf"]],
+                                                                 k = coefs[["k"]],
+                                                                 t0 = coefs[["t0"]],
+                                                                 interval = c(fflight, lflight),
+                                                                 maximum = FALSE)
 
-      # Return results
-      tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Von Bertalanffy",
-        asymptote = coefs[[1]],
-        auc = int1$value,
-        xinfp = fdopt_result$maximum,
-        yinfp = fdopt_result$objective,
-        xmace = sdopt_result$maximum,
-        ymace = sdopt_result$objective,
-        xmdes = sdopt_result2$minimum,
-        ymdes = sdopt_result2$objective,
-        aic = gofval[[1]],
-        rmse = gofval[[2]],
-        mae = gofval[[3]],
-        parms = list(model = modfun_vonbert,
-                     modeladj = model,
-                     fd = fdfun_vonbert,
-                     sd = sdfun_vonbert,
-                     coefs = list(
-                       Linf = coefs[[1]],
-                       k = coefs[[2]],
-                       t0 = coefs[[3]],
-                     ),
-                     xmin = fflight, xmax = lflight)
-      )
-    }, error = function(e) {
-      # Return NA values if model fails
-      tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Von Bertalanffy",
-        asymptote = NA_real_,
-        auc = NA_real_,
-        xinfp = NA_real_,
-        yinfp = NA_real_,
-        xmace = NA_real_,
-        ymace = NA_real_,
-        xmdes = NA_real_,
-        ymdes = NA_real_,
-        aic = NA_real_,
-        rmse = NA_real_,
-        mae = NA_real_,
-        parms = NA
-      )
-    })
-    result
-  }
+                                       tibble::tibble(
+                                         unique_plot = dftemp$unique_plot[i],
+                                         model = "Von Bertalanffy",
+                                         asymptote = coefs[["Linf"]],
+                                         auc = auc$value,
+                                         xinfp = fdopt_result$maximum,
+                                         yinfp = fdopt_result$objective,
+                                         xmace = sdopt_result$maximum,
+                                         ymace = sdopt_result$objective,
+                                         xmdes = sdopt_result2$minimum,
+                                         ymdes = sdopt_result2$objective,
+                                         aic = gofval$AIC,
+                                         rmse = gofval$RMSE,
+                                         mae = gofval$MAE,
+                                         parms = list(model = modfun_vonbert,
+                                                      modeladj = model,
+                                                      fd = fdfun_vonbert,
+                                                      sd = sdfun_vonbert,
+                                                      coefs = list(Linf = coefs[["Linf"]],
+                                                                   k = coefs[["k"]],
+                                                                   t0 = coefs[["t0"]]),
+                                                      xmin = fflight,
+                                                      xmax = lflight)
+                                       )
+                                     }, error = function(e) {
+                                       tibble::tibble(
+                                         unique_plot = dftemp$unique_plot[i],
+                                         model = "Von Bertalanffy",
+                                         asymptote = NA_real_,
+                                         auc = NA_real_,
+                                         xinfp = NA_real_,
+                                         yinfp = NA_real_,
+                                         xmace = NA_real_,
+                                         ymace = NA_real_,
+                                         xmdes = NA_real_,
+                                         ymdes = NA_real_,
+                                         aic = NA_real_,
+                                         rmse = NA_real_,
+                                         mae = NA_real_,
+                                         parms = NA
+                                       )
+                                     })
+
+                                     result
+                                   }
+
   results <-
     results_list |>
     tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
@@ -2196,6 +2196,7 @@ mod_vonbert <- function(data,
 
   return(results)
 }
+
 
 help_mod_vonbert_eq <- function() {
   "$$y(x) = L_\\infty \\cdot (1 - e^{-k \\cdot (x - t_0)})$$"
@@ -2286,22 +2287,23 @@ SSexponential <- selfStart(
   },
   parameters = c("a", "b")
 )
+
 mod_exponential <- function(data,
-                            flight_date = "date",
-                            predictor = "median.NDVI",
+                            predictor = "date",
+                            dependent = "median.NDVI",
                             sowing_date = NULL,
                             parallel = FALSE) {
   # Prepare data
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
     tidyr::nest()
 
   # Parallel or Sequential Plan
-  if(parallel){
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+  if (parallel) {
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else {
     future::plan(future::sequential)
   }
@@ -2310,98 +2312,102 @@ mod_exponential <- function(data,
   `%dofut%` <- doFuture::`%dofuture%`
 
   # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
-    if (!is.null(sowing_date)) {
-      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
-    } else {
-      flights <- to_datetime(df$date)$yday + 1
-    }
+  results_list <- foreach::foreach(i = seq_along(dftemp$data),
+                                   .combine = dplyr::bind_rows,
+                                   .options.future = list(seed = TRUE)) %dofut% {
+                                     df <- as.data.frame(dftemp$data[[i]])
 
-    fflight <- min(flights)
-    lflight <- max(flights) + 20
-    y <- df |> dplyr::pull(!!rlang::sym(predictor))
-    x <- flights
+                                     if (predictor == "date") {
+                                       if (!is.null(sowing_date)) {
+                                         x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+                                           as.numeric() |> round()
+                                       } else {
+                                         x <- to_datetime(df[[predictor]])$yday + 1
+                                       }
+                                     } else {
+                                       x <- df[[predictor]]
+                                     }
 
-    result <- tryCatch({
-      # Fit Exponential model
-      model <- nls(y ~ SSexponential(x, a, b),
-                   control = nls.control(maxiter = 1000),
-                   data = data.frame(x, y))
+                                     fflight <- min(x)
+                                     lflight <- max(x) + 20
+                                     y <- df |> dplyr::pull(!!rlang::sym(dependent))
 
-      coefs <- coef(model)
-      gofval <- gof(model, y)
+                                     result <- tryCatch({
+                                       # Fit Exponential model
+                                       model <- nls(y ~ SSexponential(x, a, b),
+                                                    control = nls.control(maxiter = 1000),
+                                                    data = data.frame(x, y))
 
-      # Area under curve
-      int1 <-
-        integrate(modfun_exp,
-                  lower = fflight,
-                  upper = lflight,
-                  a = coefs[[1]],
-                  b = coefs[[2]])
+                                       coefs <- coef(model)
+                                       gofval <- gof(model, y)
 
-      # Critical points
-      fdopt_result <-
-        optimize(fdfun_exp,
-                 a = coefs[[1]],
-                 b = coefs[[2]],
-                 interval = c(fflight, lflight),
-                 maximum = TRUE)
+                                       # Area under curve
+                                       auc <- integrate(modfun_exp,
+                                                        lower = fflight, upper = lflight,
+                                                        a = coefs[["a"]],
+                                                        b = coefs[["b"]])
 
-      # Maximum acceleration
-      sdopt_result <-
-        optimize(sdfun_exp,
-                 a = coefs[[1]],
-                 b = coefs[[2]],
-                 interval = c(fflight, lflight),
-                 maximum = TRUE)
+                                       # Critical points
+                                       fdopt_result <- optimize(fdfun_exp,
+                                                                a = coefs[["a"]],
+                                                                b = coefs[["b"]],
+                                                                interval = c(fflight, lflight),
+                                                                maximum = TRUE)
 
-      # Return results
-      tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Exponential",
-        asymptote = NA_real_, # Not applicable for exponential
-        auc = int1$value,
-        xinfp = fdopt_result$maximum,
-        yinfp = fdopt_result$objective,
-        xmace = sdopt_result$maximum,
-        ymace = sdopt_result$objective,
-        xmdes = NA_real_, # No deceleration in pure exponential
-        ymdes = NA_real_,
-        aic = gofval[[1]],
-        rmse = gofval[[2]],
-        mae = gofval[[3]],
-        parms = list(model = modfun_exp,
-                     modeladj = model,
-                     fd = fdfun_exp,
-                     sd = sdfun_exp,
-                     coefs = list(
-                       a = coefs[[1]],
-                       b = coefs[[2]]
-                     ),
-                     xmin = fflight, xmax = lflight)
-      )
-    }, error = function(e) {
-      # Return NA values if model fails
-      tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Exponential",
-        asymptote = NA_real_,
-        auc = NA_real_,
-        xinfp = NA_real_,
-        yinfp = NA_real_,
-        xmace = NA_real_,
-        ymace = NA_real_,
-        xmdes = NA_real_,
-        ymdes = NA_real_,
-        aic = NA_real_,
-        rmse = NA_real_,
-        mae = NA_real_,
-        parms = NA
-      )
-    })
-    result
-  }
+                                       # Maximum acceleration
+                                       sdopt_result <- optimize(sdfun_exp,
+                                                                a = coefs[["a"]],
+                                                                b = coefs[["b"]],
+                                                                interval = c(fflight, lflight),
+                                                                maximum = TRUE)
+
+                                       # Return results
+                                       tibble::tibble(
+                                         unique_plot = dftemp$unique_plot[i],
+                                         model = "Exponential",
+                                         asymptote = NA_real_, # Not applicable for exponential
+                                         auc = auc$value,
+                                         xinfp = fdopt_result$maximum,
+                                         yinfp = fdopt_result$objective,
+                                         xmace = sdopt_result$maximum,
+                                         ymace = sdopt_result$objective,
+                                         xmdes = NA_real_, # No deceleration in pure exponential
+                                         ymdes = NA_real_,
+                                         aic = gofval$AIC,
+                                         rmse = gofval$RMSE,
+                                         mae = gofval$MAE,
+                                         parms = list(
+                                           model = modfun_exp,
+                                           modeladj = model,
+                                           fd = fdfun_exp,
+                                           sd = sdfun_exp,
+                                           coefs = list(a = coefs[["a"]], b = coefs[["b"]]),
+                                           xmin = fflight,
+                                           xmax = lflight
+                                         )
+                                       )
+                                     }, error = function(e) {
+                                       tibble::tibble(
+                                         unique_plot = dftemp$unique_plot[i],
+                                         model = "Exponential",
+                                         asymptote = NA_real_,
+                                         auc = NA_real_,
+                                         xinfp = NA_real_,
+                                         yinfp = NA_real_,
+                                         xmace = NA_real_,
+                                         ymace = NA_real_,
+                                         xmdes = NA_real_,
+                                         ymdes = NA_real_,
+                                         aic = NA_real_,
+                                         rmse = NA_real_,
+                                         mae = NA_real_,
+                                         parms = NA
+                                       )
+                                     })
+
+                                     result
+                                   }
+
   results <-
     results_list |>
     tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
@@ -2409,6 +2415,7 @@ mod_exponential <- function(data,
 
   return(results)
 }
+
 
 help_mod_exp_eq <- function() {
   "$$y(x) = a \\cdot e^{b \\cdot x}$$"
@@ -2521,21 +2528,21 @@ SSjanoschek <- selfStart(
 
 
 mod_janoschek <- function(data,
-                          flight_date = "date",
-                          predictor = "median.NDVI",
+                          predictor = "date",
+                          dependent = "median.NDVI",
                           sowing_date = NULL,
                           parallel = FALSE) {
   # Prepare data
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
     tidyr::nest()
 
   # Parallel or Sequential Plan
   if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else {
     future::plan(future::sequential)
   }
@@ -2546,16 +2553,22 @@ mod_janoschek <- function(data,
   # Fit model for each group
   results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
-    if (!is.null(sowing_date)) {
-      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
+
+    # Define predictor variable (x)
+    if (predictor == "date") {
+      if (!is.null(sowing_date)) {
+        x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+          as.numeric() |> round()
+      } else {
+        x <- to_datetime(df[[predictor]])$yday + 1
+      }
     } else {
-      flights <- to_datetime(df$date)$yday + 1
+      x <- df[[predictor]]
     }
 
-    fflight <- min(flights)
-    lflight <- max(flights) + 20
-    y <- df |> dplyr::pull(!!rlang::sym(predictor))
-    x <- flights
+    fflight <- min(x)
+    lflight <- max(x) + 20
+    y <- df |> dplyr::pull(!!rlang::sym(dependent))
 
     result <- tryCatch({
       # Fit Janoschek model
@@ -2598,7 +2611,6 @@ mod_janoschek <- function(data,
         m = coefs["m"]
       )
 
-      # Deceleration point (minimum slope)
       deceleration_result <- optimize(
         fdfun_janoschek,
         interval = c(fflight, lflight),
@@ -2609,7 +2621,6 @@ mod_janoschek <- function(data,
         m = coefs["m"]
       )
 
-      # Return results
       tibble::tibble(
         unique_plot = dftemp$unique_plot[i],
         model = "Janoschek",
@@ -2621,9 +2632,9 @@ mod_janoschek <- function(data,
         ymace = sdopt_result$objective,
         xmdes = deceleration_result$minimum,
         ymdes = deceleration_result$objective,
-        aic = gofval[[1]],
-        rmse = gofval[[2]],
-        mae = gofval[[3]],
+        aic = gofval$AIC,
+        rmse = gofval$RMSE,
+        mae = gofval$MAE,
         parms = list(
           model = modfun_janoschek,
           modeladj = model,
@@ -2639,7 +2650,6 @@ mod_janoschek <- function(data,
         )
       )
     }, error = function(e) {
-      # Return NA values if model fails
       tibble::tibble(
         unique_plot = dftemp$unique_plot[i],
         model = "Janoschek",
@@ -2657,15 +2667,17 @@ mod_janoschek <- function(data,
         parms = NA
       )
     })
+
     result
   }
-  # Final results table
+
   results <- results_list |>
     tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
 
   return(results)
 }
+
 # Helper for Janoschek model equation
 help_mod_janoschek_eq <- function() {
   "$$y(x) = \\text{Asym} - (\\text{Asym} - y_0) \\cdot e^{-k \\cdot x^m}$$"
@@ -2771,20 +2783,20 @@ SStransGompertz <- selfStart(
 )
 
 mod_transgompertz <- function(data,
-                              flight_date = "date",
-                              predictor = "median.NDVI",
+                              predictor = "date",
+                              dependent = "median.NDVI",
                               sowing_date = NULL,
                               parallel = FALSE) {
   # Prepare data
   dftemp <- data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
     tidyr::nest()
 
   # Parallel or Sequential Plan
   if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else {
     future::plan(future::sequential)
   }
@@ -2793,113 +2805,125 @@ mod_transgompertz <- function(data,
   `%dofut%` <- doFuture::`%dofuture%`
 
   # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
-    if (!is.null(sowing_date)) {
-      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
-    } else {
-      flights <- to_datetime(df$date)$yday + 1
-    }
+  results_list <- foreach::foreach(i = seq_along(dftemp$data),
+                                   .combine = dplyr::bind_rows,
+                                   .options.future = list(seed = TRUE)) %dofut% {
+                                     df <- as.data.frame(dftemp$data[[i]])
 
-    fflight <- min(flights)
-    lflight <- max(flights) + 20
-    y <- df |> dplyr::pull(!!rlang::sym(predictor))
-    x <- flights
+                                     # Predictor variable (x)
+                                     if (predictor == "date") {
+                                       if (!is.null(sowing_date)) {
+                                         x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+                                           as.numeric() |> round()
+                                       } else {
+                                         x <- to_datetime(df[[predictor]])$yday + 1
+                                       }
+                                     } else {
+                                       x <- df[[predictor]]
+                                     }
 
-    result <- tryCatch({
-      # Fit Trans-Gompertz model
-      model <- nls(y ~ SStransGompertz(x, A, b, c),
-                   control = nls.control(maxiter = 1000),
-                   data = data.frame(x, y))
+                                     y <- df |> dplyr::pull(!!rlang::sym(dependent))
+                                     fflight <- min(x)
+                                     lflight <- max(x) + 20
 
-      coefs <- coef(model)
-      gofval <- gof(model, y)
+                                     result <- tryCatch({
+                                       # Fit Trans-Gompertz model
+                                       model <- nls(y ~ SStransGompertz(x, A, b, c),
+                                                    control = nls.control(maxiter = 1000),
+                                                    data = data.frame(x, y))
 
-      # Area under curve
-      int1 <- integrate(modfun_transgompertz,
-                        lower = fflight,
-                        upper = lflight,
-                        A = coefs[[1]],
-                        b = coefs[[2]],
-                        c = coefs[[3]])
+                                       coefs <- coef(model)
+                                       gofval <- gof(model, y)
 
-      # critical points
-      fdopt_result <- optimize(fdfun_transgompertz,
-                               A = coefs[[1]],
-                               b = coefs[[2]],
-                               c = coefs[[3]],
-                               interval = c(fflight, lflight),
-                               maximum = TRUE)
+                                       # Area under curve
+                                       auc <- integrate(modfun_transgompertz,
+                                                        lower = fflight,
+                                                        upper = lflight,
+                                                        A = coefs[["A"]],
+                                                        b = coefs[["b"]],
+                                                        c = coefs[["c"]])
 
-      # maximum acceleration
-      sdopt_result <- optimize(sdfun_transgompertz,
-                               A = coefs[[1]],
-                               b = coefs[[2]],
-                               c = coefs[[3]],
-                               interval = c(fflight, lflight),
-                               maximum = TRUE)
+                                       # critical points
+                                       fdopt_result <- optimize(fdfun_transgompertz,
+                                                                A = coefs[["A"]],
+                                                                b = coefs[["b"]],
+                                                                c = coefs[["c"]],
+                                                                interval = c(fflight, lflight),
+                                                                maximum = TRUE)
 
-      # maximum deceleration
-      sdopt_result2 <- optimize(sdfun_transgompertz,
-                                A = coefs[[1]],
-                                b = coefs[[2]],
-                                c = coefs[[3]],
-                                interval = c(fflight, lflight),
-                                maximum = FALSE)
+                                       # maximum acceleration
+                                       sdopt_result <- optimize(sdfun_transgompertz,
+                                                                A = coefs[["A"]],
+                                                                b = coefs[["b"]],
+                                                                c = coefs[["c"]],
+                                                                interval = c(fflight, lflight),
+                                                                maximum = TRUE)
 
-      # Return results
-      tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Trans-Gompertz",
-        asymptote = coefs[[1]],
-        auc = int1$value,
-        xinfp = fdopt_result$maximum,
-        yinfp = fdopt_result$objective,
-        xmace = sdopt_result$maximum,
-        ymace = sdopt_result$objective,
-        xmdes = sdopt_result2$minimum,
-        ymdes = sdopt_result2$objective,
-        aic = gofval[[1]],
-        rmse = gofval[[2]],
-        mae = gofval[[3]],
-        parms = list(model = modfun_transgompertz,
-                     modeladj = model,
-                     fd = fdfun_transgompertz,
-                     sd = sdfun_transgompertz,
-                     coefs = list(
-                       A = coefs[[1]],
-                       b = coefs[[2]],
-                       c = coefs[[3]]
-                     ),
-                     xmin = fflight, xmax = lflight)
-      )
-    }, error = function(e) {
-      # Return NA values if model fails
-      tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Trans-Gompertz",
-        asymptote = NA_real_,
-        auc = NA_real_,
-        xinfp = NA_real_,
-        yinfp = NA_real_,
-        xmace = NA_real_,
-        ymace = NA_real_,
-        xmdes = NA_real_,
-        ymdes = NA_real_,
-        aic = NA_real_,
-        rmse = NA_real_,
-        mae = NA_real_,
-        parms = NA
-      )
-    })
-    result
-  }
+                                       # maximum deceleration
+                                       sdopt_result2 <- optimize(sdfun_transgompertz,
+                                                                 A = coefs[["A"]],
+                                                                 b = coefs[["b"]],
+                                                                 c = coefs[["c"]],
+                                                                 interval = c(fflight, lflight),
+                                                                 maximum = FALSE)
+
+                                       tibble::tibble(
+                                         unique_plot = dftemp$unique_plot[i],
+                                         model = "Trans-Gompertz",
+                                         asymptote = coefs[["A"]],
+                                         auc = auc$value,
+                                         xinfp = fdopt_result$maximum,
+                                         yinfp = fdopt_result$objective,
+                                         xmace = sdopt_result$maximum,
+                                         ymace = sdopt_result$objective,
+                                         xmdes = sdopt_result2$minimum,
+                                         ymdes = sdopt_result2$objective,
+                                         aic = gofval$AIC,
+                                         rmse = gofval$RMSE,
+                                         mae = gofval$MAE,
+                                         parms = list(
+                                           model = modfun_transgompertz,
+                                           modeladj = model,
+                                           fd = fdfun_transgompertz,
+                                           sd = sdfun_transgompertz,
+                                           coefs = list(
+                                             A = coefs[["A"]],
+                                             b = coefs[["b"]],
+                                             c = coefs[["c"]]
+                                           ),
+                                           xmin = fflight,
+                                           xmax = lflight
+                                         )
+                                       )
+                                     }, error = function(e) {
+                                       tibble::tibble(
+                                         unique_plot = dftemp$unique_plot[i],
+                                         model = "Trans-Gompertz",
+                                         asymptote = NA_real_,
+                                         auc = NA_real_,
+                                         xinfp = NA_real_,
+                                         yinfp = NA_real_,
+                                         xmace = NA_real_,
+                                         ymace = NA_real_,
+                                         xmdes = NA_real_,
+                                         ymdes = NA_real_,
+                                         aic = NA_real_,
+                                         rmse = NA_real_,
+                                         mae = NA_real_,
+                                         parms = NA
+                                       )
+                                     })
+
+                                     result
+                                   }
+
   results <- results_list |>
     tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
 
   return(results)
 }
+
 
 # Trans-Gompertz model equation
 help_mod_transgompertz_eq <- function() {
@@ -3028,20 +3052,20 @@ SSsinusoidal <- selfStart(
 
 
 mod_sinusoidal <- function(data,
-                           flight_date = "date",
-                           predictor = "median.NDVI",
+                           predictor = "date",
+                           dependent = "median.NDVI",
                            sowing_date = NULL,
                            parallel = FALSE) {
   # Prepare data
   dftemp <- data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
     tidyr::nest()
 
   # Parallel or Sequential Plan
   if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else {
     future::plan(future::sequential)
   }
@@ -3050,87 +3074,99 @@ mod_sinusoidal <- function(data,
   `%dofut%` <- doFuture::`%dofuture%`
 
   # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
-    if (!is.null(sowing_date)) {
-      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
-    } else {
-      flights <- to_datetime(df$date)$yday + 1
-    }
+  results_list <- foreach::foreach(i = seq_along(dftemp$data),
+                                   .combine = dplyr::bind_rows,
+                                   .options.future = list(seed = TRUE)) %dofut% {
+                                     df <- as.data.frame(dftemp$data[[i]])
 
-    fflight <- min(flights)
-    lflight <- max(flights) + 20
-    y <- df |> dplyr::pull(!!rlang::sym(predictor))
-    x <- flights
+                                     # Predictor variable (x)
+                                     if (predictor == "date") {
+                                       if (!is.null(sowing_date)) {
+                                         x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+                                           as.numeric() |> round()
+                                       } else {
+                                         x <- to_datetime(df[[predictor]])$yday + 1
+                                       }
+                                     } else {
+                                       x <- df[[predictor]]
+                                     }
 
-    result <- tryCatch({
-      # Fit Sinusoidal model
-      model <- nls(y ~ SSsinusoidal(x, y0, a, b, c),
-                   control = nls.control(maxiter = 1000),
-                   data = data.frame(x, y))
+                                     y <- df |> dplyr::pull(!!rlang::sym(dependent))
+                                     fflight <- min(x)
+                                     lflight <- max(x) + 20
 
-      coefs <- coef(model)
-      gofval <- gof(model, y)
+                                     result <- tryCatch({
+                                       # Fit Sinusoidal model
+                                       model <- nls(y ~ SSsinusoidal(x, y0, a, b, c),
+                                                    control = nls.control(maxiter = 1000),
+                                                    data = data.frame(x, y))
 
-      # Critical points
-      fdopt_result <- optimize(fdfun_sinusoidal,
-                               y0 = coefs[[1]],
-                               a = coefs[[2]],
-                               b = coefs[[3]],
-                               c = coefs[[4]],
-                               interval = c(fflight, lflight),
-                               maximum = TRUE)
+                                       coefs <- coef(model)
+                                       gofval <- gof(model, y)
 
-      # Return results
-      tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Sinusoidal",
-        baseline = coefs[[1]],
-        amplitude = coefs[[2]],
-        period = coefs[[3]],
-        phase_shift = coefs[[4]],
-        xinfp = fdopt_result$maximum,
-        yinfp = fdopt_result$objective,
-        aic = gofval[[1]],
-        rmse = gofval[[2]],
-        mae = gofval[[3]],
-        parms = list(model = modfun_sinusoidal,
-                     modeladj = model,
-                     fd = fdfun_sinusoidal,
-                     sd = sdfun_sinusoidal,
-                     coefs = list(
-                       y0 = coefs[[1]],
-                       a = coefs[[2]],
-                       b = coefs[[3]],
-                       c = coefs[[4]]
-                     ),
-                     xmin = fflight, xmax = lflight)
-      )
-    }, error = function(e) {
-      # Return NA values if model fails
-      tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Sinusoidal",
-        baseline = NA_real_,
-        amplitude = NA_real_,
-        period = NA_real_,
-        phase_shift = NA_real_,
-        xinfp = NA_real_,
-        yinfp = NA_real_,
-        aic = NA_real_,
-        rmse = NA_real_,
-        mae = NA_real_,
-        parms = NA
-      )
-    })
-    result
-  }
+                                       # Critical point (max growth)
+                                       fdopt_result <- optimize(fdfun_sinusoidal,
+                                                                y0 = coefs[["y0"]],
+                                                                a = coefs[["a"]],
+                                                                b = coefs[["b"]],
+                                                                c = coefs[["c"]],
+                                                                interval = c(fflight, lflight),
+                                                                maximum = TRUE)
+
+                                       tibble::tibble(
+                                         unique_plot = dftemp$unique_plot[i],
+                                         model = "Sinusoidal",
+                                         baseline = coefs[["y0"]],
+                                         amplitude = coefs[["a"]],
+                                         period = coefs[["b"]],
+                                         phase_shift = coefs[["c"]],
+                                         xinfp = fdopt_result$maximum,
+                                         yinfp = fdopt_result$objective,
+                                         aic = gofval$AIC,
+                                         rmse = gofval$RMSE,
+                                         mae = gofval$MAE,
+                                         parms = list(
+                                           model = modfun_sinusoidal,
+                                           modeladj = model,
+                                           fd = fdfun_sinusoidal,
+                                           sd = sdfun_sinusoidal,
+                                           coefs = list(
+                                             y0 = coefs[["y0"]],
+                                             a = coefs[["a"]],
+                                             b = coefs[["b"]],
+                                             c = coefs[["c"]]
+                                           ),
+                                           xmin = fflight,
+                                           xmax = lflight
+                                         )
+                                       )
+                                     }, error = function(e) {
+                                       tibble::tibble(
+                                         unique_plot = dftemp$unique_plot[i],
+                                         model = "Sinusoidal",
+                                         baseline = NA_real_,
+                                         amplitude = NA_real_,
+                                         period = NA_real_,
+                                         phase_shift = NA_real_,
+                                         xinfp = NA_real_,
+                                         yinfp = NA_real_,
+                                         aic = NA_real_,
+                                         rmse = NA_real_,
+                                         mae = NA_real_,
+                                         parms = NA
+                                       )
+                                     })
+
+                                     result
+                                   }
+
   results <- results_list |>
     tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
 
   return(results)
 }
+
 
 # Sinusoidal model equation
 help_mod_sinusoidal_eq <- function() {
@@ -3205,21 +3241,21 @@ sdfun_asym <- function(x, Asym, R0, lrc) {
 
 
 mod_asymptotic <- function(data,
-                           flight_date = "date",
-                           predictor = "median.NDVI",
+                           predictor = "date",
+                           dependent = "median.NDVI",
                            sowing_date = NULL,
                            parallel = FALSE) {
   # Prepare data
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
     tidyr::nest()
 
   # Parallel or Sequential Plan
   if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else {
     future::plan(future::sequential)
   }
@@ -3230,18 +3266,23 @@ mod_asymptotic <- function(data,
   # Fit model for each group
   results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
-    tryCatch({
+
+    # Predictor variable (x)
+    if (predictor == "date") {
       if (!is.null(sowing_date)) {
-        flights <- to_datetime(df[[flight_date]])$yday + 1 - (to_datetime(sowing_date)$yday)
+        x <- to_datetime(df[[predictor]])$yday + 1 - to_datetime(sowing_date)$yday
       } else {
-        flights <- to_datetime(df[[flight_date]])$yday + 1
+        x <- to_datetime(df[[predictor]])$yday + 1
       }
+    } else {
+      x <- df[[predictor]]
+    }
 
-      fflight <- min(flights)
-      lflight <- max(flights) + 20
-      y <- df |> dplyr::pull(!!rlang::sym(predictor))
-      x <- flights
+    y <- df |> dplyr::pull(!!rlang::sym(dependent))
+    fflight <- min(x)
+    lflight <- max(x) + 20
 
+    tryCatch({
       # Fit Asymptotic model
       model <- nls(y ~ SSasymp(x, Asym, R0, lrc),
                    control = nls.control(maxiter = 1000),
@@ -3251,39 +3292,38 @@ mod_asymptotic <- function(data,
       gofval <- gof(model, y)
 
       # Area under curve
-      int1 <- integrate(modfun_asym,
-                        lower = fflight,
-                        upper = lflight,
-                        Asym = coefs[["Asym"]],
-                        R0 = coefs[["R0"]],
-                        lrc = coefs[["lrc"]])
+      auc <- integrate(modfun_asym,
+                       lower = fflight,
+                       upper = lflight,
+                       Asym = coefs[["Asym"]],
+                       R0 = coefs[["R0"]],
+                       lrc = coefs[["lrc"]])
 
-
-      # Return results
       tibble::tibble(
         unique_plot = dftemp$unique_plot[i],
         model = "Asymptotic",
         asymptote = coefs[["Asym"]],
         R0 = coefs[["R0"]],
         lrc = coefs[["lrc"]],
-        auc = int1$value,
-        aic = gofval[[1]],
-        rmse = gofval[[2]],
-        mae = gofval[[3]],
-        parms = list(model = modfun_asym,
-                     modeladj = model,
-                     fd = fdfun_asym,
-                     sd = sdfun_asym,
-                     coefs = list(
-                       Asym = coefs[["Asym"]],
-                       R0 = coefs[["R0"]],
-                       lrc = coefs[["lrc"]]
-                     ),
-                     xmin = fflight,
-                     xmax = lflight)
+        auc = auc$value,
+        aic = gofval$AIC,
+        rmse = gofval$RMSE,
+        mae = gofval$MAE,
+        parms = list(
+          model = modfun_asym,
+          modeladj = model,
+          fd = fdfun_asym,
+          sd = sdfun_asym,
+          coefs = list(
+            Asym = coefs[["Asym"]],
+            R0 = coefs[["R0"]],
+            lrc = coefs[["lrc"]]
+          ),
+          xmin = fflight,
+          xmax = lflight
+        )
       )
     }, error = function(e) {
-      # Return NA values if model fails
       tibble::tibble(
         unique_plot = dftemp$unique_plot[i],
         model = "Asymptotic",
@@ -3305,6 +3345,7 @@ mod_asymptotic <- function(data,
 
   return(results)
 }
+
 
 help_mod_asym_eq <- function() {
   "$$y(x) = \\text{Asym} + (R_0 - \\text{Asym}) \\cdot e^{-e^{\\text{lrc}} \\cdot x}$$"
@@ -3456,21 +3497,21 @@ sdfun_agaus <- function(x, beta, eta, delta, sigma1, sigma2) {
 }
 
 mod_agauss <- function(data,
-                       flight_date = "date",
-                       predictor = "q90",
+                       predictor = "date",
+                       dependent = "q90",
                        sowing_date = NULL,
                        parallel = FALSE) {
   # Prepare data
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
     tidyr::nest()
 
   # Parallel or Sequential Plan
   if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else {
     future::plan(future::sequential)
   }
@@ -3481,38 +3522,44 @@ mod_agauss <- function(data,
   # Fit model for each group
   results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows) %dofut% {
     df <- as.data.frame(dftemp$data[[i]])
+
     tryCatch({
-      if (!is.null(sowing_date)) {
-        flights <- to_datetime(df[[flight_date]])$yday + 1 - (to_datetime(sowing_date)$yday)
+      # Define x (predictor)
+      if (predictor == "date") {
+        if (!is.null(sowing_date)) {
+          x <- to_datetime(df[[predictor]])$yday + 1 - to_datetime(sowing_date)$yday
+        } else {
+          x <- to_datetime(df[[predictor]])$yday + 1
+        }
       } else {
-        flights <- to_datetime(df[[flight_date]])$yday + 1
+        x <- df[[predictor]]
       }
 
-      fflight <- min(flights)
-      lflight <- max(flights) + 20
-      y <- df |> dplyr::pull(!!rlang::sym(predictor))
-      x <- flights
+      y <- df |> dplyr::pull(!!rlang::sym(dependent))
+      fflight <- min(x)
+      lflight <- max(x) + 20
 
-      # Fit Asymptotic model
-      model <- minpack.lm::nlsLM(y ~ SSagauss(x, eta, beta, delta, sigma1, sigma2),
-                                 data = data.frame(x, y))
+      # Fit Asymmetric Gaussian model
+      model <- minpack.lm::nlsLM(
+        y ~ SSagauss(x, eta, beta, delta, sigma1, sigma2),
+        data = data.frame(x, y)
+      )
+
       coefs <- coef(model)
       gofval <- gof(model, y)
 
       # Area under curve
-      # parameters eta, beta, delta, sigma1, sigma2
-      # integrate
-      int1 <- integrate(modfun_agaus,
-                        lower = fflight,
-                        upper = lflight,
-                        beta = coefs[["beta"]],
-                        eta = coefs[["eta"]],
-                        delta = coefs[["delta"]],
-                        sigma1 = coefs[["sigma1"]],
-                        sigma2 = coefs[["sigma2"]])
+      auc <- integrate(
+        modfun_agaus,
+        lower = fflight,
+        upper = lflight,
+        beta = coefs[["beta"]],
+        eta = coefs[["eta"]],
+        delta = coefs[["delta"]],
+        sigma1 = coefs[["sigma1"]],
+        sigma2 = coefs[["sigma2"]]
+      )
 
-
-      # Return results
       tibble::tibble(
         unique_plot = dftemp$unique_plot[i],
         model = "Asymmetric Gaussian",
@@ -3521,26 +3568,27 @@ mod_agauss <- function(data,
         delta = coefs[["delta"]],
         sigma1 = coefs[["sigma1"]],
         sigma2 = coefs[["sigma2"]],
-        auc = int1$value,
-        aic = gofval[[1]],
-        rmse = gofval[[2]],
-        mae = gofval[[3]],
-        parms = list(model = modfun_agaus,
-                     modeladj = model,
-                     fd = fdfun_agaus,
-                     sd = sdfun_agaus,
-                     coefs = list(
-                       beta = coefs[["beta"]],
-                       eta = coefs[["eta"]],
-                       delta = coefs[["delta"]],
-                       sigma1 = coefs[["sigma1"]],
-                       sigma2 = coefs[["sigma2"]]
-                     ),
-                     xmin = fflight,
-                     xmax = lflight)
+        auc = auc$value,
+        aic = gofval$AIC,
+        rmse = gofval$RMSE,
+        mae = gofval$MAE,
+        parms = list(
+          model = modfun_agaus,
+          modeladj = model,
+          fd = fdfun_agaus,
+          sd = sdfun_agaus,
+          coefs = list(
+            beta = coefs[["beta"]],
+            eta = coefs[["eta"]],
+            delta = coefs[["delta"]],
+            sigma1 = coefs[["sigma1"]],
+            sigma2 = coefs[["sigma2"]]
+          ),
+          xmin = fflight,
+          xmax = lflight
+        )
       )
     }, error = function(e) {
-      # Return NA values if model fails
       tibble::tibble(
         unique_plot = dftemp$unique_plot[i],
         model = "Asymmetric Gaussian",
@@ -3564,6 +3612,7 @@ mod_agauss <- function(data,
 
   return(results)
 }
+
 # Equation of the asymmetric Gaussian function
 help_mod_agaus_eq <- function() {
   "$$f(x) = \\begin{cases}
@@ -3723,21 +3772,21 @@ SSbetagf <- selfStart(
 
 
 mod_beta <- function(data,
-                     flight_date = "date",
-                     predictor = "median.NDVI",
+                     predictor = "date",
+                     dependent = "median.NDVI",
                      sowing_date = NULL,
                      parallel = FALSE) {
   # Prepare data
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
     tidyr::nest()
 
   # Parallel or Sequential Plan
   if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else {
     future::plan(future::sequential)
   }
@@ -3746,76 +3795,84 @@ mod_beta <- function(data,
   `%dofut%` <- doFuture::`%dofuture%`
 
   # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
-    tryCatch({
-      if (!is.null(sowing_date)) {
-        flights <- to_datetime(df[[flight_date]])$yday + 1 - (to_datetime(sowing_date)$yday)
-      } else {
-        flights <- to_datetime(df[[flight_date]])$yday + 1
-      }
+  results_list <- foreach::foreach(i = seq_along(dftemp$data),
+                                   .combine = dplyr::bind_rows) %dofut% {
+                                     df <- as.data.frame(dftemp$data[[i]])
 
-      fflight <- min(flights)
-      lflight <- max(flights) + 20
-      y <- df |> dplyr::pull(!!rlang::sym(predictor))
-      x <- flights
+                                     tryCatch({
+                                       # Predictor variable (x)
+                                       if (predictor == "date") {
+                                         if (!is.null(sowing_date)) {
+                                           x <- to_datetime(df[[predictor]])$yday + 1 - to_datetime(sowing_date)$yday
+                                         } else {
+                                           x <- to_datetime(df[[predictor]])$yday + 1
+                                         }
+                                       } else {
+                                         x <- df[[predictor]]
+                                       }
 
-      # Fit Asymptotic model
-      model <- minpack.lm::nlsLM(y ~ SSbetagf(x, asym, xe, xm),
-                                 control = nls.control(maxiter = 1000),
-                                 data = data.frame(x, y))
+                                       y <- df |> dplyr::pull(!!rlang::sym(dependent))
 
-      coefs <- coef(model)
-      gofval <- gof(model, y)
+                                       fflight <- min(x)
+                                       lflight <- max(x) + 20
 
-      # Area under curve
-      int1 <- integrate(modfun_beta,
-                        lower = fflight,
-                        upper = lflight,
-                        asym = coefs[["asym"]],
-                        xe = coefs[["xe"]],
-                        xm = coefs[["xm"]])
+                                       # Fit Beta Growth model
+                                       model <- minpack.lm::nlsLM(
+                                         y ~ SSbetagf(x, asym, xe, xm),
+                                         control = nls.control(maxiter = 1000),
+                                         data = data.frame(x, y)
+                                       )
 
+                                       coefs <- coef(model)
+                                       gofval <- gof(model, y)
 
-      # Return results
-      tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Beta Growth",
-        asymptote = coefs[["asym"]],
-        xe = coefs[["xe"]],
-        xm = coefs[["xm"]],
-        auc = int1$value,
-        aic = gofval[[1]],
-        rmse = gofval[[2]],
-        mae = gofval[[3]],
-        parms = list(model = modfun_beta,
-                     modeladj = model,
-                     fd = fdfun_beta,
-                     sd = sdfun_beta,
-                     coefs = list(
-                       asym = coefs[["asym"]],
-                       xe = coefs[["xe"]],
-                       xm = coefs[["xm"]]
-                     ),
-                     xmin = fflight,
-                     xmax = lflight)
-      )
-    }, error = function(e) {
-      # Return NA values if model fails
-      tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Beta Growth",
-        asymptote = NA_real_,
-        xe = NA_real_,
-        xm = NA_real_,
-        auc = NA_real_,
-        aic = NA_real_,
-        rmse = NA_real_,
-        mae = NA_real_,
-        parms = NA
-      )
-    })
-  }
+                                       # Area under curve
+                                       auc <- integrate(modfun_beta,
+                                                        lower = fflight,
+                                                        upper = lflight,
+                                                        asym = coefs[["asym"]],
+                                                        xe = coefs[["xe"]],
+                                                        xm = coefs[["xm"]])
+
+                                       tibble::tibble(
+                                         unique_plot = dftemp$unique_plot[i],
+                                         model = "Beta Growth",
+                                         asymptote = coefs[["asym"]],
+                                         xe = coefs[["xe"]],
+                                         xm = coefs[["xm"]],
+                                         auc = auc$value,
+                                         aic = gofval$AIC,
+                                         rmse = gofval$RMSE,
+                                         mae = gofval$MAE,
+                                         parms = list(
+                                           model = modfun_beta,
+                                           modeladj = model,
+                                           fd = fdfun_beta,
+                                           sd = sdfun_beta,
+                                           coefs = list(
+                                             asym = coefs[["asym"]],
+                                             xe = coefs[["xe"]],
+                                             xm = coefs[["xm"]]
+                                           ),
+                                           xmin = fflight,
+                                           xmax = lflight
+                                         )
+                                       )
+                                     }, error = function(e) {
+                                       tibble::tibble(
+                                         unique_plot = dftemp$unique_plot[i],
+                                         model = "Beta Growth",
+                                         asymptote = NA_real_,
+                                         xe = NA_real_,
+                                         xm = NA_real_,
+                                         auc = NA_real_,
+                                         aic = NA_real_,
+                                         rmse = NA_real_,
+                                         mae = NA_real_,
+                                         parms = NA
+                                       )
+                                     })
+                                   }
 
   results <- results_list |>
     tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
@@ -3823,6 +3880,7 @@ mod_beta <- function(data,
 
   return(results)
 }
+
 
 # Beta Growth Model Equation
 help_mod_beta_eq <- function() {
@@ -3978,23 +4036,21 @@ SShill <- selfStart(
 
 
 mod_hill <- function(data,
-                     flight_date = "date",
-                     predictor = "q90",
+                     predictor = "date",
+                     dependent = "q90",
                      sowing_date = NULL,
                      parallel = FALSE) {
   # Prepare data
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
     tidyr::nest()
 
-  results_list <- list()
-
   # Parallel or Sequential Plan
   if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else {
     future::plan(future::sequential)
   }
@@ -4003,131 +4059,135 @@ mod_hill <- function(data,
   `%dofut%` <- doFuture::`%dofuture%`
 
   # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
+  results_list <- foreach::foreach(i = seq_along(dftemp$data),
+                                   .combine = dplyr::bind_rows,
+                                   .options.future = list(seed = TRUE)) %dofut% {
+                                     df <- as.data.frame(dftemp$data[[i]])
 
-    if (!is.null(sowing_date)) {
-      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
-    } else {
-      flights <- to_datetime(df$date)$yday + 1
-    }
+                                     # Predictor (x)
+                                     if (predictor == "date") {
+                                       if (!is.null(sowing_date)) {
+                                         x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+                                           as.numeric() |> round()
+                                       } else {
+                                         x <- to_datetime(df[[predictor]])$yday + 1
+                                       }
+                                     } else {
+                                       x <- df[[predictor]]
+                                     }
 
-    fflight <- min(flights)
-    lflight <- max(flights) + 20
-    y <- df |> dplyr::pull(!!rlang::sym(predictor))
+                                     y <- df |> dplyr::pull(!!rlang::sym(dependent))
+                                     fflight <- min(x)
+                                     lflight <- max(x) + 20
 
-    # Use tryCatch to handle model fitting errors
-    result <- tryCatch({
+                                     result <- tryCatch({
+                                       # Fit Hill model
+                                       model <- try(
+                                         nls(y ~ SShill(x, Ka, n, a),
+                                             data = data.frame(x, y),
+                                             control = nls.control(maxiter = 1000)),
+                                         silent = TRUE
+                                       )
 
-      model <- try(
-        nls( y ~ SShill(flights, Ka, n, a),
-             data = data.frame(flights, y),
-             control = nls.control(maxiter = 1000)),
-        silent = TRUE
-      )
+                                       if (inherits(model, "try-error")) {
+                                         model <- suppressWarnings(
+                                           minpack.lm::nlsLM(y ~ SShill(x, Ka, n, a),
+                                                             data = data.frame(x, y))
+                                         )
+                                       }
 
-      if (inherits(model, "try-error")) {
-        model <- suppressWarnings(
-          minpack.lm::nlsLM(y ~ SShill(flights, Ka, n, a),
-                            data = data.frame(flights, y))
-        )
-      }
+                                       coefslog <- coef(model)
+                                       gofval <- gof(model, y)
 
-      coefslog <- coef(model)
+                                       # Area under curve
+                                       auc <- integrate(modfun_hill,
+                                                        lower = fflight,
+                                                        upper = lflight,
+                                                        Ka = coefslog[["Ka"]],
+                                                        n = coefslog[["n"]],
+                                                        a = coefslog[["a"]])
 
-      # Goodness of fit
-      gofval <- gof(model, y)
+                                       # Inflection point
+                                       fdopt_result <- optimize(fdfun_hill,
+                                                                Ka = coefslog[["Ka"]],
+                                                                n = coefslog[["n"]],
+                                                                a = coefslog[["a"]],
+                                                                interval = c(fflight, lflight),
+                                                                maximum = TRUE)
 
-      # Area under curve
-      auc <- integrate(modfun_hill,
-                       lower = fflight,
-                       upper = lflight,
-                       Ka = coefslog[[1]],
-                       n = coefslog[[2]],
-                       a = coefslog[[3]])
-      # critical points
-      fdopt_result <-
-        optimize(fdfun_hill,
-                 Ka = coefslog[[1]],
-                 n = coefslog[[2]],
-                 a = coefslog[[3]],
-                 interval = c(fflight, lflight),
-                 maximum = TRUE)
+                                       # Max acceleration
+                                       sdopt_result <- optimize(sdfun_hill,
+                                                                Ka = coefslog[["Ka"]],
+                                                                n = coefslog[["n"]],
+                                                                a = coefslog[["a"]],
+                                                                interval = c(fflight, lflight),
+                                                                maximum = TRUE)
 
-      # maximum acceleration
-      sdopt_result <-
-        optimize(sdfun_hill,
-                 Ka = coefslog[[1]],
-                 n = coefslog[[2]],
-                 a = coefslog[[3]],
-                 interval = c(fflight, lflight),
-                 maximum = TRUE)
+                                       # Max deceleration
+                                       sdopt_result2 <- optimize(sdfun_hill,
+                                                                 Ka = coefslog[["Ka"]],
+                                                                 n = coefslog[["n"]],
+                                                                 a = coefslog[["a"]],
+                                                                 interval = c(fflight, lflight),
+                                                                 maximum = FALSE)
 
-      # maximum deceleration
-      sdopt_result2 <-
-        optimize(sdfun_hill,
-                 Ka = coefslog[[1]],
-                 n = coefslog[[2]],
-                 a = coefslog[[3]],
-                 interval = c(fflight, lflight),
-                 maximum = FALSE)
+                                       tibble::tibble(
+                                         unique_plot = dftemp$unique_plot[i],
+                                         model = "Hill",
+                                         asymptote = coefslog[["a"]],
+                                         auc = auc$value,
+                                         xinfp = fdopt_result$maximum,
+                                         yinfp = fdopt_result$objective,
+                                         xmace = sdopt_result$maximum,
+                                         ymace = sdopt_result$objective,
+                                         xmdes = sdopt_result2$minimum,
+                                         ymdes = sdopt_result2$objective,
+                                         aic = gofval$AIC,
+                                         rmse = gofval$RMSE,
+                                         mae = gofval$MAE,
+                                         parms = list(
+                                           model = modfun_hill,
+                                           modeladj = model,
+                                           fd = fdfun_hill,
+                                           sd = sdfun_hill,
+                                           coefs = list(
+                                             Ka = coefslog[["Ka"]],
+                                             n = coefslog[["n"]],
+                                             a = coefslog[["a"]]
+                                           ),
+                                           xmin = fflight,
+                                           xmax = lflight
+                                         )
+                                       )
+                                     }, error = function(e) {
+                                       tibble::tibble(
+                                         unique_plot = dftemp$unique_plot[i],
+                                         model = "Hill",
+                                         asymptote = NA_real_,
+                                         auc = NA_real_,
+                                         xinfp = NA_real_,
+                                         yinfp = NA_real_,
+                                         xmace = NA_real_,
+                                         ymace = NA_real_,
+                                         xmdes = NA_real_,
+                                         ymdes = NA_real_,
+                                         aic = NA_real_,
+                                         rmse = NA_real_,
+                                         mae = NA_real_,
+                                         parms = NA
+                                       )
+                                     })
 
-      # Return results
-      tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Hill",
-        asymptote = coefslog[[3]],
-        auc = auc$value,
-        xinfp = fdopt_result$maximum,
-        yinfp = fdopt_result$objective,
-        xmace = sdopt_result$maximum,
-        ymace = sdopt_result$objective,
-        xmdes = sdopt_result2$minimum,
-        ymdes = sdopt_result2$objective,
-        aic = gofval$AIC,
-        rmse = gofval$RMSE,
-        mae = gofval$MAE,
-        parms = list(model = modfun_hill,
-                     modeladj = model,
-                     fd = fdfun_hill,
-                     sd = sdfun_hill,
-                     coefs = list(
-                       Ka = coefslog[[1]],
-                       n = coefslog[[2]],
-                       a = coefslog[[3]]
-                     ),
-                     xmin = fflight, xmax = lflight)
-      )
-    }, error = function(e) {
-      # Return NA values if model fitting fails
-      tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Hill",
-        asymptote = NA_real_,
-        auc = NA_real_,
-        xinfp = NA_real_,
-        yinfp = NA_real_,
-        xmace = NA_real_,
-        ymace = NA_real_,
-        xmdes = NA_real_,
-        ymdes = NA_real_,
-        aic = NA_real_,
-        rmse = NA_real_,
-        mae = NA_real_,
-        parms = NA
-      )
-    })
+                                     result
+                                   }
 
-    result
-  }
-
-  results <-
-    results_list |>
+  results <- results_list |>
     tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
 
   return(results)
 }
+
 
 
 help_mod_hill_eq <- function() {
@@ -4292,23 +4352,21 @@ SSexpplat <- selfStart(
 
 
 mod_expplat <- function(data,
-                        flight_date = "date",
-                        predictor = "q90",
+                        predictor = "date",
+                        dependent = "q90",
                         sowing_date = NULL,
                         parallel = FALSE) {
   # Prepare data
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
     tidyr::nest()
 
-  results_list <- list()
-
   # Parallel or Sequential Plan
   if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else {
     future::plan(future::sequential)
   }
@@ -4317,89 +4375,97 @@ mod_expplat <- function(data,
   `%dofut%` <- doFuture::`%dofuture%`
 
   # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
+  results_list <- foreach::foreach(i = seq_along(dftemp$data),
+                                   .combine = dplyr::bind_rows,
+                                   .options.future = list(seed = TRUE)) %dofut% {
+                                     df <- as.data.frame(dftemp$data[[i]])
 
-    if (!is.null(sowing_date)) {
-      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
-    } else {
-      flights <- to_datetime(df$date)$yday + 1
-    }
+                                     # Define predictor (x)
+                                     if (predictor == "date") {
+                                       if (!is.null(sowing_date)) {
+                                         x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+                                           as.numeric() |> round()
+                                       } else {
+                                         x <- to_datetime(df[[predictor]])$yday + 1
+                                       }
+                                     } else {
+                                       x <- df[[predictor]]
+                                     }
 
-    fflight <- min(flights)
-    lflight <- max(flights) + 20
-    y <- df |> dplyr::pull(!!rlang::sym(predictor))
+                                     y <- df |> dplyr::pull(!!rlang::sym(dependent))
+                                     fflight <- min(x)
+                                     lflight <- max(x) + 20
 
-    # Use tryCatch to handle model fitting errors
-    result <- tryCatch({
+                                     result <- tryCatch({
+                                       # Fit Exponential-Plateau model
+                                       model <- try(
+                                         nls(y ~ SSexpplat(x, a, c, xs),
+                                             data = data.frame(x, y),
+                                             control = nls.control(maxiter = 1000)),
+                                         silent = TRUE
+                                       )
 
-      model <- try(
-        nls( y ~ SSexpplat(flights, a, c, xs),
-             data = data.frame(flights, y),
-             control = nls.control(maxiter = 1000)),
-        silent = TRUE
-      )
+                                       if (inherits(model, "try-error")) {
+                                         model <- suppressWarnings(
+                                           minpack.lm::nlsLM(y ~ SSexpplat(x, a, c, xs),
+                                                             data = data.frame(x, y))
+                                         )
+                                       }
 
-      if (inherits(model, "try-error")) {
-        model <- suppressWarnings(
-          minpack.lm::nlsLM(y ~ SSexpplat(flights, a, c, xs),
-                            data = data.frame(flights, y))
-        )
-      }
-      asymp <- max(predict(model))
-      coefslog <- coef(model)
+                                       coefs <- coef(model)
+                                       asymp <- max(predict(model))
+                                       gofval <- gof(model, y)
 
-      # Goodness of fit
-      gofval <- gof(model, y)
-      # Area under curve
-      auc <- integrate(modfun_exponential_plateau,
-                       lower = fflight,
-                       upper = lflight,
-                       a = coefslog[[1]],
-                       c = coefslog[[2]],
-                       xs = coefslog[[3]])
+                                       auc <- integrate(modfun_exponential_plateau,
+                                                        lower = fflight,
+                                                        upper = lflight,
+                                                        a = coefs[["a"]],
+                                                        c = coefs[["c"]],
+                                                        xs = coefs[["xs"]])
 
-      # Return results
-      tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Exponential-Plateau",
-        asymptote = asymp,
-        auc = auc$value,
-        a = coefslog[[1]],
-        c = coefslog[[2]],
-        xs = coefslog[[3]],
-        aic = gofval$AIC,
-        rmse = gofval$RMSE,
-        mae = gofval$MAE,
-        parms = list(model = modfun_exponential_plateau,
-                     modeladj = model,
-                     fd = fdfun_exponential_plateau,
-                     sd = sdfun_exponential_plateau,
-                     coefs = list(
-                       a = coefslog[[1]],
-                       c = coefslog[[2]],
-                       xs = coefslog[[3]]
-                     ),
-                     xmin = fflight, xmax = lflight)
-      )
-    }, error = function(e) {
-      # Return NA values if model fitting fails
-      tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Exponential-Plateau",
-        asymptote = NA_real_,
-        auc = NA_real_,
-        a = NA_real_,
-        c = NA_real_,
-        xs = NA_real_,
-        aic = NA_real_,
-        rmse = NA_real_,
-        mae = NA_real_,
-        parms = NA
-      )
-    })
-    result
-  }
+                                       tibble::tibble(
+                                         unique_plot = dftemp$unique_plot[i],
+                                         model = "Exponential-Plateau",
+                                         asymptote = asymp,
+                                         auc = auc$value,
+                                         a = coefs[["a"]],
+                                         c = coefs[["c"]],
+                                         xs = coefs[["xs"]],
+                                         aic = gofval$AIC,
+                                         rmse = gofval$RMSE,
+                                         mae = gofval$MAE,
+                                         parms = list(
+                                           model = modfun_exponential_plateau,
+                                           modeladj = model,
+                                           fd = fdfun_exponential_plateau,
+                                           sd = sdfun_exponential_plateau,
+                                           coefs = list(
+                                             a = coefs[["a"]],
+                                             c = coefs[["c"]],
+                                             xs = coefs[["xs"]]
+                                           ),
+                                           xmin = fflight,
+                                           xmax = lflight
+                                         )
+                                       )
+                                     }, error = function(e) {
+                                       tibble::tibble(
+                                         unique_plot = dftemp$unique_plot[i],
+                                         model = "Exponential-Plateau",
+                                         asymptote = NA_real_,
+                                         auc = NA_real_,
+                                         a = NA_real_,
+                                         c = NA_real_,
+                                         xs = NA_real_,
+                                         aic = NA_real_,
+                                         rmse = NA_real_,
+                                         mae = NA_real_,
+                                         parms = NA
+                                       )
+                                     })
+
+                                     result
+                                   }
 
   results <-
     results_list |>
@@ -4408,6 +4474,7 @@ mod_expplat <- function(data,
 
   return(results)
 }
+
 
 
 help_mod_exponential_plateau_eq <- function() {
@@ -4563,23 +4630,21 @@ SSexplinear <- selfStart(
 
 
 mod_explinear <- function(data,
-                          flight_date = "date",
-                          predictor = "q90",
+                          predictor = "date",
+                          dependent = "q90",
                           sowing_date = NULL,
                           parallel = FALSE) {
   # Prepare data
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
     tidyr::nest()
 
-  results_list <- list()
-
   # Parallel or Sequential Plan
   if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 4))
+    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
   } else {
     future::plan(future::sequential)
   }
@@ -4588,86 +4653,93 @@ mod_explinear <- function(data,
   `%dofut%` <- doFuture::`%dofuture%`
 
   # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
+  results_list <- foreach::foreach(i = seq_along(dftemp$data),
+                                   .combine = dplyr::bind_rows,
+                                   .options.future = list(seed = TRUE)) %dofut% {
+                                     df <- as.data.frame(dftemp$data[[i]])
 
-    if (!is.null(sowing_date)) {
-      flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
-    } else {
-      flights <- to_datetime(df$date)$yday + 1
-    }
+                                     # Predictor (x)
+                                     if (predictor == "date") {
+                                       if (!is.null(sowing_date)) {
+                                         x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+                                           as.numeric() |> round()
+                                       } else {
+                                         x <- to_datetime(df[[predictor]])$yday + 1
+                                       }
+                                     } else {
+                                       x <- df[[predictor]]
+                                     }
 
-    fflight <- min(flights)
-    lflight <- max(flights) + 20
-    y <- df |> dplyr::pull(!!rlang::sym(predictor))
+                                     y <- df |> dplyr::pull(!!rlang::sym(dependent))
+                                     fflight <- min(x)
+                                     lflight <- max(x) + 20
 
-    # Use tryCatch to handle model fitting errors
-    result <- tryCatch({
+                                     # Fit model
+                                     result <- tryCatch({
+                                       model <- try(
+                                         nls(y ~ SSexplinear(x, cm, rm, tb),
+                                             data = data.frame(x, y),
+                                             control = nls.control(maxiter = 1000)),
+                                         silent = TRUE
+                                       )
 
-      model <- try(
-        nls( y ~ SSexplinear(flights, cm, rm, tb),
-             data = data.frame(flights, y),
-             control = nls.control(maxiter = 1000)),
-        silent = TRUE
-      )
+                                       if (inherits(model, "try-error")) {
+                                         model <- suppressWarnings(
+                                           minpack.lm::nlsLM(y ~ SSexplinear(x, cm, rm, tb),
+                                                             data = data.frame(x, y))
+                                         )
+                                       }
 
-      if (inherits(model, "try-error")) {
-        model <- suppressWarnings(
-          minpack.lm::nlsLM(y ~ SSexplinear(flights, cm, rm, tb),
-                            data = data.frame(flights, y))
-        )
-      }
-      coefslog <- coef(model)
+                                       coefs <- coef(model)
+                                       gofval <- gof(model, y)
 
-      # Goodness of fit
-      gofval <- gof(model, y)
-      # Area under curve
+                                       tibble::tibble(
+                                         unique_plot = dftemp$unique_plot[i],
+                                         model = "Exponential-Linear",
+                                         cm = coefs[["cm"]],
+                                         rm = coefs[["rm"]],
+                                         tb = coefs[["tb"]],
+                                         aic = gofval$AIC,
+                                         rmse = gofval$RMSE,
+                                         mae = gofval$MAE,
+                                         parms = list(
+                                           model = modfun_exponential_linear,
+                                           modeladj = model,
+                                           fd = fdfun_exponential_linear,
+                                           sd = sdfun_exponential_linear,
+                                           coefs = list(
+                                             cm = coefs[["cm"]],
+                                             rm = coefs[["rm"]],
+                                             tb = coefs[["tb"]]
+                                           ),
+                                           xmin = fflight,
+                                           xmax = lflight
+                                         )
+                                       )
+                                     }, error = function(e) {
+                                       tibble::tibble(
+                                         unique_plot = dftemp$unique_plot[i],
+                                         model = "Exponential-Linear",
+                                         cm = NA_real_,
+                                         rm = NA_real_,
+                                         tb = NA_real_,
+                                         aic = NA_real_,
+                                         rmse = NA_real_,
+                                         mae = NA_real_,
+                                         parms = NA
+                                       )
+                                     })
 
-      # Return results
-      tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Exponential-Linear",
-        cm = coefslog[[1]],
-        rm = coefslog[[2]],
-        tb = coefslog[[3]],
-        aic = gofval$AIC,
-        rmse = gofval$RMSE,
-        mae = gofval$MAE,
-        parms = list(model = modfun_exponential_linear,
-                     modeladj = model,
-                     fd = fdfun_exponential_linear,
-                     sd = sdfun_exponential_linear,
-                     coefs = list(
-                       cm = coefslog[[1]],
-                       rm = coefslog[[2]],
-                       tb = coefslog[[3]]
-                     ),
-                     xmin = fflight, xmax = lflight)
-      )
-    }, error = function(e) {
-      # Return NA values if model fitting fails
-      tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Exponential-Linear",
-        cm = NA_real_,
-        rm = NA_real_,
-        tb = NA_real_,
-        aic = NA_real_,
-        rmse = NA_real_,
-        mae = NA_real_,
-        parms = NA
-      )
-    })
-    result
-  }
+                                     result
+                                   }
 
-  results <-
-    results_list |>
+  results <- results_list |>
     tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
 
   return(results)
 }
+
 
 
 help_mod_exponential_linear_eq <- function() {
