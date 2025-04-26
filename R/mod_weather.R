@@ -86,6 +86,46 @@ mod_weather_ui <- function(id) {
                   inline = TRUE,
                   status = "success"
                 ),
+                hl(),
+                prettyCheckbox(
+                  inputId = ns("computegdd"),
+                  label = "Compute thermal parameters",
+                  value = FALSE,
+                  shape = "curve",
+                  status = "success",
+                  icon = icon("check"),
+                  animation = "rotate"
+                ),
+                conditionalPanel(
+                  condition = "input.computegdd", ns = ns,
+                  fluidRow(
+                    col_3(
+                      numericInput(ns("basemin"),
+                                   label = "Tbase lower (ºC)",
+                                   value = 10,
+                                   step = 0.1)
+                    ),
+                    col_3(
+                      numericInput(ns("baseupp"),
+                                   label = "Tbase upper (ºC)",
+                                   value = 40,
+                                   step = 0.1)
+                    ),
+                    col_3(
+                      numericInput(ns("optimallower"),
+                                   label = "Topt lower (ºC)",
+                                   value = 26,
+                                   step = 0.1)
+                    ),
+                    col_3(
+                      numericInput(ns("optimalupper"),
+                                   label = "Topt upper (ºC)",
+                                   value = 32,
+                                   step = 0.1)
+                    )
+                  )
+                ),
+                hl(),
                 pickerInput(
                   inputId = ns("params"),
                   label = "Select the parameters",
@@ -184,24 +224,20 @@ mod_weather_ui <- function(id) {
           col_6(
             "Envirotypes",
             fluidRow(
-              col_3(
+              col_4(
                 textInput(ns("quantiles"),
                           label = "Quantiles")
               ),
-              col_3(
-                textInput(ns("quantiles_label"),
-                          label = "Quantile labels (labels)")
-              ),
-              col_3(
+              col_4(
                 textInput(ns("cropdates"),
                           label = "Crop stages")
               ),
-              col_3(
+              col_4(
                 textInput(ns("cropdates_label"),
                           label = "Crop stages (labels)")
               )
             ),
-            plotOutput(ns("envirotypes"), height = "700px")
+            plotOutput(ns("envirotypes"), height = "640px")
           ),
           col_6(
             "Dataset",
@@ -405,7 +441,9 @@ mod_weather_server <- function(id, dfs) {
     observeEvent(input$get_weather, {
       df <- coords()
       req(nrow(df) > 0)
-      weather <- get_climate(
+
+      weather <-
+        get_climate(
         env = df$env,
         params = input$params,
         lat = df$lat,
@@ -417,15 +455,41 @@ mod_weather_server <- function(id, dfs) {
         workers = input$ncores,
         environment = "shiny"
       )
+      if (input$computegdd) {
+        # Check if T2M_MIN and T2M_MAX are in weather
+        if (!all(c("T2M_MIN", "T2M_MAX") %in% colnames(weather))) {
+
+          sendSweetAlert(
+            session = session,
+            title = "Warning",
+            text = "To compute GDD, ensure T2M_MIN and T2M_MAX are listed in the selected parameters.",
+            type = "error"
+          )
+
+          return()
+        } else {
+          weather <-
+            gdd_ometto_frue(
+            weather,
+            Tbase = input$basemin,
+            Tceil = input$baseupp,
+            Topt1 = input$optimallower,
+            Topt2 = input$optimalupper
+          )
+        }
+      }
+
+      # If no problem, continue:
       resclimate(weather)
-      assign("weather", weather, envir = .GlobalEnv)
       dfs[["weather"]] <- create_reactval("weather", weather)
+
       sendSweetAlert(
         session = session,
         title = "Weather data successfully retrieved!",
-        text = "The climate information has been loaded and is now available for visualization.",
+        text = "The climate information has been fetched and is now available for visualization.",
         type = "success"
       )
+
     })
 
     ### SHOW CLIMATE DATA
@@ -467,7 +531,6 @@ mod_weather_server <- function(id, dfs) {
     output$envirotypes <- renderPlot({
       req(input$quantiles, input$cropdates, input$cropdates_label)
       quantiles <- as.numeric(unlist(strsplit(input$quantiles, ",")))
-      quantiles_label <- unlist(strsplit(input$quantiles_label, ","))
       cropdates <- as.numeric(unlist(strsplit(input$cropdates, ",")))
       cropdates_label <- unlist(strsplit(input$cropdates_label, ","))
 

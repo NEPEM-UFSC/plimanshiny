@@ -1302,7 +1302,8 @@ gdd_ometto_frue <- function(df,
 
   Tb <- Tbase
   TB <- Tceil
-  df <- df |>
+  df <-
+    df |>
     dplyr::mutate(
       # Temperatura média (real ou estimada)
       Tmed = dplyr::case_when(
