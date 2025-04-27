@@ -32,9 +32,8 @@ mod_weather_ui <- function(id) {
               type = "tabs",
               tabPanel(
                 title = "Input Parameters",
-                dateRangeInput(ns("dates"), "Select the period", start = Sys.Date() - 30, end = Sys.Date()),
+                dateRangeInput(ns("dates"), "Select the period", start = Sys.Date() - 35, end = Sys.Date() - 5),
                 # botão para condição de usar ou nao nome de municipios
-                # checkboxInput(ns("use_mun"), "Use municipality names", value = FALSE),
                 prettySwitch(
                   inputId = ns("use_mun"),
                   label = "Search by municipality (Brazil only)",
@@ -216,7 +215,7 @@ mod_weather_ui <- function(id) {
             )
           )
         ),
-        plotOutput(ns("envirotypes_dist"), height = "560px")
+        plotlyOutput(ns("envirotypes_dist"), height = "560px")
       ),
       tabPanel(
         title = "Envirotypes",
@@ -237,7 +236,7 @@ mod_weather_ui <- function(id) {
                           label = "Crop stages (labels)")
               )
             ),
-            plotOutput(ns("envirotypes"), height = "640px")
+            plotlyOutput(ns("envirotypes"), height = "640px")
           ),
           col_6(
             "Dataset",
@@ -279,8 +278,17 @@ mod_weather_server <- function(id, dfs) {
     # Renderiza o mapa inicial
     output$map2 <- renderLeaflet({
       leaflet() |>
-        addProviderTiles(providers$OpenStreetMap) |>
-        setView(lng = 0, lat = 0, zoom = 2)
+        addTiles(group = "OpenStreetMap") |>
+        addProviderTiles(providers$Esri.WorldImagery, group = "Esri World Imagery") |>
+        setView(lng = 0, lat = 0, zoom = 2) |>
+        addLayersControl(
+          baseGroups = c(
+            "OpenStreetMap",
+            "Esri World Imagery"  # Small typo: you wrote "Esri World Terrain" earlier!
+          ),
+          options = layersControlOptions(collapsed = TRUE)
+        ) |>
+        hideGroup("Esri World Imagery")
     })
 
     # Adiciona um novo ponto ao data.frame existente
@@ -508,15 +516,15 @@ mod_weather_server <- function(id, dfs) {
     })
     observe({
       updatePickerInput(session, "facet",
-                        choices = colnames(resclimate()),
+                        choices = c("none", colnames(resclimate())),
                         selected = NULL)
     })
 
 
-    output$envirotypes_dist <- renderPlot({
+    output$envirotypes_dist <- renderPlotly({
       req(input$variable, input$facet)
+      p <-
       ggplot(resclimate(), aes(x = !!rlang::sym(input$variable))) +
-        facet_wrap(as.formula(paste0("~", input$facet)), ncol = 1) +
         geom_density(fill = "steelblue", alpha = 0.6) +
         theme_minimal(base_size = 16) +
         theme(axis.text.y = element_text(angle = 0)) +
@@ -525,14 +533,19 @@ mod_weather_server <- function(id, dfs) {
           y = "Densidade",
           fill = NULL
         )
+      if(input$facet != "none") {
+        p <- p + facet_wrap(as.formula(paste("~", input$facet)), ncol = 1)
+      }
+      plotly::ggplotly(p)
     })
 
 
-    output$envirotypes <- renderPlot({
+    output$envirotypes <- renderPlotly({
       req(input$quantiles, input$cropdates, input$cropdates_label)
       quantiles <- as.numeric(unlist(strsplit(input$quantiles, ",")))
       cropdates <- as.numeric(unlist(strsplit(input$cropdates, ",")))
       cropdates_label <- unlist(strsplit(input$cropdates_label, ","))
+      req(length(cropdates) == length(cropdates_label))
 
 
       dfenviro <-
@@ -554,7 +567,7 @@ mod_weather_server <- function(id, dfs) {
           roundcols(digits = 3) |>
           render_reactable(max_width = NULL)
       })
-
+      p <-
       ggplot(dfenviro) +
         geom_bar(aes(x=Freq,  y = ENV, fill = xcut),
                  position = "fill",
@@ -575,6 +588,7 @@ mod_weather_server <- function(id, dfs) {
               legend.title = element_text(size=12),
               strip.background = element_rect(fill="gray95",size=1)) +
         theme(legend.position = "bottom")
+      plotly::ggplotly(p)
     })
 
 

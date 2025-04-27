@@ -1188,7 +1188,7 @@ get_climate <- function(env = NULL,
 
     dfnasa <-
       get_cleandata(file) |>
-      mutate(ENV = env_i, LAT = lat_i, LON = lon_i, .before = 1)
+      dplyr::mutate(ENV = env_i, LAT = lat_i, LON = lon_i, .before = 1)
 
     names(dfnasa)[grepl("PRECTOT", names(dfnasa))] <- "PRECTOT"
     if ("PRECTOT" %in% names(dfnasa) && "EVPTRNS" %in% names(dfnasa)) {
@@ -1196,7 +1196,7 @@ get_climate <- function(env = NULL,
     }
     if (scale == "hourly") {
       dfnasa <- dfnasa |>
-        mutate(
+        dplyr::mutate(
           DATE = as.POSIXct(paste0(YEAR, "-", MO, "-", DY, " ", HR), format = "%Y-%m-%d %H"),
           DOY = as.numeric(format(DATE, "%j")),
           DFS = DOY - as.numeric(format(as.Date(start[[1]]), "%j")) + 1
@@ -1229,6 +1229,13 @@ get_climate <- function(env = NULL,
         dplyr::select(-YEAR) |>
         tidyr::separate_wider_delim(DATE, names = c("YEAR", "MO", "DY"), delim = "-") |>
         dplyr::mutate(DFS = 1:nrow(dfnasa), .after = DOY)
+
+      if("PRECTOT" %in% colnames(dfnasa)){
+        dfnasa <-
+          dfnasa |>
+          dplyr::mutate(PRECTOT_CUMSUM = cumsum(PRECTOT),
+                        .after = PRECTOT)
+      }
     }
     dfnasa[dfnasa == -999.00] <- NA
     return(dfnasa)
