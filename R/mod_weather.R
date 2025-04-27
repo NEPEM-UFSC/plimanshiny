@@ -140,7 +140,7 @@ mod_weather_ui <- function(id) {
                   col_6(
                     shinyWidgets::actionBttn(
                       inputId = ns("get_weather"),
-                      label = "Obter dados",
+                      label = "Fetch data",
                       style = "gradient",
                       color = "primary",
                       icon = icon("cloud-download-alt"),
@@ -151,7 +151,7 @@ mod_weather_ui <- function(id) {
                   col_6(
                     shinyWidgets::actionBttn(
                       inputId = ns("clear_points"),
-                      label = "Limpar pontos",
+                      label = "Clear points",
                       style = "gradient",
                       color = "danger",
                       icon = icon("trash-alt"),
@@ -165,7 +165,7 @@ mod_weather_ui <- function(id) {
                   col_12(
                     prettySwitch(
                       inputId = ns("parallel"),
-                      label = "Processamento Paralelo",
+                      label = "Parallel processing",
                       value = FALSE,
                       status = "success",
                       fill = TRUE
@@ -178,7 +178,7 @@ mod_weather_ui <- function(id) {
                     col_12(
                       numericInput(
                         inputId = ns("ncores"),
-                        label = "Número de núcleos",
+                        label = "Number of cores",
                         value = 1,
                         min = 1,
                         max = 6,
@@ -692,8 +692,8 @@ mod_weather_server <- function(id, dfs) {
       if (rv$api_in_progress) {
         sendSweetAlert(
           session = session,
-          title = "Processamento em andamento",
-          text = "Já existe uma solicitação de dados em andamento. Por favor, aguarde.",
+          title = "Processing in progress",
+          text = "There is already a data request in progress. Please wait.",
           type = "warning"
         )
         return()
@@ -709,8 +709,8 @@ mod_weather_server <- function(id, dfs) {
         dfs[["weather"]] <- create_reactval("weather", cached_data$data)
         sendSweetAlert(
           session = session,
-          title = "Dados obtidos do cache!",
-          text = paste("As informações climáticas foram recuperadas do cache (fonte:", cached_data$source, ")."),
+          title = "Data retrieved from cache!",
+          text = paste("Climate information was retrieved from cache (source:", cached_data$source, ")."),
           type = "success"
         )
         return()
@@ -728,7 +728,7 @@ mod_weather_server <- function(id, dfs) {
       all_weather_data <- NULL
       
       # Usar withProgress para aproveitar o progressR existente
-      withProgress(message = 'Obtendo dados climáticos...', value = 0, {
+      withProgress(message = 'Retrieving climate data...', value = 0, {
         # Processamento em lotes para grandes conjuntos de pontos
         tryCatch({
           # Se for um conjunto grande, processar em lotes
@@ -736,7 +736,7 @@ mod_weather_server <- function(id, dfs) {
             for (i in 1:total_batches) {
               # Atualizar barra de progresso
               incProgress(1/total_batches, 
-                          detail = sprintf("Processando lote %d de %d...", i, total_batches))
+                          detail = sprintf("Processing batch %d of %d...", i, total_batches))
               
               # Determinar índices do lote atual
               start_idx <- (i-1) * batch_size + 1
@@ -766,7 +766,7 @@ mod_weather_server <- function(id, dfs) {
             }
           } else {
             # Para conjuntos pequenos, processar normalmente
-            incProgress(0.5, detail = "Obtendo dados da API...")
+            incProgress(0.5, detail = "Fetching data from API...")
             all_weather_data <- get_climate(
               env = df$env,
               params = input$params,
@@ -783,11 +783,11 @@ mod_weather_server <- function(id, dfs) {
           
           # Processamento de GDD se necessário
           if (input$computegdd) {
-            incProgress(0.2, detail = "Calculando parâmetros térmicos...")
+            incProgress(0.2, detail = "Calculating thermal parameters...")
             
             # Verificar se os parâmetros necessários estão disponíveis
             if (!all(c("T2M_MIN", "T2M_MAX") %in% colnames(all_weather_data))) {
-              stop("Para calcular GDD, certifique-se de que T2M_MIN e T2M_MAX estão listados nos parâmetros selecionados.")
+              stop("To calculate GDD, make sure that T2M_MIN and T2M_MAX are listed in the selected parameters.")
             }
             
             all_weather_data <- gdd_ometto_frue(
@@ -799,7 +799,7 @@ mod_weather_server <- function(id, dfs) {
             )
           }
           
-          incProgress(0.8, detail = "Finalizando...")
+          incProgress(0.8, detail = "Finalizing...")
           
           # Salvar no cache e atualizar variáveis reativas
           save_to_cache(cache_key, all_weather_data)
@@ -812,8 +812,8 @@ mod_weather_server <- function(id, dfs) {
           # Notificar sucesso
           sendSweetAlert(
             session = session,
-            title = "Dados obtidos com sucesso!",
-            text = sprintf("Foram processados dados para %d locais com %d parâmetros climáticos.", 
+            title = "Data successfully retrieved!",
+            text = sprintf("Data processed for %d locations with %d climate parameters.", 
                           length(unique(all_weather_data$ENV)), 
                           length(input$params)),
             type = "success"
@@ -827,8 +827,8 @@ mod_weather_server <- function(id, dfs) {
           # Notificar erro
           sendSweetAlert(
             session = session,
-            title = "Erro ao obter dados",
-            text = paste("Ocorreu um erro ao buscar dados climáticos:", e$message),
+            title = "Error retrieving data",
+            text = paste("An error occurred while fetching climate data:", e$message),
             type = "error"
           )
         })
@@ -840,7 +840,7 @@ mod_weather_server <- function(id, dfs) {
       req(resclimate())
       
       # Usar withProgress para aproveitar a barra de progresso existente
-      withProgress(message = 'Carregando dados...', value = 0, {
+      withProgress(message = 'Loading data...', value = 0, {
         incProgress(0.3)
         
         # Otimizar dados para a exibição
@@ -901,7 +901,7 @@ mod_weather_server <- function(id, dfs) {
         return(
           plotly::plot_ly() %>%
             plotly::add_annotations(
-              text = paste("Variável", input$variable, "não encontrada no conjunto de dados"),
+              text = paste("Variable", input$variable, "not found in the dataset"),
               showarrow = FALSE,
               font = list(size = 16)
             )
@@ -913,7 +913,7 @@ mod_weather_server <- function(id, dfs) {
         return(
           plotly::plot_ly() %>%
             plotly::add_annotations(
-              text = paste("Todos os valores para", input$variable, "são NA"),
+              text = paste("All values for", input$variable, "are NA"),
               showarrow = FALSE,
               font = list(size = 16)
             )
@@ -926,7 +926,7 @@ mod_weather_server <- function(id, dfs) {
         return(
           plotly::plot_ly() %>%
             plotly::add_annotations(
-              text = paste("Variável", input$variable, "tem valor constante:", const_value),
+              text = paste("Variable", input$variable, "has constant value:", const_value),
               showarrow = FALSE,
               font = list(size = 16)
             )
@@ -939,7 +939,7 @@ mod_weather_server <- function(id, dfs) {
         theme(axis.text.y = element_text(angle = 0)) +
         labs(
           x = input$variable,
-          y = "Densidade",
+          y = "Density",
           fill = NULL
         )
       
@@ -952,7 +952,7 @@ mod_weather_server <- function(id, dfs) {
           # Adicionar anotação ao gráfico se o facet não for válido
           p <- p + 
             annotate("text", x = mean(range(plot_data[[input$variable]], na.rm = TRUE)), 
-                   y = 0, label = "Facet inválido ou com valores constantes", 
+                   y = 0, label = "Invalid facet or no data", 
                    color = "red", size = 4, vjust = -1)
         }
       }
@@ -978,7 +978,7 @@ mod_weather_server <- function(id, dfs) {
           resclimate(), nrow(resclimate()) > 0, input$variable)
       
       # Adicionar indicador de carregamento para processamento 
-      withProgress(message = 'Gerando envirotypes...', {
+      withProgress(message = 'Generating envirotypes...', {
         # Validar os dados de entrada para evitar erros
         tryCatch({
           # Converter e validar as entradas do usuário
@@ -995,7 +995,7 @@ mod_weather_server <- function(id, dfs) {
           
           # Se houver muitos dados, reduzir o tamanho do conjunto para processamento mais rápido
           if (nrow(plot_data) > 10000) {
-            incProgress(0.2, detail = "Otimizando conjunto de dados...")
+            incProgress(0.2, detail = "Optimizing dataset...")
             # Apenas manter pontos relevantes para o período de interesse
             plot_data <- plot_data %>%
               dplyr::filter(!is.na(!!rlang::sym(input$variable)))
@@ -1016,10 +1016,10 @@ mod_weather_server <- function(id, dfs) {
             }
           }
           
-          incProgress(0.3, detail = "Calculando envirotypes...")
+          incProgress(0.3, detail = "Calculating envirotypes...")
           
           # Usar processamento com tratamento de erro
-          dfenviro <- withCallingHandlers(
+            dfenviro <- withCallingHandlers(
             envirotype(
               plot_data %>% tidyr::drop_na(),
               datas = cropdates,
@@ -1027,24 +1027,23 @@ mod_weather_server <- function(id, dfs) {
               var = input$variable,
               breaks = quantiles,
               labels = NULL
-            ) %>%
-              tidyr::drop_na(),
+            ) %>% tidyr::drop_na(),
             error = function(e) {
-              # Capturar erros específicos e fornecer mensagens mais informativas
+              # Capture specific errors and provide more informative messages
               if (grepl("breaks", e$message)) {
-                stop("Erro nos quantis especificados. Certifique-se de que são valores numéricos crescentes.", call. = FALSE)
+              stop("Error in the specified quantiles. Ensure they are increasing numeric values.", call. = FALSE)
               } else if (grepl("date", e$message)) {
-                stop("Erro nas datas especificadas. Verifique o formato e a sequência.", call. = FALSE)
+              stop("Error in the specified dates. Check the format and sequence.", call. = FALSE)
               } else {
-                stop(paste("Erro ao calcular envirotypes:", e$message), call. = FALSE)
+              stop(paste("Error in calculating envirotypes:", e$message), call. = FALSE)
               }
             }
-          )
+            )
           
           # Verificar se temos resultados válidos
           req(dfenviro, nrow(dfenviro) > 0)
           
-          incProgress(0.7, detail = "Atualizando visualização...")
+          incProgress(0.7, detail = "Updating visualization...")
           
           # Atualizar a tabela com dados processados
           output$dataenviro <- reactable::renderReactable({
@@ -1076,9 +1075,9 @@ mod_weather_server <- function(id, dfs) {
             scale_x_continuous(expand = c(0,0))+
             # Cores adaptativas para diferentes quantis
             scale_fill_viridis_d(option = "viridis") +
-            labs(x = 'Frequência relativa',
-                y = "Ambiente",
-                fill='Envirotipo')+
+            labs(x = 'Relative frequency',
+                y = "Environment",
+                fill='Envirotype')+
             theme(axis.title = element_text(size=12),
                   legend.text = element_text(size=9),
                   strip.text = element_text(size=12),
@@ -1086,7 +1085,7 @@ mod_weather_server <- function(id, dfs) {
                   strip.background = element_rect(fill="gray95",size=1)) +
             theme(legend.position = "bottom")
             
-          incProgress(1.0, detail = "Concluído!")
+          incProgress(1.0, detail = "Completed!")
           
           # Converter para plotly com configurações otimizadas para interatividade
           plotly::ggplotly(p) %>%
@@ -1105,7 +1104,7 @@ mod_weather_server <- function(id, dfs) {
           # Retornar um gráfico vazio com mensagem de erro detalhada
           plotly::plot_ly() %>%
             plotly::add_annotations(
-              text = paste("Erro ao gerar o gráfico:", e$message),
+              text = paste("Error while trying to generate the graphic:", e$message),
               showarrow = FALSE,
               font = list(size = 16, color = "red")
             )
@@ -1122,19 +1121,19 @@ mod_weather_server <- function(id, dfs) {
             col_12(
               dropdown(
                 inputId = ns("cache_dropdown"),
-                label = "Cache manager",
+                label = "Cache Manager",
                 icon = icon("database"),
                 status = "info",
                 size = "xs",
                 right = TRUE,
-                tooltip = tooltipOptions(title = "Opções de gerenciamento do cache climático"),
+                tooltip = tooltipOptions(title = "Weather cache management options"),
                 fluidRow(
                   col_12(
-                    tags$b("Status do Cache:"),
-                    tags$p(paste("Itens em memória:", length(rv$cache))),
+                    tags$b("Cache Status:"),
+                    tags$p(paste("Items in memory:", length(rv$cache))),
                     actionButton(
                       inputId = ns("clear_cache"),
-                      label = "Limpar Cache",
+                      label = "Clear Cache",
                       icon = icon("trash"),
                       class = "btn-danger btn-sm",
                       width = "100%"
@@ -1155,9 +1154,9 @@ mod_weather_server <- function(id, dfs) {
       result <- clean_weather_cache()
       sendSweetAlert(
         session = session,
-        title = "Cache Limpo",
-        text = paste0("Cache em memória e em disco foi removido. ",
-                     if (result$disk_cleared) paste0(result$files_removed, " arquivos excluídos.") else ""),
+        title = "Cache Cleared",
+        text = paste0("Memory and disk cache has been removed. ",
+                     if (result$disk_cleared) paste0(result$files_removed, " files deleted.") else ""),
         type = "success"
       )
     })
@@ -1171,8 +1170,8 @@ mod_weather_server <- function(id, dfs) {
       if (rv$api_in_progress) {
         sendSweetAlert(
           session = session,
-          title = "Processamento em andamento",
-          text = "Já existe uma solicitação de dados em andamento. Por favor, aguarde.",
+          title = "Processing in progress",
+          text = "There is already a data request in progress. Please wait.",
           type = "warning"
         )
         return()
@@ -1233,17 +1232,17 @@ mod_weather_server <- function(id, dfs) {
           
           # Informações detalhadas sobre o cache
           cache_info <- paste0(
-            "Fonte: ", cached_result$source, "\n",
-            "Ambientes: ", length(unique(cached_data$ENV)), "\n",
-            "Parâmetros: ", length(input$params), "\n",
-            "Datas: ", min(as.Date(cached_data$YYYYMMDD, format = "%Y%m%d")), " a ", 
+            "Source: ", cached_result$source, "\n",
+            "Environments: ", length(unique(cached_data$ENV)), "\n",
+            "Parameters: ", length(input$params), "\n",
+            "Dates: ", min(as.Date(cached_data$YYYYMMDD, format = "%Y%m%d")), " to ", 
             max(as.Date(cached_data$YYYYMMDD, format = "%Y%m%d"))
           )
           
           sendSweetAlert(
             session = session,
-            title = "Dados obtidos do cache!",
-            text = paste0("As informações climáticas foram recuperadas do cache.\n\n", cache_info),
+            title = "Data retrieved from cache!",
+            text = paste0("Climate information was retrieved from cache.\n\n", cache_info),
             type = "success"
           )
           return()
@@ -1251,14 +1250,14 @@ mod_weather_server <- function(id, dfs) {
           # Cache parcial ou inválido - precisamos buscar dados novos
           missing_summary <- paste(sapply(date_ranges[!sapply(date_ranges, function(x) x$covered)], 
                                         function(x) {
-                                          paste0(x$env, ": ", x$missing_count, " dias não encontrados no cache")
+                                          paste0(x$env, ": ", x$missing_count, " days not found in cache")
                                         }), 
                                  collapse = "\n")
           
           sendSweetAlert(
             session = session,
-            title = "Cache parcial ou inválido",
-            text = paste0("Alguns dados solicitados não estão no cache ou são inválidos. Buscando dados novos.\n\n", 
+            title = "Partial or invalid cache",
+            text = paste0("Some requested data is not in the cache or is invalid. Fetching new data.\n\n", 
                          missing_summary),
             type = "info"
           )
