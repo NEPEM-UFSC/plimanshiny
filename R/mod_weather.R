@@ -137,45 +137,58 @@ mod_weather_ui <- function(id) {
                   )
                 ),
                 fluidRow(
-                  col_4(
+                  col_6(
                     shinyWidgets::actionBttn(
                       inputId = ns("get_weather"),
-                      label = "Fetch data",
-                      style = "material-flat",
-                      color = "primary", # azul (bootstrap)
-                      icon = icon("cloud-sun"),
-                      size = "md"
+                      label = "Obter dados",
+                      style = "gradient",
+                      color = "primary",
+                      icon = icon("cloud-download-alt"),
+                      size = "md",
+                      block = TRUE
                     ),
                   ),
-                  col_4(
+                  col_6(
                     shinyWidgets::actionBttn(
                       inputId = ns("clear_points"),
-                      label = "Clear points",
-                      style = "material-flat",
-                      color = "primary",
-                      icon = icon("eraser"),
-                      size = "md"
+                      label = "Limpar pontos",
+                      style = "gradient",
+                      color = "danger",
+                      icon = icon("trash-alt"),
+                      size = "md",
+                      block = TRUE
                     ),
-                  ),
-                  col_2(
-                    prettyCheckbox(
+                  )
+                ),
+                br(),
+                fluidRow(
+                  col_12(
+                    prettySwitch(
                       inputId = ns("parallel"),
-                      label = "Parallel",
+                      label = "Processamento Paralelo",
                       value = FALSE,
-                    )
-                  ),
-                  col_2(
-                    numericInput(
-                      inputId = ns("ncores"),
-                      label = "Cores",
-                      value = 1,
-                      min = 1,
-                      max = 6,
-                      step = 1
+                      status = "success",
+                      fill = TRUE
                     )
                   )
                 ),
-
+                conditionalPanel(
+                  condition = "input.parallel == true", ns = ns,
+                  fluidRow(
+                    col_12(
+                      numericInput(
+                        inputId = ns("ncores"),
+                        label = "Número de núcleos",
+                        value = 1,
+                        min = 1,
+                        max = 6,
+                        step = 1,
+                        width = "100%"
+                      )
+                    )
+                  )
+                ),
+                uiOutput(ns("cache_status_ui"))
               ),
               tabPanel(
                 title = "Selected points",
@@ -469,58 +482,208 @@ mod_weather_server <- function(id, dfs) {
 
     # Função para gerar uma chave de cache única para cada consulta climática
     generate_cache_key <- function(df, params, scale) {
-      # Combina todos os parâmetros da consulta em uma string única
-      coords_str <- paste(df$lat, df$lon, df$start, df$end, collapse = "_")
-      params_str <- paste(params, collapse = "_")
-      paste(coords_str, params_str, scale, sep = "_")
+      # Formatar datas consistentemente
+      formatted_dates <- lapply(df, function(row) {
+        if (is.data.frame(row)) {
+          # Para dataframes completos
+          starts <- as.Date(row$start)
+          ends <- as.Date(row$end)
+          paste(format(starts, "%Y%m%d"), format(ends, "%Y%m%d"), sep = "_")
+        } else {
+          # Para linhas individuais
+          start_date <- as.Date(row["start"])
+          end_date <- as.Date(row["end"])
+          paste(format(start_date, "%Y%m%d"), format(end_date, "%Y%m%d"), sep = "_")
+        }
+      })
+      
+      # Combinar coordenadas e datas formatadas em um identificador único
+      location_date_str <- paste(
+        paste(df$lat, df$lon, sep = ":"),
+        unlist(formatted_dates),
+        sep = "_"
+      )
+      location_date_str <- paste(location_date_str, collapse = "|")
+      
+      # Adicionar parâmetros climáticos e escala à chave
+      params_str <- paste(sort(params), collapse = "_") # Ordenar para consistência
+      
+      # Criar hash MD5 para chave mais curta e confiável
+      digest::digest(paste(location_date_str, params_str, scale, sep = "::"), algo = "md5")
     }
     
-    # Função para verificar e utilizar o cache
-    get_cached_weather <- function(cache_key) {
-      if (!is.null(rv$cache[[cache_key]])) {
-        return(rv$cache[[cache_key]])
+    # Função para verificar e utilizar o cache de forma mais robusta
+    get_cached_weather <- function(cache_key, current_df) {
+      # Verificar primeiro na memória atual
+      in_memory_cache <- rv$cache[[cache_key]]
+      if (!is.null(in_memory_cache)) {
+        # Validar se as datas no cache correspondem às datas solicitadas
+        if (validate_cache_dates(in_memory_cache, current_df)) {
+          return(list(
+            data = in_memory_cache,
+            source = "memory",
+            valid = TRUE
+          ))
+        }
       }
+      
+      # Verificar no cache persistente em disco
+      disk_cache <- get_disk_cache(cache_key)
+      if (!is.null(disk_cache)) {
+        if (validate_cache_dates(disk_cache, current_df)) {
+          # Atualizar o cache em memória também
+          rv$cache[[cache_key]] <- disk_cache
+          return(list(
+            data = disk_cache,
+            source = "disk",
+            valid = TRUE
+          ))
+        }
+      }
+      
+      # Nenhum cache válido encontrado
       return(NULL)
     }
     
-    # Função para salvar no cache
+    # Função para validar as datas no cache
+    validate_cache_dates <- function(cached_data, requested_df) {
+      # Se não temos datas na estrutura, não podemos validar
+      if (!("YYYYMMDD" %in% colnames(cached_data))) {
+        return(FALSE)
+      }
+      
+      # Verificar cada combinação única de local e datas
+      for (i in 1:nrow(requested_df)) {
+        env_name <- requested_df$env[i]
+        start_date <- as.Date(requested_df$start[i])
+        end_date <- as.Date(requested_df$end[i])
+        
+        # Filtrar dados do cache por ambiente
+        env_data <- cached_data[cached_data$ENV == env_name, ]
+        if (nrow(env_data) == 0) {
+          return(FALSE)  # Ambiente não encontrado no cache
+        }
+        
+        # Converter datas para comparação
+        env_dates <- as.Date(env_data$YYYYMMDD, format = "%Y%m%d")
+        
+        # Verificar se todas as datas solicitadas estão no cache
+        if (!all(seq.Date(start_date, end_date, by = "day") %in% env_dates)) {
+          return(FALSE)  # Faltam datas no cache
+        }
+      }
+      
+      # Todos os ambientes e datas foram encontrados no cache
+      return(TRUE)
+    }
+    
+    # Função para gerenciar o cache persistente em disco
+    get_disk_cache <- function(cache_key) {
+      # Diretório para armazenar os caches
+      cache_dir <- file.path(rappdirs::user_cache_dir("plimanshiny"), "weather_cache")
+      if (!dir.exists(cache_dir)) {
+        dir.create(cache_dir, recursive = TRUE)
+      }
+      
+      # Caminho do arquivo de cache específico
+      cache_file <- file.path(cache_dir, paste0(cache_key, ".rds"))
+      
+      # Verificar se o arquivo existe
+      if (file.exists(cache_file)) {
+        # Verificar a idade do cache (invalidar após 30 dias)
+        file_info <- file.info(cache_file)
+        cache_age <- difftime(Sys.time(), file_info$mtime, units = "days")
+        
+        # Se o cache for mais antigo que 30 dias, invalidar
+        if (cache_age > 30) {
+          file.remove(cache_file)
+          return(NULL)
+        }
+        
+        # Carregar dados do cache
+        tryCatch({
+          cached_data <- readRDS(cache_file)
+          return(cached_data)
+        }, error = function(e) {
+          # Em caso de erro ao ler o cache, remover o arquivo corrompido
+          file.remove(cache_file)
+          return(NULL)
+        })
+      }
+      
+      return(NULL)
+    }
+    
+    # Função para salvar no cache de forma persistente
     save_to_cache <- function(cache_key, data) {
-      # Limitar o tamanho do cache (manter apenas os últimos 5 resultados)
+      # Salvar em memória (limitando o tamanho)
       if (length(rv$cache) > 5) {
+        # Remover o cache mais antigo
         oldest_key <- names(rv$cache)[1]
         rv$cache[[oldest_key]] <- NULL
       }
       rv$cache[[cache_key]] <- data
-    }
-
-    # Adicionar elementos de UI ao início do módulo para feedback visual
-    output$loading_indicator <- renderUI({
-      div(
-        id = ns("loading-weather-table"),
-        style = "display: none;",
-        div(
-          class = "text-center",
-          tags$div(class = "spinner-border text-primary", role = "status"),
-          tags$p("Processando dados...")
-        )
-      )
-    })
-    
-    # Agrupamento inteligente de dados para visualização eficiente
-    smart_group_data <- function(data, max_points = 5000) {
-      if (nrow(data) <= max_points) {
-        return(data)
+      
+      # Salvar em disco para persistência
+      cache_dir <- file.path(rappdirs::user_cache_dir("plimanshiny"), "weather_cache")
+      if (!dir.exists(cache_dir)) {
+        dir.create(cache_dir, recursive = TRUE)
       }
       
-      # Se tivermos muitos pontos, agrupar por data e ambiente
-      grouped_data <- data %>%
-        dplyr::group_by(ENV, YYYYMMDD) %>%
-        dplyr::summarise(across(where(is.numeric), mean, na.rm = TRUE)) %>%
-        dplyr::ungroup()
+      cache_file <- file.path(cache_dir, paste0(cache_key, ".rds"))
       
-      return(grouped_data)
+      # Salvar de forma segura
+      tryCatch({
+        saveRDS(data, cache_file)
+      }, error = function(e) {
+        # Em caso de erro ao salvar, garantir que não deixamos arquivos corrompidos
+        if (file.exists(cache_file)) {
+          file.remove(cache_file)
+        }
+      })
+      
+      # Retornar metadados do cache
+      list(
+        size = format(object.size(data), units = "MB"),
+        file = cache_file,
+        timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+      )
+    }
+    
+    # Função para limpar o cache (útil para diagnóstico)
+    clean_weather_cache <- function(age_days = NULL) {
+      # Limpar cache em memória
+      rv$cache <- list()
+      
+      # Limpar cache em disco
+      cache_dir <- file.path(rappdirs::user_cache_dir("plimanshiny"), "weather_cache")
+      if (!dir.exists(cache_dir)) {
+        return(list(memory_cleared = TRUE, disk_cleared = FALSE, reason = "Cache directory does not exist"))
+      }
+      
+      # Listar todos os arquivos de cache
+      cache_files <- list.files(cache_dir, pattern = "\\.rds$", full.names = TRUE)
+      
+      # Se especificado um número de dias, remover apenas caches mais antigos
+      if (!is.null(age_days)) {
+        files_to_remove <- cache_files[file.info(cache_files)$mtime < Sys.time() - as.difftime(age_days, units = "days")]
+      } else {
+        files_to_remove <- cache_files
+      }
+      
+      # Remover arquivos
+      if (length(files_to_remove) > 0) {
+        unlink(files_to_remove)
+      }
+      
+      list(
+        memory_cleared = TRUE,
+        disk_cleared = TRUE,
+        files_removed = length(files_to_remove)
+      )
     }
 
+    # Remover elementos de UI redundantes e confiar apenas no progressR para feedback
     observeEvent(input$get_weather, {
       df <- coords()
       req(df, nrow(df) > 0)
@@ -540,14 +703,14 @@ mod_weather_server <- function(id, dfs) {
       cache_key <- generate_cache_key(df, input$params, input$scale)
       
       # Verificar se os dados já estão no cache
-      cached_data <- get_cached_weather(cache_key)
-      if (!is.null(cached_data)) {
-        resclimate(cached_data)
-        dfs[["weather"]] <- create_reactval("weather", cached_data)
+      cached_data <- get_cached_weather(cache_key, df)
+      if (!is.null(cached_data) && cached_data$valid) {
+        resclimate(cached_data$data)
+        dfs[["weather"]] <- create_reactval("weather", cached_data$data)
         sendSweetAlert(
           session = session,
           title = "Dados obtidos do cache!",
-          text = "As informações climáticas foram recuperadas do cache.",
+          text = paste("As informações climáticas foram recuperadas do cache (fonte:", cached_data$source, ")."),
           type = "success"
         )
         return()
@@ -557,123 +720,118 @@ mod_weather_server <- function(id, dfs) {
       rv$api_in_progress <- TRUE
       rv$processing_error <- NULL
       
-      # Adicionar feedback visual
-      shinybusy::show_modal_spinner(
-        spin = "orbit", 
-        text = paste0("Obtendo dados climáticos para ", nrow(df), " locais. Por favor, aguarde...")
-      )
-      
-      # Determinar número de lotes baseado no número de pontos (otimização para grandes conjuntos)
+      # Determinar número de lotes baseado no número de pontos
       batch_size <- ifelse(nrow(df) > 10, 5, nrow(df))
       total_batches <- ceiling(nrow(df) / batch_size)
       
       # Estrutura para armazenar resultados
       all_weather_data <- NULL
       
-      # Processamento em lotes para grandes conjuntos de pontos
-      withCallingHandlers({
-        # Se for um conjunto grande, processar em lotes
-        if (nrow(df) > batch_size) {
-          for (i in 1:total_batches) {
-            # Atualizar mensagem do spinner
-            shinybusy::update_modal_spinner(
-              text = sprintf("Processando lote %d de %d...", i, total_batches)
-            )
-            
-            # Determinar índices do lote atual
-            start_idx <- (i-1) * batch_size + 1
-            end_idx <- min(i * batch_size, nrow(df))
-            batch_df <- df[start_idx:end_idx, ]
-            
-            # Buscar dados para o lote
-            batch_weather <- get_climate(
-              env = batch_df$env,
+      # Usar withProgress para aproveitar o progressR existente
+      withProgress(message = 'Obtendo dados climáticos...', value = 0, {
+        # Processamento em lotes para grandes conjuntos de pontos
+        tryCatch({
+          # Se for um conjunto grande, processar em lotes
+          if (nrow(df) > batch_size) {
+            for (i in 1:total_batches) {
+              # Atualizar barra de progresso
+              incProgress(1/total_batches, 
+                          detail = sprintf("Processando lote %d de %d...", i, total_batches))
+              
+              # Determinar índices do lote atual
+              start_idx <- (i-1) * batch_size + 1
+              end_idx <- min(i * batch_size, nrow(df))
+              batch_df <- df[start_idx:end_idx, ]
+              
+              # Buscar dados para o lote
+              batch_weather <- get_climate(
+                env = batch_df$env,
+                params = input$params,
+                lat = batch_df$lat,
+                lon = batch_df$lon,
+                start = batch_df$start,
+                end = batch_df$end,
+                scale = input$scale,
+                parallel = input$parallel,
+                workers = input$ncores,
+                environment = "shiny"
+              )
+              
+              # Acumular resultados
+              if (is.null(all_weather_data)) {
+                all_weather_data <- batch_weather
+              } else {
+                all_weather_data <- rbind(all_weather_data, batch_weather)
+              }
+            }
+          } else {
+            # Para conjuntos pequenos, processar normalmente
+            incProgress(0.5, detail = "Obtendo dados da API...")
+            all_weather_data <- get_climate(
+              env = df$env,
               params = input$params,
-              lat = batch_df$lat,
-              lon = batch_df$lon,
-              start = batch_df$start,
-              end = batch_df$end,
+              lat = df$lat,
+              lon = df$lon,
+              start = df$start,
+              end = df$end,
               scale = input$scale,
               parallel = input$parallel,
               workers = input$ncores,
               environment = "shiny"
             )
+          }
+          
+          # Processamento de GDD se necessário
+          if (input$computegdd) {
+            incProgress(0.2, detail = "Calculando parâmetros térmicos...")
             
-            # Acumular resultados
-            if (is.null(all_weather_data)) {
-              all_weather_data <- batch_weather
-            } else {
-              all_weather_data <- rbind(all_weather_data, batch_weather)
+            # Verificar se os parâmetros necessários estão disponíveis
+            if (!all(c("T2M_MIN", "T2M_MAX") %in% colnames(all_weather_data))) {
+              stop("Para calcular GDD, certifique-se de que T2M_MIN e T2M_MAX estão listados nos parâmetros selecionados.")
             }
-          }
-        } else {
-          # Para conjuntos pequenos, processar normalmente
-          all_weather_data <- get_climate(
-            env = df$env,
-            params = input$params,
-            lat = df$lat,
-            lon = df$lon,
-            start = df$start,
-            end = df$end,
-            scale = input$scale,
-            parallel = input$parallel,
-            workers = input$ncores,
-            environment = "shiny"
-          )
-        }
-        
-        # Processamento de GDD se necessário
-        if (input$computegdd) {
-          shinybusy::update_modal_spinner(
-            text = "Calculando parâmetros térmicos..."
-          )
-          
-          # Verificar se os parâmetros necessários estão disponíveis
-          if (!all(c("T2M_MIN", "T2M_MAX") %in% colnames(all_weather_data))) {
-            stop("Para calcular GDD, certifique-se de que T2M_MIN e T2M_MAX estão listados nos parâmetros selecionados.")
+            
+            all_weather_data <- gdd_ometto_frue(
+              all_weather_data,
+              Tbase = input$basemin,
+              Tceil = input$baseupp,
+              Topt1 = input$optimallower,
+              Topt2 = input$optimalupper
+            )
           }
           
-          all_weather_data <- gdd_ometto_frue(
-            all_weather_data,
-            Tbase = input$basemin,
-            Tceil = input$baseupp,
-            Topt1 = input$optimallower,
-            Topt2 = input$optimalupper
+          incProgress(0.8, detail = "Finalizando...")
+          
+          # Salvar no cache e atualizar variáveis reativas
+          save_to_cache(cache_key, all_weather_data)
+          resclimate(all_weather_data)
+          dfs[["weather"]] <- create_reactval("weather", all_weather_data)
+          
+          # Desativar estado de processamento
+          rv$api_in_progress <- FALSE
+          
+          # Notificar sucesso
+          sendSweetAlert(
+            session = session,
+            title = "Dados obtidos com sucesso!",
+            text = sprintf("Foram processados dados para %d locais com %d parâmetros climáticos.", 
+                          length(unique(all_weather_data$ENV)), 
+                          length(input$params)),
+            type = "success"
           )
-        }
-        
-        # Salvar no cache e atualizar variáveis reativas
-        save_to_cache(cache_key, all_weather_data)
-        resclimate(all_weather_data)
-        dfs[["weather"]] <- create_reactval("weather", all_weather_data)
-        
-        # Desativar estado de processamento
-        rv$api_in_progress <- FALSE
-        
-        # Remover spinner e notificar sucesso
-        shinybusy::remove_modal_spinner()
-        sendSweetAlert(
-          session = session,
-          title = "Dados obtidos com sucesso!",
-          text = sprintf("Foram processados dados para %d locais com %d parâmetros climáticos.", 
-                         length(unique(all_weather_data$ENV)), 
-                         length(input$params)),
-          type = "success"
-        )
-      },
-      error = function(e) {
-        # Desativar estado de processamento
-        rv$api_in_progress <- FALSE
-        rv$processing_error <- e$message
-        
-        # Remover spinner e notificar erro
-        shinybusy::remove_modal_spinner()
-        sendSweetAlert(
-          session = session,
-          title = "Erro ao obter dados",
-          text = paste("Ocorreu um erro ao buscar dados climáticos:", e$message),
-          type = "error"
-        )
+        },
+        error = function(e) {
+          # Desativar estado de processamento
+          rv$api_in_progress <- FALSE
+          rv$processing_error <- e$message
+          
+          # Notificar erro
+          sendSweetAlert(
+            session = session,
+            title = "Erro ao obter dados",
+            text = paste("Ocorreu um erro ao buscar dados climáticos:", e$message),
+            type = "error"
+          )
+        })
       })
     })
 
@@ -681,16 +839,18 @@ mod_weather_server <- function(id, dfs) {
     output$weather_table <- reactable::renderReactable({
       req(resclimate())
       
-      # Indicar que a renderização está em andamento
-      shinyjs::show("loading-weather-table")
-      
-      tryCatch({
+      # Usar withProgress para aproveitar a barra de progresso existente
+      withProgress(message = 'Carregando dados...', value = 0, {
+        incProgress(0.3)
+        
         # Otimizar dados para a exibição
         formatted_data <- resclimate() |>
           roundcols(digits = 3)
         
+        incProgress(0.7)
+        
         # Renderizar a tabela com configurações otimizadas
-        table <- formatted_data |>
+        formatted_data |>
           render_reactable(
             filterable = TRUE,
             searchable = TRUE,
@@ -706,20 +866,6 @@ mod_weather_server <- function(id, dfs) {
             showPageSizeOptions = TRUE,
             pageSizeOptions = c(10, 15, 25, 50, 100)
           )
-        
-        # Remover a indicação de carregamento
-        shinyjs::hide("loading-weather-table")
-        
-        return(table)
-      }, error = function(e) {
-        # Remover a indicação de carregamento em caso de erro
-        shinyjs::hide("loading-weather-table")
-        
-        # Exibir mensagem de erro na tabela
-        render_reactable(
-          data.frame(Erro = paste("Erro ao renderizar dados:", e$message)),
-          max_width = NULL
-        )
       })
     })
 
@@ -965,6 +1111,159 @@ mod_weather_server <- function(id, dfs) {
             )
         })
       })
+    })
+
+    # Adicionar botão de limpeza de cache na UI
+    output$cache_status_ui <- renderUI({
+      if (!is.null(rv$cache) && length(rv$cache) > 0) {
+        div(
+          style = "margin-top: 10px;",
+          fluidRow(
+            col_12(
+              dropdown(
+                inputId = ns("cache_dropdown"),
+                label = "Gerenciar Cache",
+                icon = icon("database"),
+                status = "info",
+                size = "xs",
+                right = TRUE,
+                tooltip = tooltipOptions(title = "Opções de gerenciamento do cache climático"),
+                fluidRow(
+                  col_12(
+                    tags$b("Status do Cache:"),
+                    tags$p(paste("Itens em memória:", length(rv$cache))),
+                    actionButton(
+                      inputId = ns("clear_cache"),
+                      label = "Limpar Cache",
+                      icon = icon("trash"),
+                      class = "btn-danger btn-sm",
+                      width = "100%"
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      } else {
+        NULL
+      }
+    })
+
+    # Evento para limpar o cache quando o botão for pressionado
+    observeEvent(input$clear_cache, {
+      result <- clean_weather_cache()
+      sendSweetAlert(
+        session = session,
+        title = "Cache Limpo",
+        text = paste0("Cache em memória e em disco foi removido. ",
+                     if (result$disk_cleared) paste0(result$files_removed, " arquivos excluídos.") else ""),
+        type = "success"
+      )
+    })
+
+    # Atualizar a função de obtenção de dados para usar corretamente o cache
+    observeEvent(input$get_weather, {
+      df <- coords()
+      req(df, nrow(df) > 0)
+      
+      # Evitar múltiplas chamadas simultâneas
+      if (rv$api_in_progress) {
+        sendSweetAlert(
+          session = session,
+          title = "Processamento em andamento",
+          text = "Já existe uma solicitação de dados em andamento. Por favor, aguarde.",
+          type = "warning"
+        )
+        return()
+      }
+      
+      # Gerar chave de cache
+      cache_key <- generate_cache_key(df, input$params, input$scale)
+      
+      # Verificar se os dados já estão no cache
+      cached_result <- get_cached_weather(cache_key, df)
+      if (!is.null(cached_result) && cached_result$valid) {
+        cached_data <- cached_result$data
+        
+        # Verificar se todas as datas solicitadas estão no cache
+        date_ranges <- lapply(1:nrow(df), function(i) {
+          start_date <- as.Date(df$start[i])
+          end_date <- as.Date(df$end[i])
+          env_name <- df$env[i]
+          
+          # Filtrar dados para este ambiente específico
+          env_data <- cached_data[cached_data$ENV == env_name, ]
+          
+          # Extrair datas únicas do cache para este ambiente
+          if (nrow(env_data) > 0 && "YYYYMMDD" %in% colnames(env_data)) {
+            env_dates <- as.Date(env_data$YYYYMMDD, format = "%Y%m%d")
+            
+            # Verificar a cobertura de datas
+            all_requested_dates <- seq.Date(start_date, end_date, by = "day")
+            missing_dates <- all_requested_dates[!all_requested_dates %in% env_dates]
+            
+            list(
+              env = env_name,
+              start = start_date,
+              end = end_date,
+              covered = length(missing_dates) == 0,
+              missing_count = length(missing_dates),
+              cache_count = length(unique(env_dates))
+            )
+          } else {
+            list(
+              env = env_name,
+              start = start_date,
+              end = end_date,
+              covered = FALSE,
+              missing_count = difftime(end_date, start_date, units = "days") + 1,
+              cache_count = 0
+            )
+          }
+        })
+        
+        # Verificar se todas as datas estão cobertas para todos os ambientes
+        all_covered <- all(sapply(date_ranges, function(x) x$covered))
+        
+        if (all_covered) {
+          # Tudo já está no cache, podemos usar
+          resclimate(cached_data)
+          dfs[["weather"]] <- create_reactval("weather", cached_data)
+          
+          # Informações detalhadas sobre o cache
+          cache_info <- paste0(
+            "Fonte: ", cached_result$source, "\n",
+            "Ambientes: ", length(unique(cached_data$ENV)), "\n",
+            "Parâmetros: ", length(input$params), "\n",
+            "Datas: ", min(as.Date(cached_data$YYYYMMDD, format = "%Y%m%d")), " a ", 
+            max(as.Date(cached_data$YYYYMMDD, format = "%Y%m%d"))
+          )
+          
+          sendSweetAlert(
+            session = session,
+            title = "Dados obtidos do cache!",
+            text = paste0("As informações climáticas foram recuperadas do cache.\n\n", cache_info),
+            type = "success"
+          )
+          return()
+        } else {
+          # Cache parcial ou inválido - precisamos buscar dados novos
+          missing_summary <- paste(sapply(date_ranges[!sapply(date_ranges, function(x) x$covered)], 
+                                        function(x) {
+                                          paste0(x$env, ": ", x$missing_count, " dias não encontrados no cache")
+                                        }), 
+                                 collapse = "\n")
+          
+          sendSweetAlert(
+            session = session,
+            title = "Cache parcial ou inválido",
+            text = paste0("Alguns dados solicitados não estão no cache ou são inválidos. Buscando dados novos.\n\n", 
+                         missing_summary),
+            type = "info"
+          )
+        }
+      }
     })
   })
 }
