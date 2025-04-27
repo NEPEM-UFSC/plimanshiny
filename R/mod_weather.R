@@ -1122,7 +1122,7 @@ mod_weather_server <- function(id, dfs) {
             col_12(
               dropdown(
                 inputId = ns("cache_dropdown"),
-                label = "Gerenciar Cache",
+                label = "Cache manager",
                 icon = icon("database"),
                 status = "info",
                 size = "xs",
