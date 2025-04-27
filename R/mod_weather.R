@@ -86,17 +86,23 @@ mod_weather_ui <- function(id) {
                   status = "success"
                 ),
                 hl(),
-                prettyCheckbox(
+                prettySwitch(
                   inputId = ns("computegdd"),
                   label = "Compute thermal parameters",
                   value = FALSE,
-                  shape = "curve",
                   status = "success",
-                  icon = icon("check"),
-                  animation = "rotate"
+                  fill = TRUE
                 ),
                 conditionalPanel(
-                  condition = "input.computegdd", ns = ns,
+                  condition = "input.computegdd == true", ns = ns,
+                  fluidRow(
+                    col_12(
+                      div(
+                        style = "background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 15px;",
+                        HTML("<b>Degree-days</b>: A measure of heat accumulation needed for plant/insect development. It's calculated using base temperatures below which development stops.")
+                      )
+                    )
+                  ),
                   fluidRow(
                     col_3(
                       numericInput(ns("basemin"),
@@ -121,6 +127,44 @@ mod_weather_ui <- function(id) {
                                    label = "Topt upper (ºC)",
                                    value = 32,
                                    step = 0.1)
+                    )
+                  ),
+                  hl(),
+                  fluidRow(
+                    col_12(
+                      div(
+                        style = "background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 15px;",
+                        HTML("<b>Chilling hours</b>: Hours accumulated when temperatures are in specific ranges needed for breaking dormancy in fruit trees and other perennial plants.")
+                      )
+                    )
+                  ),
+                  fluidRow(
+                    col_4(
+                      prettySwitch(
+                        inputId = ns("ch_weinberger"),
+                        label = "Chilling hours - Weinberger",
+                        value = FALSE,
+                        status = "success",
+                        fill = TRUE
+                      )
+                    ),
+                    col_4(
+                      prettySwitch(
+                        inputId = ns("ch_utah"),
+                        label = "Chilling hours - Utah",
+                        value = FALSE,
+                        status = "success",
+                        fill = TRUE
+                      )
+                    ),
+                    col_4(
+                      prettySwitch(
+                        inputId = ns("ch_northcarolina"),
+                        label = "Chilling hours - North Carolina",
+                        value = FALSE,
+                        status = "success",
+                        fill = TRUE
+                      )
                     )
                   )
                 ),
@@ -781,15 +825,16 @@ mod_weather_server <- function(id, dfs) {
             )
           }
           
-          # Processamento de GDD se necessário
+          # Processamento de GDD e chilling hours se necessário
           if (input$computegdd) {
             incProgress(0.2, detail = "Calculating thermal parameters...")
             
-            # Verificar se os parâmetros necessários estão disponíveis
+            # Verificar se os parâmetros necessários estão disponíveis para GDD
             if (!all(c("T2M_MIN", "T2M_MAX") %in% colnames(all_weather_data))) {
               stop("To calculate GDD, make sure that T2M_MIN and T2M_MAX are listed in the selected parameters.")
             }
             
+            # Calcular degree-days
             all_weather_data <- gdd_ometto_frue(
               all_weather_data,
               Tbase = input$basemin,
@@ -797,6 +842,22 @@ mod_weather_server <- function(id, dfs) {
               Topt1 = input$optimallower,
               Topt2 = input$optimalupper
             )
+            
+            # Calcular chilling hours pelos diferentes métodos quando selecionados
+            if (input$ch_weinberger) {
+              incProgress(0.05, detail = "Calculating Weinberger chilling hours...")
+              all_weather_data <- calculate_weinberger_ch(all_weather_data)
+            }
+            
+            if (input$ch_utah) {
+              incProgress(0.05, detail = "Calculating Utah chilling hours...")
+              all_weather_data <- calculate_utah_ch(all_weather_data)
+            }
+            
+            if (input$ch_northcarolina) {
+              incProgress(0.05, detail = "Calculating North Carolina chilling hours...")
+              all_weather_data <- calculate_nc_ch(all_weather_data)
+            }
           }
           
           incProgress(0.8, detail = "Finalizing...")
@@ -1267,8 +1328,120 @@ mod_weather_server <- function(id, dfs) {
   })
 }
 
-
-
+# Função para calcular horas de frio pelo método Weinberger
+    calculate_weinberger_ch <- function(data) {
+      # O método Weinberger conta as horas abaixo de 7.2°C
+      if (!all(c("T2M", "HOUR") %in% colnames(data))) {
+        warning("T2M or HOUR columns required for Weinberger chilling hours calculation")
+        return(data)
+      }
+      
+      # Calcular horas de frio diárias
+      ch_data <- data %>%
+        dplyr::mutate(CH_Weinberger = ifelse(T2M < 7.2, 1, 0))
+      
+      # Se os dados forem horários, agrupar por dia
+      if ("HOUR" %in% colnames(ch_data)) {
+        ch_data <- ch_data %>%
+          dplyr::group_by(ENV, YYYYMMDD) %>%
+          dplyr::mutate(CH_Weinberger_daily = sum(CH_Weinberger, na.rm = TRUE)) %>%
+          dplyr::ungroup()
+      }
+      
+      # Adicionar acumulado
+      ch_data <- ch_data %>%
+        dplyr::group_by(ENV) %>%
+        dplyr::mutate(CH_Weinberger_accum = cumsum(replace_na(CH_Weinberger, 0))) %>%
+        dplyr::ungroup()
+      
+      return(ch_data)
+    }
+    
+    # Função para calcular horas de frio pelo método Utah
+    calculate_utah_ch <- function(data) {
+      # O método Utah atribui diferentes pesos para diferentes faixas de temperatura
+      if (!all(c("T2M", "HOUR") %in% colnames(data))) {
+        warning("T2M or HOUR columns required for Utah chilling hours calculation")
+        return(data)
+      }
+      
+      # Pesos conforme o modelo Utah
+      ch_data <- data %>%
+        dplyr::mutate(
+          CH_Utah = case_when(
+            T2M < 1.4 ~ 0,
+            T2M >= 1.4 & T2M < 2.4 ~ 0.5,
+            T2M >= 2.4 & T2M < 9.1 ~ 1.0,
+            T2M >= 9.1 & T2M < 12.4 ~ 0.5,
+            T2M >= 12.4 & T2M < 15.9 ~ 0,
+            T2M >= 15.9 & T2M < 18.0 ~ -0.5,
+            T2M >= 18.0 ~ -1.0,
+            TRUE ~ 0
+          )
+        )
+      
+      # Se os dados forem horários, agrupar por dia
+      if ("HOUR" %in% colnames(ch_data)) {
+        ch_data <- ch_data %>%
+          dplyr::group_by(ENV, YYYYMMDD) %>%
+          dplyr::mutate(CH_Utah_daily = sum(CH_Utah, na.rm = TRUE)) %>%
+          dplyr::ungroup()
+      }
+      
+      # Adicionar acumulado
+      ch_data <- ch_data %>%
+        dplyr::group_by(ENV) %>%
+        dplyr::mutate(
+          # No modelo Utah, o acumulado não pode ser negativo
+          CH_Utah_accum = pmax(0, cumsum(replace_na(CH_Utah, 0)))
+        ) %>%
+        dplyr::ungroup()
+      
+      return(ch_data)
+    }
+    
+    # Função para calcular horas de frio pelo método North Carolina
+    calculate_nc_ch <- function(data) {
+      # North Carolina model (adaptação do modelo Utah para climas mais amenos)
+      if (!all(c("T2M", "HOUR") %in% colnames(data))) {
+        warning("T2M or HOUR columns required for North Carolina chilling hours calculation")
+        return(data)
+      }
+      
+      # Pesos conforme o modelo North Carolina
+      ch_data <- data %>%
+        dplyr::mutate(
+          CH_NC = case_when(
+            T2M < 1.4 ~ 0,
+            T2M >= 1.4 & T2M < 7.2 ~ 1.0,
+            T2M >= 7.2 & T2M < 13.0 ~ 0.5,
+            T2M >= 13.0 & T2M < 16.5 ~ 0,
+            T2M >= 16.5 & T2M < 19.0 ~ -0.5,
+            T2M >= 19.0 & T2M < 20.7 ~ -1.0,
+            T2M >= 20.7 ~ -2.0,
+            TRUE ~ 0
+          )
+        )
+      
+      # Se os dados forem horários, agrupar por dia
+      if ("HOUR" %in% colnames(ch_data)) {
+        ch_data <- ch_data %>%
+          dplyr::group_by(ENV, YYYYMMDD) %>%
+          dplyr::mutate(CH_NC_daily = sum(CH_NC, na.rm = TRUE)) %>%
+          dplyr::ungroup()
+      }
+      
+      # Adicionar acumulado
+      ch_data <- ch_data %>%
+        dplyr::group_by(ENV) %>%
+        dplyr::mutate(
+          # Acumulado não pode ser negativo
+          CH_NC_accum = pmax(0, cumsum(replace_na(CH_NC, 0)))
+        ) %>%
+        dplyr::ungroup()
+      
+      return(ch_data)
+    }
 ## To be copied in the UI
 # mod_weather_ui("weather_1")
 
