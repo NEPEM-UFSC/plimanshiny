@@ -255,6 +255,30 @@ mod_weather_server <- function(id, dfs) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
+    # Definir todos os reactiveValues logo no início
+    points <- reactiveValues(data = list())
+    resclimate <- reactiveVal(NULL)  # Inicialização da variável reativa
+    
+    # Adicionar variáveis para controle de estado e cache
+    rv <- reactiveValues(
+      api_in_progress = FALSE,
+      last_api_call = NULL,
+      cache = list(),
+      processing_error = NULL
+    )
+    
+    # Função para verificar duplicatas
+    is_duplicate_point <- function(new_lat, new_lon) {
+      if (length(points$data) == 0) return(FALSE)
+      
+      existing_points <- do.call(rbind, points$data)
+      if (is.null(existing_points)) return(FALSE)
+      
+      existing_points <- as.data.frame(existing_points)
+      any(round(as.numeric(existing_points$lat), 4) == round(new_lat, 4) & 
+          round(as.numeric(existing_points$lon), 4) == round(new_lon, 4))
+    }
+
     observe({
       if(input$parallel) {
         shinyjs::enable("ncores")
@@ -266,14 +290,13 @@ mod_weather_server <- function(id, dfs) {
         shinyjs::disable("ncores")
       }
     })
+    
     # Armazena todos os pontos clicados
     coords <- reactive({
       if (length(points$data) == 0) return(NULL)
       df <- do.call(rbind, points$data)
       as.data.frame(df)
     })
-
-    points <- reactiveValues(data = list())
 
     # Renderiza o mapa inicial
     output$map2 <- renderLeaflet({
@@ -284,47 +307,38 @@ mod_weather_server <- function(id, dfs) {
         addLayersControl(
           baseGroups = c(
             "OpenStreetMap",
-            "Esri World Imagery"  # Small typo: you wrote "Esri World Terrain" earlier!
+            "Esri World Imagery"
           ),
           options = layersControlOptions(collapsed = TRUE)
         ) |>
         hideGroup("Esri World Imagery")
     })
 
-    # Adiciona um novo ponto ao data.frame existente
     observeEvent(input$map2_click, {
       click <- input$map2_click
-      new_point <- data.frame(
-        env = input$envname,
-        lat = round(click$lat, 4),
-        lon = round(click$lng, 4),
-        start = input$dates[[1]],
-        end = input$dates[[2]]
-      )
-      points$data[[length(points$data) + 1]] <- new_point
-    })
+      new_lat <- round(click$lat, 4)
+      new_lon <- round(click$lng, 4)
 
-    observe({
-      if(input$use_mun) {
-        req(input$state)
-        listmun <-
-          read.csv(file = system.file("app/www/coords_muni.csv", package = "plimanshiny", mustWork = TRUE), sep = ",") |>
-          dplyr::filter(abbrev_state %in% input$state)
-
-        # Atualiza a lista de municípios com base no estado selecionado
-        updatePickerInput(
-          session,
-          "mun",
-          choices = listmun$name_muni,
-          selected = NA
+      # Verifica se já existe um ponto com essas coordenadas
+      if (!is_duplicate_point(new_lat, new_lon)) {
+        new_point <- data.frame(
+          env = input$envname,
+          lat = new_lat, 
+          lon = new_lon,
+          start = input$dates[[1]],
+          end = input$dates[[2]],
+          stringsAsFactors = FALSE
         )
+        points$data[[length(points$data) + 1]] <- new_point
       }
     })
+
     observeEvent(input$clear_points, {
       points$data <- list()
       leafletProxy("map2") |>
         clearMarkers()
     })
+
     observeEvent(input$mun, {
       req(input$state, input$mun)
 
@@ -335,33 +349,45 @@ mod_weather_server <- function(id, dfs) {
                                     name_muni %in% input$mun) |>
         dplyr::arrange(abbrev_state, name_muni)
 
-      new_points <- purrr::pmap(
-        list(selected_mun$name_muni, selected_mun$lat, selected_mun$lon),
-        function(env, lat, lon) {
-          data.frame(
-            env = env,
-            lat = round(lat, 4),
-            lon = round(lon, 4),
+      # Processar cada município selecionado
+      for (i in 1:nrow(selected_mun)) {
+        mun_info <- selected_mun[i, ]
+        new_lat <- round(mun_info$lat, 4)
+        new_lon <- round(mun_info$lon, 4)
+        
+        # Verificar duplicatas usando a função auxiliar
+        if (!is_duplicate_point(new_lat, new_lon)) {
+          new_point <- data.frame(
+            env = mun_info$name_muni,
+            lat = new_lat,
+            lon = new_lon,
             start = input$dates[[1]],
             end = input$dates[[2]],
             stringsAsFactors = FALSE
           )
+          points$data[[length(points$data) + 1]] <- new_point
         }
-      )
-
-      # Adiciona cada município selecionado como um novo ponto
-      for (pt in new_points) {
-        points$data[[length(points$data) + 1]] <- pt
       }
     })
 
+    observe({
+      req(input$state)
+      listmun <-
+        read.csv(file = system.file("app/www/coords_muni.csv", package = "plimanshiny", mustWork = TRUE), sep = ",") |>
+        dplyr::filter(abbrev_state %in% input$state)
 
+      # Atualiza a lista de municípios com base no estado selecionado
+      updatePickerInput(
+        session,
+        "mun",
+        choices = listmun$name_muni,
+        selected = NULL
+      )
+    })
 
     # Obtém o clima apenas para o último ponto clicado
     output$latlondata <- DT::renderDT({
       req(length(points$data) > 0)
-
-      # monta data.frame dos pontos
       points_df <- isolate(do.call(rbind, points$data))
       points_df <- as.data.frame(points_df, stringsAsFactors = FALSE)
       colnames(points_df) <- c("env", "lat", "lon", "start", "end")
@@ -404,7 +430,6 @@ mod_weather_server <- function(id, dfs) {
       })
     })
 
-    # Atualiza os marcadores sempre que pontos mudarem
     observe({
       if(is.null(nrow(coords()))){
         updateTextInput(session, "envname", value = "ENV_1")
@@ -412,7 +437,7 @@ mod_weather_server <- function(id, dfs) {
         updateTextInput(session, "envname", value = paste0("ENV_", nrow(coords()) + 1))
       }
       df <- coords()
-      req(nrow(df) > 0)
+      req(df, nrow(df) > 0)
       leafletProxy("map2") |>
         clearMarkers() |>
         addMarkers(
@@ -421,7 +446,6 @@ mod_weather_server <- function(id, dfs) {
           popup = paste0("Env:", df$env, "<br>Lat: ", df$lat, "<br>Lon: ", df$lon)
         )
     })
-
 
     observe({
       nasaparams <- read.csv(file = system.file("app/www/nasaparams.csv", package = "plimanshiny", mustWork = TRUE), sep = ",")
@@ -435,96 +459,335 @@ mod_weather_server <- function(id, dfs) {
         updatePickerInput(session, "params",
                           choices = suitableparams,
                           selected = c("T2M", "T2M_MIN", "T2M_MAX", "T2M_RANGE",  "RH2M", "PRECTOTCORR", "PS", "WS2M", "WD2M", "GWETTOP", "GWETROOT"))
-      } else  if(input$scale == "monthly"){
+      } else if(input$scale == "monthly"){
         suitableparams <- nasaparams[nasaparams$level == "monthly", ]$abbreviation
         updatePickerInput(session, "params",
                           choices = suitableparams,
                           selected = c("T2M", "T2M_MIN", "T2M_MAX", "T2M_RANGE",  "RH2M", "PRECTOTCORR", "PS", "WS2M", "WD2M", "GWETTOP", "GWETROOT"))
       }
-
     })
 
-    resclimate <- reactiveVal()
+    # Função para gerar uma chave de cache única para cada consulta climática
+    generate_cache_key <- function(df, params, scale) {
+      # Combina todos os parâmetros da consulta em uma string única
+      coords_str <- paste(df$lat, df$lon, df$start, df$end, collapse = "_")
+      params_str <- paste(params, collapse = "_")
+      paste(coords_str, params_str, scale, sep = "_")
+    }
+    
+    # Função para verificar e utilizar o cache
+    get_cached_weather <- function(cache_key) {
+      if (!is.null(rv$cache[[cache_key]])) {
+        return(rv$cache[[cache_key]])
+      }
+      return(NULL)
+    }
+    
+    # Função para salvar no cache
+    save_to_cache <- function(cache_key, data) {
+      # Limitar o tamanho do cache (manter apenas os últimos 5 resultados)
+      if (length(rv$cache) > 5) {
+        oldest_key <- names(rv$cache)[1]
+        rv$cache[[oldest_key]] <- NULL
+      }
+      rv$cache[[cache_key]] <- data
+    }
+
+    # Adicionar elementos de UI ao início do módulo para feedback visual
+    output$loading_indicator <- renderUI({
+      div(
+        id = ns("loading-weather-table"),
+        style = "display: none;",
+        div(
+          class = "text-center",
+          tags$div(class = "spinner-border text-primary", role = "status"),
+          tags$p("Processando dados...")
+        )
+      )
+    })
+    
+    # Agrupamento inteligente de dados para visualização eficiente
+    smart_group_data <- function(data, max_points = 5000) {
+      if (nrow(data) <= max_points) {
+        return(data)
+      }
+      
+      # Se tivermos muitos pontos, agrupar por data e ambiente
+      grouped_data <- data %>%
+        dplyr::group_by(ENV, YYYYMMDD) %>%
+        dplyr::summarise(across(where(is.numeric), mean, na.rm = TRUE)) %>%
+        dplyr::ungroup()
+      
+      return(grouped_data)
+    }
 
     observeEvent(input$get_weather, {
       df <- coords()
-      req(nrow(df) > 0)
-
-      weather <-
-        get_climate(
-        env = df$env,
-        params = input$params,
-        lat = df$lat,
-        lon = df$lon,
-        start = df$start,
-        end = df$end,
-        scale = input$scale,
-        parallel = input$parallel,
-        workers = input$ncores,
-        environment = "shiny"
+      req(df, nrow(df) > 0)
+      
+      # Evitar múltiplas chamadas simultâneas
+      if (rv$api_in_progress) {
+        sendSweetAlert(
+          session = session,
+          title = "Processamento em andamento",
+          text = "Já existe uma solicitação de dados em andamento. Por favor, aguarde.",
+          type = "warning"
+        )
+        return()
+      }
+      
+      # Gerar chave de cache
+      cache_key <- generate_cache_key(df, input$params, input$scale)
+      
+      # Verificar se os dados já estão no cache
+      cached_data <- get_cached_weather(cache_key)
+      if (!is.null(cached_data)) {
+        resclimate(cached_data)
+        dfs[["weather"]] <- create_reactval("weather", cached_data)
+        sendSweetAlert(
+          session = session,
+          title = "Dados obtidos do cache!",
+          text = "As informações climáticas foram recuperadas do cache.",
+          type = "success"
+        )
+        return()
+      }
+      
+      # Definir estado de processamento
+      rv$api_in_progress <- TRUE
+      rv$processing_error <- NULL
+      
+      # Adicionar feedback visual
+      shinybusy::show_modal_spinner(
+        spin = "orbit", 
+        text = paste0("Obtendo dados climáticos para ", nrow(df), " locais. Por favor, aguarde...")
       )
-      if (input$computegdd) {
-        # Check if T2M_MIN and T2M_MAX are in weather
-        if (!all(c("T2M_MIN", "T2M_MAX") %in% colnames(weather))) {
-
-          sendSweetAlert(
-            session = session,
-            title = "Warning",
-            text = "To compute GDD, ensure T2M_MIN and T2M_MAX are listed in the selected parameters.",
-            type = "error"
-          )
-
-          return()
+      
+      # Determinar número de lotes baseado no número de pontos (otimização para grandes conjuntos)
+      batch_size <- ifelse(nrow(df) > 10, 5, nrow(df))
+      total_batches <- ceiling(nrow(df) / batch_size)
+      
+      # Estrutura para armazenar resultados
+      all_weather_data <- NULL
+      
+      # Processamento em lotes para grandes conjuntos de pontos
+      withCallingHandlers({
+        # Se for um conjunto grande, processar em lotes
+        if (nrow(df) > batch_size) {
+          for (i in 1:total_batches) {
+            # Atualizar mensagem do spinner
+            shinybusy::update_modal_spinner(
+              text = sprintf("Processando lote %d de %d...", i, total_batches)
+            )
+            
+            # Determinar índices do lote atual
+            start_idx <- (i-1) * batch_size + 1
+            end_idx <- min(i * batch_size, nrow(df))
+            batch_df <- df[start_idx:end_idx, ]
+            
+            # Buscar dados para o lote
+            batch_weather <- get_climate(
+              env = batch_df$env,
+              params = input$params,
+              lat = batch_df$lat,
+              lon = batch_df$lon,
+              start = batch_df$start,
+              end = batch_df$end,
+              scale = input$scale,
+              parallel = input$parallel,
+              workers = input$ncores,
+              environment = "shiny"
+            )
+            
+            # Acumular resultados
+            if (is.null(all_weather_data)) {
+              all_weather_data <- batch_weather
+            } else {
+              all_weather_data <- rbind(all_weather_data, batch_weather)
+            }
+          }
         } else {
-          weather <-
-            gdd_ometto_frue(
-            weather,
+          # Para conjuntos pequenos, processar normalmente
+          all_weather_data <- get_climate(
+            env = df$env,
+            params = input$params,
+            lat = df$lat,
+            lon = df$lon,
+            start = df$start,
+            end = df$end,
+            scale = input$scale,
+            parallel = input$parallel,
+            workers = input$ncores,
+            environment = "shiny"
+          )
+        }
+        
+        # Processamento de GDD se necessário
+        if (input$computegdd) {
+          shinybusy::update_modal_spinner(
+            text = "Calculando parâmetros térmicos..."
+          )
+          
+          # Verificar se os parâmetros necessários estão disponíveis
+          if (!all(c("T2M_MIN", "T2M_MAX") %in% colnames(all_weather_data))) {
+            stop("Para calcular GDD, certifique-se de que T2M_MIN e T2M_MAX estão listados nos parâmetros selecionados.")
+          }
+          
+          all_weather_data <- gdd_ometto_frue(
+            all_weather_data,
             Tbase = input$basemin,
             Tceil = input$baseupp,
             Topt1 = input$optimallower,
             Topt2 = input$optimalupper
           )
         }
-      }
-
-      # If no problem, continue:
-      resclimate(weather)
-      dfs[["weather"]] <- create_reactval("weather", weather)
-
-      sendSweetAlert(
-        session = session,
-        title = "Weather data successfully retrieved!",
-        text = "The climate information has been fetched and is now available for visualization.",
-        type = "success"
-      )
-
+        
+        # Salvar no cache e atualizar variáveis reativas
+        save_to_cache(cache_key, all_weather_data)
+        resclimate(all_weather_data)
+        dfs[["weather"]] <- create_reactval("weather", all_weather_data)
+        
+        # Desativar estado de processamento
+        rv$api_in_progress <- FALSE
+        
+        # Remover spinner e notificar sucesso
+        shinybusy::remove_modal_spinner()
+        sendSweetAlert(
+          session = session,
+          title = "Dados obtidos com sucesso!",
+          text = sprintf("Foram processados dados para %d locais com %d parâmetros climáticos.", 
+                         length(unique(all_weather_data$ENV)), 
+                         length(input$params)),
+          type = "success"
+        )
+      },
+      error = function(e) {
+        # Desativar estado de processamento
+        rv$api_in_progress <- FALSE
+        rv$processing_error <- e$message
+        
+        # Remover spinner e notificar erro
+        shinybusy::remove_modal_spinner()
+        sendSweetAlert(
+          session = session,
+          title = "Erro ao obter dados",
+          text = paste("Ocorreu um erro ao buscar dados climáticos:", e$message),
+          type = "error"
+        )
+      })
     })
 
-    ### SHOW CLIMATE DATA
+    # Melhorar a atualização da tabela com dados climáticos
     output$weather_table <- reactable::renderReactable({
       req(resclimate())
-      resclimate() |>
-        roundcols(digits = 3) |>
-        render_reactable(max_width = NULL)
+      
+      # Indicar que a renderização está em andamento
+      shinyjs::show("loading-weather-table")
+      
+      tryCatch({
+        # Otimizar dados para a exibição
+        formatted_data <- resclimate() |>
+          roundcols(digits = 3)
+        
+        # Renderizar a tabela com configurações otimizadas
+        table <- formatted_data |>
+          render_reactable(
+            filterable = TRUE,
+            searchable = TRUE,
+            sortable = TRUE,
+            resizable = TRUE,
+            max_width = NULL,
+            defaultPageSize = 15,
+            paginationType = "jump",
+            highlight = TRUE,
+            striped = TRUE,
+            compact = TRUE,
+            wrap = FALSE,
+            showPageSizeOptions = TRUE,
+            pageSizeOptions = c(10, 15, 25, 50, 100)
+          )
+        
+        # Remover a indicação de carregamento
+        shinyjs::hide("loading-weather-table")
+        
+        return(table)
+      }, error = function(e) {
+        # Remover a indicação de carregamento em caso de erro
+        shinyjs::hide("loading-weather-table")
+        
+        # Exibir mensagem de erro na tabela
+        render_reactable(
+          data.frame(Erro = paste("Erro ao renderizar dados:", e$message)),
+          max_width = NULL
+        )
+      })
     })
 
     observe({
-      req(resclimate())  # assegura que ambos existem
+      req(resclimate(), nrow(resclimate()) > 0)
+      
       updatePickerInput(session, "variable",
                         choices = colnames(resclimate()),
                         selected = NULL)
     })
+    
     observe({
-      updatePickerInput(session, "facet",
-                        choices = c("none", colnames(resclimate())),
-                        selected = NULL)
+      # Somente atualize o facet quando temos dados de clima disponíveis
+      if (!is.null(resclimate()) && nrow(resclimate()) > 0) {
+        updatePickerInput(session, "facet",
+                          choices = c("none", colnames(resclimate())),
+                          selected = "none")
+      } else {
+        updatePickerInput(session, "facet",
+                          choices = c("none"),
+                          selected = "none")
+      }
     })
 
-
     output$envirotypes_dist <- renderPlotly({
-      req(input$variable, input$facet)
-      p <-
-      ggplot(resclimate(), aes(x = !!rlang::sym(input$variable))) +
+      req(input$variable, input$facet, resclimate(), nrow(resclimate()) > 0)
+      
+      # Aplicar agrupamento inteligente para gráficos com muitos pontos
+      plot_data <- smart_group_data(resclimate())
+      
+      # Verificar se a variável selecionada existe no conjunto de dados
+      if (!input$variable %in% colnames(plot_data)) {
+        return(
+          plotly::plot_ly() %>%
+            plotly::add_annotations(
+              text = paste("Variável", input$variable, "não encontrada no conjunto de dados"),
+              showarrow = FALSE,
+              font = list(size = 16)
+            )
+        )
+      }
+      
+      # Tratar o caso de todos os valores NA para a variável selecionada
+      if (all(is.na(plot_data[[input$variable]]))) {
+        return(
+          plotly::plot_ly() %>%
+            plotly::add_annotations(
+              text = paste("Todos os valores para", input$variable, "são NA"),
+              showarrow = FALSE,
+              font = list(size = 16)
+            )
+        )
+      }
+      
+      # Tratar o caso de variáveis com valor constante
+      if (length(unique(na.omit(plot_data[[input$variable]]))) == 1) {
+        const_value <- unique(na.omit(plot_data[[input$variable]]))
+        return(
+          plotly::plot_ly() %>%
+            plotly::add_annotations(
+              text = paste("Variável", input$variable, "tem valor constante:", const_value),
+              showarrow = FALSE,
+              font = list(size = 16)
+            )
+        )
+      }
+      
+      p <- ggplot(plot_data, aes(x = !!rlang::sym(input$variable))) +
         geom_density(fill = "steelblue", alpha = 0.6) +
         theme_minimal(base_size = 16) +
         theme(axis.text.y = element_text(angle = 0)) +
@@ -533,65 +796,176 @@ mod_weather_server <- function(id, dfs) {
           y = "Densidade",
           fill = NULL
         )
-      if(input$facet != "none") {
-        p <- p + facet_wrap(as.formula(paste("~", input$facet)), ncol = 1)
+      
+      if (input$facet != "none") {
+        # Verificar se a variável de facet existe e tem dados válidos
+        if (input$facet %in% colnames(plot_data) && 
+            length(unique(na.omit(plot_data[[input$facet]]))) > 1) {
+          p <- p + facet_wrap(as.formula(paste("~", input$facet)), ncol = 1)
+        } else {
+          # Adicionar anotação ao gráfico se o facet não for válido
+          p <- p + 
+            annotate("text", x = mean(range(plot_data[[input$variable]], na.rm = TRUE)), 
+                   y = 0, label = "Facet inválido ou com valores constantes", 
+                   color = "red", size = 4, vjust = -1)
+        }
       }
-      plotly::ggplotly(p)
+      
+      # Converter para plotly com configurações otimizadas
+      plotly::ggplotly(p) %>%
+        plotly::config(
+          displayModeBar = TRUE,
+          modeBarButtonsToRemove = list('sendDataToCloud', 'zoom2d', 'pan2d', 
+                                       'select2d', 'lasso2d', 'autoScale2d'),
+          displaylogo = FALSE,
+          toImageButtonOptions = list(
+            format = "png",
+            filename = paste0("distribuicao_", input$variable),
+            width = 800,
+            height = 600
+          )
+        )
     })
-
 
     output$envirotypes <- renderPlotly({
-      req(input$quantiles, input$cropdates, input$cropdates_label)
-      quantiles <- as.numeric(unlist(strsplit(input$quantiles, ",")))
-      cropdates <- as.numeric(unlist(strsplit(input$cropdates, ",")))
-      cropdates_label <- unlist(strsplit(input$cropdates_label, ","))
-      req(length(cropdates) == length(cropdates_label))
-
-
-      dfenviro <-
-        envirotype(
-          resclimate() |> drop_na(),
-          datas = cropdates,
-          fases = cropdates_label,
-          var = input$variable,
-          breaks = quantiles,
-          labels = NULL
-        ) |>
-        tidyr::drop_na()
-
-
-      output$dataenviro <- reactable::renderReactable({
-        dfenviro |>
-          dplyr::select(ENV, stage, xcut, Freq, fr) |>
-          setNames(c("Environment", "Crop stage", "Envirotype", "Frequency", "Relative frequency")) |>
-          roundcols(digits = 3) |>
-          render_reactable(max_width = NULL)
+      req(input$quantiles, input$cropdates, input$cropdates_label, 
+          resclimate(), nrow(resclimate()) > 0, input$variable)
+      
+      # Adicionar indicador de carregamento para processamento 
+      withProgress(message = 'Gerando envirotypes...', {
+        # Validar os dados de entrada para evitar erros
+        tryCatch({
+          # Converter e validar as entradas do usuário
+          quantiles <- as.numeric(unlist(strsplit(input$quantiles, ",")))
+          cropdates <- as.numeric(unlist(strsplit(input$cropdates, ",")))
+          cropdates_label <- unlist(strsplit(input$cropdates_label, ","))
+          
+          # Verificações de validação
+          req(length(cropdates) == length(cropdates_label))
+          req(length(quantiles) > 0)
+          
+          # Otimizar conjunto de dados para análise - evitar reamostragem desnecessária
+          plot_data <- resclimate()
+          
+          # Se houver muitos dados, reduzir o tamanho do conjunto para processamento mais rápido
+          if (nrow(plot_data) > 10000) {
+            incProgress(0.2, detail = "Otimizando conjunto de dados...")
+            # Apenas manter pontos relevantes para o período de interesse
+            plot_data <- plot_data %>%
+              dplyr::filter(!is.na(!!rlang::sym(input$variable)))
+            
+            # Se ainda tivermos muitos pontos após filtrar NAs, amostragem estratificada
+            if (nrow(plot_data) > 10000) {
+              # Amostragem estratificada por ambiente
+              env_list <- unique(plot_data$ENV)
+              sampled_data <- lapply(env_list, function(env) {
+                env_data <- plot_data[plot_data$ENV == env, ]
+                if (nrow(env_data) > 5000) {
+                  env_data[sample(nrow(env_data), min(5000, nrow(env_data))), ]
+                } else {
+                  env_data
+                }
+              })
+              plot_data <- do.call(rbind, sampled_data)
+            }
+          }
+          
+          incProgress(0.3, detail = "Calculando envirotypes...")
+          
+          # Usar processamento com tratamento de erro
+          dfenviro <- withCallingHandlers(
+            envirotype(
+              plot_data %>% tidyr::drop_na(),
+              datas = cropdates,
+              fases = cropdates_label,
+              var = input$variable,
+              breaks = quantiles,
+              labels = NULL
+            ) %>%
+              tidyr::drop_na(),
+            error = function(e) {
+              # Capturar erros específicos e fornecer mensagens mais informativas
+              if (grepl("breaks", e$message)) {
+                stop("Erro nos quantis especificados. Certifique-se de que são valores numéricos crescentes.", call. = FALSE)
+              } else if (grepl("date", e$message)) {
+                stop("Erro nas datas especificadas. Verifique o formato e a sequência.", call. = FALSE)
+              } else {
+                stop(paste("Erro ao calcular envirotypes:", e$message), call. = FALSE)
+              }
+            }
+          )
+          
+          # Verificar se temos resultados válidos
+          req(dfenviro, nrow(dfenviro) > 0)
+          
+          incProgress(0.7, detail = "Atualizando visualização...")
+          
+          # Atualizar a tabela com dados processados
+          output$dataenviro <- reactable::renderReactable({
+            dfenviro %>%
+              dplyr::select(ENV, stage, xcut, Freq, fr) %>%
+              setNames(c("Environment", "Crop stage", "Envirotype", "Frequency", "Relative frequency")) %>%
+              roundcols(digits = 3) %>%
+              render_reactable(
+                filterable = TRUE,
+                searchable = TRUE,
+                sortable = TRUE,
+                max_width = NULL,
+                highlight = TRUE,
+                compact = TRUE
+              )
+          })
+          
+          # Criar gráfico com cores consistentes
+          p <- ggplot(dfenviro) +
+            geom_bar(aes(x=Freq, y = ENV, fill = xcut),
+                    position = "fill",
+                    stat = "identity",
+                    width = 1,
+                    color = "white",
+                    size=.2) +
+            facet_wrap(~stage, ncol = 1) +
+            theme_minimal(base_size = 16) +
+            scale_y_discrete(expand = c(0,0))+
+            scale_x_continuous(expand = c(0,0))+
+            # Cores adaptativas para diferentes quantis
+            scale_fill_viridis_d(option = "viridis") +
+            labs(x = 'Frequência relativa',
+                y = "Ambiente",
+                fill='Envirotipo')+
+            theme(axis.title = element_text(size=12),
+                  legend.text = element_text(size=9),
+                  strip.text = element_text(size=12),
+                  legend.title = element_text(size=12),
+                  strip.background = element_rect(fill="gray95",size=1)) +
+            theme(legend.position = "bottom")
+            
+          incProgress(1.0, detail = "Concluído!")
+          
+          # Converter para plotly com configurações otimizadas para interatividade
+          plotly::ggplotly(p) %>%
+            plotly::config(
+              displayModeBar = TRUE,
+              displaylogo = FALSE,
+              modeBarButtonsToRemove = list('sendDataToCloud'),
+              toImageButtonOptions = list(
+                format = "png",
+                filename = paste0("envirotypes_", input$variable),
+                width = 800,
+                height = 600
+              )
+            )
+        }, error = function(e) {
+          # Retornar um gráfico vazio com mensagem de erro detalhada
+          plotly::plot_ly() %>%
+            plotly::add_annotations(
+              text = paste("Erro ao gerar o gráfico:", e$message),
+              showarrow = FALSE,
+              font = list(size = 16, color = "red")
+            )
+        })
       })
-      p <-
-      ggplot(dfenviro) +
-        geom_bar(aes(x=Freq,  y = ENV, fill = xcut),
-                 position = "fill",
-                 stat = "identity",
-                 width = 1,
-                 color = "white",
-                 size=.2) +
-        facet_wrap(~stage, ncol = 1) +
-        theme_minimal(base_size = 16) +
-        scale_y_discrete(expand = c(0,0))+
-        scale_x_continuous(expand = c(0,0))+
-        labs(x = 'Relative frequency',
-             y = "Environment",
-             fill='Envirotype')+
-        theme(axis.title = element_text(size=12),
-              legend.text = element_text(size=9),
-              strip.text = element_text(size=12),
-              legend.title = element_text(size=12),
-              strip.background = element_rect(fill="gray95",size=1)) +
-        theme(legend.position = "bottom")
-      plotly::ggplotly(p)
     })
-
-
   })
 }
 
