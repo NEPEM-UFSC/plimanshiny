@@ -38,6 +38,7 @@ Imports:
     parallel,
     pliman (>= 3.0.0),
     plotly,
+    progressr,
     purrr,
     reactable,
     scales,
