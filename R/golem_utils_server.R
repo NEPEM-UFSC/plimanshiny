@@ -685,11 +685,11 @@ drag_server <- function(id, data = NULL, labels = NULL) {
 show_licence <- function(ns) {
   showModal(
     modalDialog(
-      title = "License Agreement and Terms of Use for the {plimanshiny} Application",
+      title = "License Agreement and Terms of Use for the plimanshiny Application",
       tags$div(
         style = "max-height: 550px; overflow-y: auto; padding-right: 55px;",
         h2("About"),
-        "{plimanshiny} provides an interactive Shiny-based graphical user interface for the pliman package,
+        "plimanshiny provides an interactive Shiny-based graphical user interface for the pliman package,
                 facilitating user-friendly access to advanced plant image analysis tools without the need
                 for extensive programming knowledge. This package integrates a variety of functionalities
                 for high-throughput phenotyping, including but not limited to orthomosaic analysis from drone
@@ -714,13 +714,13 @@ show_licence <- function(ns) {
         br(), br(),
 
         h3("Terms for Commercial Use"),
-        "If your company wishes to use {plimanshiny} for commercial purposes, please contact us at ",
+        "If your company wishes to use plimanshiny for commercial purposes, please contact us at ",
         tags$a(href="mailto:contato@nepemufsc.com", "contato@nepemufsc.com"),
         " to discuss commercial terms and licensing fees.",
         br(), br(),
 
         h3("Penalty Clause"),
-        "Companies that use {plimanshiny} for commercial purposes without proper authorization will
+        "Companies that use plimanshiny for commercial purposes without proper authorization will
           incur a penalty of 0.1% of their gross revenue for each violation. This penalty
           is intended to enforce compliance with the terms of use and to prevent unauthorized commercial
           exploitation of this software.",
