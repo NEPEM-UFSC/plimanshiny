@@ -28,7 +28,7 @@ mod_weather_ui <- function(id) {
               width = 12,
               selected = "Input Parameters",
               icon = icon("gears"),
-              status  = "success",
+              status = "success",
               type = "tabs",
               tabPanel(
                 title = "Input Parameters",
@@ -134,33 +134,37 @@ mod_weather_ui <- function(id) {
                     col_12(
                       div(
                         style = "background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 15px;",
-                        HTML("<b>Chilling hours</b>: Hours accumulated when temperatures are in specific ranges needed for breaking dormancy in fruit trees and other perennial plants.")
+                        HTML("<b>Chilling hours</b>: Accumulated hours in specific temperature ranges required for dormancy breaking in perennial crops. <i>Select methods appropriate for your specific crop and region.</i>")
                       )
                     )
                   ),
                   fluidRow(
-                    col_4(
+                    col_12(
                       prettySwitch(
-                        inputId = ns("ch_weinberger"),
-                        label = "Chilling hours - Weinberger",
+                        inputId = ns("ch_w"),
+                        label = "Weinberger (< 7.2°C)",
                         value = FALSE,
                         status = "success",
                         fill = TRUE
                       )
-                    ),
-                    col_4(
+                    )
+                  ),
+                  fluidRow(
+                    col_12(
                       prettySwitch(
                         inputId = ns("ch_utah"),
-                        label = "Chilling hours - Utah",
+                        label = "Utah model (weighted by temp. range)",
                         value = FALSE,
                         status = "success",
                         fill = TRUE
                       )
-                    ),
-                    col_4(
+                    )
+                  ),
+                  fluidRow(
+                    col_12(
                       prettySwitch(
-                        inputId = ns("ch_northcarolina"),
-                        label = "Chilling hours - North Carolina",
+                        inputId = ns("ch_nc"),
+                        label = "North Carolina (mild climate adaptation)",
                         value = FALSE,
                         status = "success",
                         fill = TRUE
@@ -506,6 +510,96 @@ mod_weather_server <- function(id, dfs) {
 
     observe({
       nasaparams <- read.csv(file = system.file("app/www/nasaparams.csv", package = "plimanshiny", mustWork = TRUE), sep = ",")
+      # Garantir que a escala seja comparada em minúsculas
+      scale_lowercase <- tolower(input$scale)
+      
+      if(scale_lowercase == "hourly") {
+        suitableparams <- nasaparams[nasaparams$level == "hourly", ]$abbreviation
+        updatePickerInput(session, "params",
+                          choices = suitableparams,
+                          selected = c("T2M", "RH2M", "PRECTOTCORR", "PS", "WS2M"))
+      } else if (scale_lowercase == "daily") {
+        suitableparams <- nasaparams[nasaparams$level == "daily", ]$abbreviation
+        updatePickerInput(session, "params",
+                          choices = suitableparams,
+                          selected = c("T2M", "T2M_MIN", "T2M_MAX", "T2M_RANGE",  "RH2M", "PRECTOTCORR", "PS", "WS2M", "WD2M", "GWETTOP", "GWETROOT"))
+      } else if(scale_lowercase == "monthly"){
+        suitableparams <- nasaparams[nasaparams$level == "monthly", ]$abbreviation
+        updatePickerInput(session, "params",
+                          choices = suitableparams,
+                          selected = c("T2M", "T2M_MIN", "T2M_MAX", "T2M_RANGE",  "RH2M", "PRECTOTCORR", "PS", "WS2M", "WD2M", "GWETTOP", "GWETROOT"))
+      } else if(scale_lowercase == "climatology"){
+        suitableparams <- nasaparams[nasaparams$level == "climatology", ]$abbreviation
+        updatePickerInput(session, "params",
+                          choices = suitableparams,
+                          selected = c("T2M", "T2M_MIN", "T2M_MAX", "T2M_RANGE",  "RH2M", "PRECTOTCORR", "PS", "WS2M", "WD2M", "GWETTOP", "GWETROOT"))
+      }
+    })
+
+    # Obtém o clima apenas para o último ponto clicado
+    output$latlondata <- DT::renderDT({
+      req(length(points$data) > 0)
+      points_df <- isolate(do.call(rbind, points$data))
+      points_df <- as.data.frame(points_df, stringsAsFactors = FALSE)
+      colnames(points_df) <- c("env", "lat", "lon", "start", "end")
+
+      # round coords
+      points_df$lat <- round(as.numeric(points_df$lat), 4)
+      points_df$lon <- round(as.numeric(points_df$lon), 4)
+
+      # Botões JS
+      points_df <- transform(
+        points_df,
+        Delete = sprintf('<button class="delete-point-btn" id="delete_point_%s">🗑️</button>', seq_len(nrow(points_df)))
+      )
+
+      rownames(points_df) <- NULL
+
+      DT::datatable(
+        points_df,
+        escape = FALSE,
+        selection = "none",
+        options = list(
+          scrollY = "560px",
+          scrollCollapse = TRUE,
+          paging = FALSE
+        ),
+        callback = DT::JS(sprintf("
+      table.on('click', '.delete-point-btn', function() {
+        var id = $(this).attr('id');
+        Shiny.setInputValue('%s', {id: id}, {priority: 'event'});
+      });
+    ", ns("delete_point_click")))
+      )
+    })
+
+    observeEvent(input$delete_point_click, {
+      req(input$delete_point_click$id)
+      row_id <- as.numeric(gsub("delete_point_", "", input$delete_point_click$id))
+      isolate({
+        points$data <- points$data[-row_id]
+      })
+    })
+
+    observe({
+      if(is.null(nrow(coords()))){
+        updateTextInput(session, "envname", value = "ENV_1")
+      } else{
+        updateTextInput(session, "envname", value = paste0("ENV_", nrow(coords()) + 1))
+      }
+      df <- coords()
+      req(df, nrow(df) > 0)
+      leafletProxy("map2") |>
+        clearMarkers() |>
+        addMarkers(
+          lng = df$lon,
+          lat = df$lat,
+          popup = paste0("Env:", df$env, "<br>Lat: ", df$lat, "<br>Lon: ", df$lon)
+        )
+    })
+
+    observe({
+      nasaparams <- read.csv(file = system.file("app/www/nasaparams.csv", package = "plimanshiny", mustWork = TRUE), sep = ",")
       if(input$scale == "hourly") {
         suitableparams <- nasaparams[nasaparams$level == "hourly", ]$abbreviation
         updatePickerInput(session, "params",
@@ -616,8 +710,6 @@ mod_weather_server <- function(id, dfs) {
           return(FALSE)  # Faltam datas no cache
         }
       }
-      
-      # Todos os ambientes e datas foram encontrados no cache
       return(TRUE)
     }
     
@@ -628,13 +720,8 @@ mod_weather_server <- function(id, dfs) {
       if (!dir.exists(cache_dir)) {
         dir.create(cache_dir, recursive = TRUE)
       }
-      
-      # Caminho do arquivo de cache específico
       cache_file <- file.path(cache_dir, paste0(cache_key, ".rds"))
-      
-      # Verificar se o arquivo existe
       if (file.exists(cache_file)) {
-        # Verificar a idade do cache (invalidar após 30 dias)
         file_info <- file.info(cache_file)
         cache_age <- difftime(Sys.time(), file_info$mtime, units = "days")
         
@@ -643,13 +730,11 @@ mod_weather_server <- function(id, dfs) {
           file.remove(cache_file)
           return(NULL)
         }
-        
-        # Carregar dados do cache
         tryCatch({
           cached_data <- readRDS(cache_file)
           return(cached_data)
         }, error = function(e) {
-          # Em caso de erro ao ler o cache, remover o arquivo corrompido
+          # Em caso de erro ao ler o cache, remover o arquivo 
           file.remove(cache_file)
           return(NULL)
         })
@@ -660,23 +745,19 @@ mod_weather_server <- function(id, dfs) {
     
     # Função para salvar no cache de forma persistente
     save_to_cache <- function(cache_key, data) {
-      # Salvar em memória (limitando o tamanho)
       if (length(rv$cache) > 5) {
         # Remover o cache mais antigo
         oldest_key <- names(rv$cache)[1]
         rv$cache[[oldest_key]] <- NULL
       }
       rv$cache[[cache_key]] <- data
-      
-      # Salvar em disco para persistência
       cache_dir <- file.path(rappdirs::user_cache_dir("plimanshiny"), "weather_cache")
       if (!dir.exists(cache_dir)) {
         dir.create(cache_dir, recursive = TRUE)
       }
       
       cache_file <- file.path(cache_dir, paste0(cache_key, ".rds"))
-      
-      # Salvar de forma segura
+
       tryCatch({
         saveRDS(data, cache_file)
       }, error = function(e) {
@@ -693,22 +774,14 @@ mod_weather_server <- function(id, dfs) {
         timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S")
       )
     }
-    
-    # Função para limpar o cache (útil para diagnóstico)
     clean_weather_cache <- function(age_days = NULL) {
-      # Limpar cache em memória
       rv$cache <- list()
-      
-      # Limpar cache em disco
       cache_dir <- file.path(rappdirs::user_cache_dir("plimanshiny"), "weather_cache")
       if (!dir.exists(cache_dir)) {
         return(list(memory_cleared = TRUE, disk_cleared = FALSE, reason = "Cache directory does not exist"))
       }
       
-      # Listar todos os arquivos de cache
       cache_files <- list.files(cache_dir, pattern = "\\.rds$", full.names = TRUE)
-      
-      # Se especificado um número de dias, remover apenas caches mais antigos
       if (!is.null(age_days)) {
         files_to_remove <- cache_files[file.info(cache_files)$mtime < Sys.time() - as.difftime(age_days, units = "days")]
       } else {
@@ -825,13 +898,26 @@ mod_weather_server <- function(id, dfs) {
             )
           }
           
-          # Processamento de GDD e chilling hours se necessário
+          # Processamento de GDD e chilling HRs se necessário
           if (input$computegdd) {
             incProgress(0.2, detail = "Calculating thermal parameters...")
             
-            # Verificar se os parâmetros necessários estão disponíveis para GDD
-            if (!all(c("T2M_MIN", "T2M_MAX") %in% colnames(all_weather_data))) {
-              stop("To calculate GDD, make sure that T2M_MIN and T2M_MAX are listed in the selected parameters.")
+            # Se estamos trabalhando com dados horários, precisamos derivar T2M_MIN e T2M_MAX
+            if (input$scale == "hourly") {
+              # Verificar se temos a coluna T2M necessária para derivar min/max
+              if (!("T2M" %in% colnames(all_weather_data))) {
+                stop("Para calcular GDD com dados horários, o parâmetro T2M é necessário.")
+              }
+              
+              # Derivar T2M_MIN e T2M_MAX a partir dos dados horários
+              incProgress(0.05, detail = "Deriving daily min/max from hourly data...")
+              all_weather_data <- aggregate_hourly_data(all_weather_data)
+            } 
+            else {
+              # Para dados diários/mensais, precisamos verificar se os parâmetros já estão disponíveis
+              if (!all(c("T2M_MIN", "T2M_MAX") %in% colnames(all_weather_data))) {
+                stop("Para calcular GDD, verifique se T2M_MIN e T2M_MAX estão nos parâmetros selecionados.")
+              }
             }
             
             # Calcular degree-days
@@ -843,19 +929,19 @@ mod_weather_server <- function(id, dfs) {
               Topt2 = input$optimalupper
             )
             
-            # Calcular chilling hours pelos diferentes métodos quando selecionados
-            if (input$ch_weinberger) {
-              incProgress(0.05, detail = "Calculating Weinberger chilling hours...")
+            # Calcular chilling HRs pelos diferentes métodos quando selecionados
+            if (input$ch_w) {
+              incProgress(0.05, detail = "Calculating Weinberger chilling HRs...")
               all_weather_data <- calculate_weinberger_ch(all_weather_data)
             }
             
             if (input$ch_utah) {
-              incProgress(0.05, detail = "Calculating Utah chilling hours...")
+              incProgress(0.05, detail = "Calculating Utah chilling HRs...")
               all_weather_data <- calculate_utah_ch(all_weather_data)
             }
             
-            if (input$ch_northcarolina) {
-              incProgress(0.05, detail = "Calculating North Carolina chilling hours...")
+            if (input$ch_nc) {
+              incProgress(0.05, detail = "Calculating North Carolina chilling HRs...")
               all_weather_data <- calculate_nc_ch(all_weather_data)
             }
           }
@@ -954,8 +1040,8 @@ mod_weather_server <- function(id, dfs) {
     output$envirotypes_dist <- renderPlotly({
       req(input$variable, input$facet, resclimate(), nrow(resclimate()) > 0)
       
-      # Aplicar agrupamento inteligente para gráficos com muitos pontos
-      plot_data <- smart_group_data(resclimate())
+      # Usar os dados brutos sem agrupamento
+      plot_data <- resclimate()
       
       # Verificar se a variável selecionada existe no conjunto de dados
       if (!input$variable %in% colnames(plot_data)) {
@@ -1325,53 +1411,127 @@ mod_weather_server <- function(id, dfs) {
         }
       }
     })
-  })
-}
 
-# Função para calcular horas de frio pelo método Weinberger
+    # Function to calculate chilling hours using Weinberger method
     calculate_weinberger_ch <- function(data) {
-      # O método Weinberger conta as horas abaixo de 7.2°C
-      if (!all(c("T2M", "HOUR") %in% colnames(data))) {
-        warning("T2M or HOUR columns required for Weinberger chilling hours calculation")
+      # The Weinberger method counts hours below 7.2°C
+      
+      # Check if T2M column exists
+      if (!("T2M" %in% colnames(data))) {
+        warning("T2M column is required for chilling hours calculation (Weinberger)")
         return(data)
       }
       
-      # Calcular horas de frio diárias
-      ch_data <- data %>%
-        dplyr::mutate(CH_Weinberger = ifelse(T2M < 7.2, 1, 0))
-      
-      # Se os dados forem horários, agrupar por dia
-      if ("HOUR" %in% colnames(ch_data)) {
-        ch_data <- ch_data %>%
-          dplyr::group_by(ENV, YYYYMMDD) %>%
-          dplyr::mutate(CH_Weinberger_daily = sum(CH_Weinberger, na.rm = TRUE)) %>%
-          dplyr::ungroup()
+      # Check if ENV column exists for grouping
+      has_env <- "ENV" %in% colnames(data)
+      if (!has_env) {
+        message("ENV column not found. Using alternative grouping.")
       }
       
-      # Adicionar acumulado
-      ch_data <- ch_data %>%
-        dplyr::group_by(ENV) %>%
-        dplyr::mutate(CH_Weinberger_accum = cumsum(replace_na(CH_Weinberger, 0))) %>%
-        dplyr::ungroup()
+      # Calculate daily chilling hours
+      ch_data <- data %>%
+        dplyr::mutate(ch_w = ifelse(T2M < 7.2, 1, 0))
+      
+      # If the data is hourly, group by day
+      if ("HR" %in% colnames(ch_data)) {
+        # Check if we have the YYYYMMDD column for daily grouping
+        has_yyyymmdd <- "YYYYMMDD" %in% colnames(ch_data)
+        
+        # If no YYYYMMDD but we have date fields, create the column
+        if (!has_yyyymmdd && all(c("YEAR", "MO", "DY") %in% colnames(ch_data))) {
+          ch_data <- ch_data %>%
+            dplyr::mutate(YYYYMMDD = paste0(YEAR, 
+                                          formatC(as.numeric(MO), width = 2, format = "d", flag = "0"),
+                                          formatC(as.numeric(DY), width = 2, format = "d", flag = "0")))
+          has_yyyymmdd <- TRUE
+          message("YYYYMMDD column created for daily chilling hours grouping.")
+        }
+        
+        if (has_yyyymmdd) {
+          # Safe grouping using variables present in the data
+          if (has_env) {
+            tryCatch({
+              ch_data <- ch_data %>%
+                dplyr::group_by(ENV, YYYYMMDD) %>%
+                dplyr::mutate(ch_w_daily = sum(ch_w, na.rm = TRUE)) %>%
+                dplyr::ungroup()
+              message("Grouping by ENV and YYYYMMDD for daily chilling hours calculation (Weinberger)")
+            }, error = function(e) {
+              warning("Error grouping by ENV and YYYYMMDD: ", e$message, 
+                     "\nGrouping only by YYYYMMDD.")
+              ch_data <<- ch_data %>%
+                dplyr::group_by(YYYYMMDD) %>%
+                dplyr::mutate(ch_w_daily = sum(ch_w, na.rm = TRUE)) %>%
+                dplyr::ungroup()
+            })
+          } else {
+            ch_data <- ch_data %>%
+              dplyr::group_by(YYYYMMDD) %>%
+              dplyr::mutate(ch_w_daily = sum(ch_w, na.rm = TRUE)) %>%
+              dplyr::ungroup()
+            message("Grouping only by YYYYMMDD for daily chilling hours calculation (Weinberger)")
+          }
+        } else {
+          warning("Could not group by day. Hourly data will be treated individually.")
+        }
+      }
+      
+      # Fix accumulated calculation - use a more robust method with separate processing per environment
+      if (has_env) {
+        tryCatch({
+          # Process each environment separately to avoid grouping issues
+          env_list <- unique(ch_data$ENV)
+          result_list <- list()
+          
+          for (env_id in env_list) {
+            # Filter data for this environment
+            env_data <- ch_data[ch_data$ENV == env_id, ]
+            # Calculate cumulative sum for this environment
+            env_data$ch_w_accum <- cumsum(ifelse(is.na(env_data$ch_w), 0, env_data$ch_w))
+            # Store in result list
+            result_list[[env_id]] <- env_data
+          }
+          
+          # Combine results from all environments
+          ch_data <- do.call(rbind, result_list)
+          message("Accumulated values calculated by environment (ENV) for chilling hours (Weinberger)")
+        }, error = function(e) {
+          warning("Error grouping by ENV for accumulated calculation: ", e$message,
+                 "\nCalculating general accumulation without grouping.")
+          ch_data$ch_w_accum <- cumsum(ifelse(is.na(ch_data$ch_w), 0, ch_data$ch_w))
+        })
+      } else {
+        # If ENV doesn't exist, calculate accumulation without grouping
+        ch_data$ch_w_accum <- cumsum(ifelse(is.na(ch_data$ch_w), 0, ch_data$ch_w))
+        message("Accumulated values calculated without grouping for chilling hours (Weinberger)")
+      }
       
       return(ch_data)
     }
-    
-    # Função para calcular horas de frio pelo método Utah
+
+    # Function to calculate chilling hours using Utah method
     calculate_utah_ch <- function(data) {
-      # O método Utah atribui diferentes pesos para diferentes faixas de temperatura
-      if (!all(c("T2M", "HOUR") %in% colnames(data))) {
-        warning("T2M or HOUR columns required for Utah chilling hours calculation")
+      # The Utah method assigns different weights to different temperature ranges
+      
+      # Check if T2M column exists
+      if (!("T2M" %in% colnames(data))) {
+        warning("T2M column is required for chilling hours calculation (Utah)")
         return(data)
       }
       
-      # Pesos conforme o modelo Utah
+      # Check if ENV column exists for grouping
+      has_env <- "ENV" %in% colnames(data)
+      if (!has_env) {
+        message("ENV column not found for Utah calculation. Using alternative grouping.")
+      }
+      
+      # Weights according to the Utah model
       ch_data <- data %>%
         dplyr::mutate(
-          CH_Utah = case_when(
+          CH_Utah = dplyr::case_when(
             T2M < 1.4 ~ 0,
-            T2M >= 1.4 & T2M < 2.4 ~ 0.5,
-            T2M >= 2.4 & T2M < 9.1 ~ 1.0,
+            T2M >= 1.4 & T2M < 2.5 ~ 0.5,
+            T2M >= 2.5 & T2M < 9.1 ~ 1.0,
             T2M >= 9.1 & T2M < 12.4 ~ 0.5,
             T2M >= 12.4 & T2M < 15.9 ~ 0,
             T2M >= 15.9 & T2M < 18.0 ~ -0.5,
@@ -1380,38 +1540,103 @@ mod_weather_server <- function(id, dfs) {
           )
         )
       
-      # Se os dados forem horários, agrupar por dia
-      if ("HOUR" %in% colnames(ch_data)) {
-        ch_data <- ch_data %>%
-          dplyr::group_by(ENV, YYYYMMDD) %>%
-          dplyr::mutate(CH_Utah_daily = sum(CH_Utah, na.rm = TRUE)) %>%
-          dplyr::ungroup()
+      # If the data is hourly, group by day
+      if ("HR" %in% colnames(ch_data)) {
+        # Check if we have the YYYYMMDD column for daily grouping
+        has_yyyymmdd <- "YYYYMMDD" %in% colnames(ch_data)
+        
+        # If no YYYYMMDD but we have date fields, create the column
+        if (!has_yyyymmdd && all(c("YEAR", "MO", "DY") %in% colnames(ch_data))) {
+          ch_data <- ch_data %>%
+            dplyr::mutate(YYYYMMDD = paste0(YEAR, 
+                                           formatC(as.numeric(MO), width = 2, format = "d", flag = "0"),
+                                           formatC(as.numeric(DY), width = 2, format = "d", flag = "0")))
+          has_yyyymmdd <- TRUE
+          message("YYYYMMDD column created for Utah chilling units daily grouping.")
+        }
+        
+        if (has_yyyymmdd) {
+          # Safe grouping using variables present in the data
+          if (has_env) {
+            tryCatch({
+              ch_data <- ch_data %>%
+                dplyr::group_by(ENV, YYYYMMDD) %>%
+                dplyr::mutate(CH_Utah_daily = sum(CH_Utah, na.rm = TRUE)) %>%
+                dplyr::ungroup()
+              message("Grouping by ENV and YYYYMMDD for daily chilling hours calculation (Utah)")
+            }, error = function(e) {
+              warning("Error grouping by ENV and YYYYMMDD: ", e$message, 
+                     "\nGrouping only by YYYYMMDD.")
+              ch_data <<- ch_data %>%
+                dplyr::group_by(YYYYMMDD) %>%
+                dplyr::mutate(CH_Utah_daily = sum(CH_Utah, na.rm = TRUE)) %>%
+                dplyr::ungroup()
+            })
+          } else {
+            ch_data <- ch_data %>%
+              dplyr::group_by(YYYYMMDD) %>%
+              dplyr::mutate(CH_Utah_daily = sum(CH_Utah, na.rm = TRUE)) %>%
+              dplyr::ungroup()
+            message("Grouping only by YYYYMMDD for daily chilling hours calculation (Utah)")
+          }
+        } else {
+          warning("Could not group by day. Hourly data will be treated individually for Utah model.")
+        }
       }
       
-      # Adicionar acumulado
-      ch_data <- ch_data %>%
-        dplyr::group_by(ENV) %>%
-        dplyr::mutate(
-          # No modelo Utah, o acumulado não pode ser negativo
-          CH_Utah_accum = pmax(0, cumsum(replace_na(CH_Utah, 0)))
-        ) %>%
-        dplyr::ungroup()
+      # Fix accumulated calculation - use a more robust method with separate processing per environment
+      if (has_env) {
+        tryCatch({
+          # Process each environment separately to avoid grouping issues
+          env_list <- unique(ch_data$ENV)
+          result_list <- list()
+          
+          for (env_id in env_list) {
+            # Filter data for this environment
+            env_data <- ch_data[ch_data$ENV == env_id, ]
+            # Calculate cumulative sum for this environment, ensuring values don't go below 0
+            env_data$CH_Utah_accum <- pmax(0, cumsum(ifelse(is.na(env_data$CH_Utah), 0, env_data$CH_Utah)))
+            # Store in result list
+            result_list[[env_id]] <- env_data
+          }
+          
+          # Combine results from all environments
+          ch_data <- do.call(rbind, result_list)
+          message("Accumulated values calculated by environment (ENV) for chilling hours (Utah)")
+        }, error = function(e) {
+          warning("Error grouping by ENV for Utah accumulated calculation: ", e$message,
+                 "\nCalculating general accumulation without grouping.")
+          ch_data$CH_Utah_accum <- pmax(0, cumsum(ifelse(is.na(ch_data$CH_Utah), 0, ch_data$CH_Utah)))
+        })
+      } else {
+        # If ENV doesn't exist, calculate accumulation without grouping
+        ch_data$CH_Utah_accum <- pmax(0, cumsum(ifelse(is.na(ch_data$CH_Utah), 0, ch_data$CH_Utah)))
+        message("Accumulated values calculated without grouping for chilling hours (Utah)")
+      }
       
       return(ch_data)
     }
-    
-    # Função para calcular horas de frio pelo método North Carolina
+
+    # Function to calculate chilling hours using North Carolina method
     calculate_nc_ch <- function(data) {
-      # North Carolina model (adaptação do modelo Utah para climas mais amenos)
-      if (!all(c("T2M", "HOUR") %in% colnames(data))) {
-        warning("T2M or HOUR columns required for North Carolina chilling hours calculation")
+      # North Carolina model (adaptation of the Utah model for milder climates)
+      
+      # Check if T2M column exists
+      if (!("T2M" %in% colnames(data))) {
+        warning("T2M column is required for chilling hours calculation (North Carolina)")
         return(data)
       }
       
-      # Pesos conforme o modelo North Carolina
+      # Check if ENV column exists for grouping
+      has_env <- "ENV" %in% colnames(data)
+      if (!has_env) {
+        message("ENV column not found for North Carolina calculation. Using alternative grouping.")
+      }
+      
+      # Weights according to the North Carolina model
       ch_data <- data %>%
         dplyr::mutate(
-          CH_NC = case_when(
+          CH_NC = dplyr::case_when(
             T2M < 1.4 ~ 0,
             T2M >= 1.4 & T2M < 7.2 ~ 1.0,
             T2M >= 7.2 & T2M < 13.0 ~ 0.5,
@@ -1423,22 +1648,79 @@ mod_weather_server <- function(id, dfs) {
           )
         )
       
-      # Se os dados forem horários, agrupar por dia
-      if ("HOUR" %in% colnames(ch_data)) {
-        ch_data <- ch_data %>%
-          dplyr::group_by(ENV, YYYYMMDD) %>%
-          dplyr::mutate(CH_NC_daily = sum(CH_NC, na.rm = TRUE)) %>%
-          dplyr::ungroup()
+      # If the data is hourly, group by day
+      if ("HR" %in% colnames(ch_data)) {
+        # Check if we have the YYYYMMDD column for daily grouping
+        has_yyyymmdd <- "YYYYMMDD" %in% colnames(ch_data)
+        
+        # If no YYYYMMDD but we have date fields, create the column
+        if (!has_yyyymmdd && all(c("YEAR", "MO", "DY") %in% colnames(ch_data))) {
+          ch_data <- ch_data %>%
+            dplyr::mutate(YYYYMMDD = paste0(YEAR, 
+                                           formatC(as.numeric(MO), width = 2, format = "d", flag = "0"),
+                                           formatC(as.numeric(DY), width = 2, format = "d", flag = "0")))
+          has_yyyymmdd <- TRUE
+          message("YYYYMMDD column created for North Carolina chilling units daily grouping.")
+        }
+        
+        if (has_yyyymmdd) {
+          # Safe grouping using variables present in the data
+          if (has_env) {
+            tryCatch({
+              ch_data <- ch_data %>%
+                dplyr::group_by(ENV, YYYYMMDD) %>%
+                dplyr::mutate(CH_NC_daily = sum(CH_NC, na.rm = TRUE)) %>%
+                dplyr::ungroup()
+              message("Grouping by ENV and YYYYMMDD for daily chilling hours calculation (North Carolina)")
+            }, error = function(e) {
+              warning("Error grouping by ENV and YYYYMMDD: ", e$message, 
+                     "\nGrouping only by YYYYMMDD.")
+              ch_data <<- ch_data %>%
+                dplyr::group_by(YYYYMMDD) %>%
+                dplyr::mutate(CH_NC_daily = sum(CH_NC, na.rm = TRUE)) %>%
+                dplyr::ungroup()
+            })
+          } else {
+            ch_data <- ch_data %>%
+              dplyr::group_by(YYYYMMDD) %>%
+              dplyr::mutate(CH_NC_daily = sum(CH_NC, na.rm = TRUE)) %>%
+              dplyr::ungroup()
+            message("Grouping only by YYYYMMDD for daily chilling hours calculation (North Carolina)")
+          }
+        } else {
+          warning("Could not group by day. Hourly data will be treated individually for North Carolina model.")
+        }
       }
       
-      # Adicionar acumulado
-      ch_data <- ch_data %>%
-        dplyr::group_by(ENV) %>%
-        dplyr::mutate(
-          # Acumulado não pode ser negativo
-          CH_NC_accum = pmax(0, cumsum(replace_na(CH_NC, 0)))
-        ) %>%
-        dplyr::ungroup()
+      # Fix accumulated calculation - use a more robust method with separate processing per environment
+      if (has_env) {
+        tryCatch({
+          # Process each environment separately to avoid grouping issues
+          env_list <- unique(ch_data$ENV)
+          result_list <- list()
+          
+          for (env_id in env_list) {
+            # Filter data for this environment
+            env_data <- ch_data[ch_data$ENV == env_id, ]
+            # Calculate cumulative sum for this environment, ensuring values don't go below 0
+            env_data$CH_NC_accum <- pmax(0, cumsum(ifelse(is.na(env_data$CH_NC), 0, env_data$CH_NC)))
+            # Store in result list
+            result_list[[env_id]] <- env_data
+          }
+          
+          # Combine results from all environments
+          ch_data <- do.call(rbind, result_list)
+          message("Accumulated values calculated by environment (ENV) for chilling hours (North Carolina)")
+        }, error = function(e) {
+          warning("Error grouping by ENV for North Carolina accumulated calculation: ", e$message,
+                 "\nCalculating general accumulation without grouping.")
+          ch_data$CH_NC_accum <- pmax(0, cumsum(ifelse(is.na(ch_data$CH_NC), 0, ch_data$CH_NC)))
+        })
+      } else {
+        # If ENV doesn't exist, calculate accumulation without grouping
+        ch_data$CH_NC_accum <- pmax(0, cumsum(ifelse(is.na(ch_data$CH_NC), 0, ch_data$CH_NC)))
+        message("Accumulated values calculated without grouping for chilling hours (North Carolina)")
+      }
       
       return(ch_data)
     }
@@ -1447,3 +1729,232 @@ mod_weather_server <- function(id, dfs) {
 
 ## To be copied in the server
 # mod_weather_server("weather_1")
+
+# Monitorar os switches de chilling HRs e ajustar a escala se necessário
+    observe({
+      # Verificar se algum método de chilling HRs está ativado
+      chilling_enabled <- input$ch_w || input$ch_utah || input$ch_nc
+      
+      if (chilling_enabled) {
+        # Se algum método estiver ativado, forçar escala para "hourly"
+        if (input$scale != "hourly") {
+          # Atualizar para hourly 
+          updatePrettyRadioButtons(
+            session, 
+            "scale",
+            selected = "hourly"
+          )
+          
+          # Notificar usuário
+          showNotification(
+            "Scale automatically set to 'hourly' for chilling HRs calculation",
+            type = "warning",
+            duration = 5
+          )
+        }
+        
+        # Desabilitar opções de escala
+        disable("scale")
+      } else {
+        # Reabilitar opções de escala quando não houver método de chilling HRs ativado
+        enable("scale")
+      }
+    })
+    
+    # Adicionar listener para cada método de chilling HRs
+    observeEvent(input$computegdd, {
+      # Se o GDD for desabilitado, também desabilite os chilling HRs
+      if (!input$computegdd) {
+        updatePrettySwitch(session, "ch_w", value = FALSE)
+        updatePrettySwitch(session, "ch_utah", value = FALSE)
+        updatePrettySwitch(session, "ch_nc", value = FALSE)
+      }
+    })
+
+# Monitorar a opção de cálculo de parâmetros térmicos e ajustar requisitos de parâmetros
+    observe({
+      # Quando o checkbox de computação térmica ou chilling HRs for ativado,
+      # verificar se os parâmetros necessários estão selecionados
+      if (input$computegdd || input$ch_w || input$ch_utah || input$ch_nc) {
+        current_params <- input$params
+        
+        # Requisitos diferentes para escala horária e diária
+        if (input$scale == "hourly") {
+          # Para dados horários, precisamos de T2M para derivar min/max
+          req_param <- "T2M"
+          if (!req_param %in% current_params) {
+            # Adicionar T2M aos parâmetros selecionados
+            updatePickerInput(
+              session, 
+              "params",
+              selected = unique(c(current_params, req_param))
+            )
+            
+            # Informar o usuário
+            showNotification(
+              paste("Parâmetro T2M foi adicionado automaticamente para cálculos térmicos em escala horária"),
+              type = "message",
+              duration = 5
+            )
+          }
+        } else if (input$scale %in% c("daily", "monthly")) {
+          # Para dados diários/mensais, precisamos dos parâmetros min/max diretamente
+          required_params <- c("T2M_MIN", "T2M_MAX")
+          missing_params <- required_params[!required_params %in% current_params]
+          
+          if (length(missing_params) > 0) {
+            # Adicionar parâmetros faltantes
+            updatePickerInput(
+              session, 
+              "params",
+              selected = unique(c(current_params, required_params))
+            )
+            
+            # Informar o usuário
+            showNotification(
+              paste("Parâmetros", paste(missing_params, collapse=", "), 
+                    "foram adicionados automaticamente para cálculos térmicos"),
+              type = "message",
+              duration = 5
+            )
+          }
+        }
+      }
+    })
+  })
+}
+
+# Função para agregar dados horários para obter min/max diários
+aggregate_hourly_data <- function(data) {
+  # Verificação inicial dos dados
+  if (is.null(data) || nrow(data) == 0) {
+    warning("Dados vazios ou nulos fornecidos para aggregate_hourly_data")
+    return(data)
+  }
+  
+  # Verificar se temos dados horários com a coluna T2M
+  if (!("HR" %in% colnames(data))) {
+    message("Coluna HR não encontrada nos dados. Impossível agregar dados que não são horários.")
+    return(data)
+  }
+  
+  if (!("T2M" %in% colnames(data))) {
+    warning("Coluna T2M não encontrada nos dados. Agregação não é possível.")
+    return(data)
+  }
+  
+  # Verificar se temos a informação de ambiente e data
+  has_env <- "ENV" %in% colnames(data)
+  has_date_components <- all(c("YEAR", "MO", "DY") %in% colnames(data))
+  has_yyyymmdd <- "YYYYMMDD" %in% colnames(data)
+  
+  # Se não temos informações de data adequadas, não podemos proceder
+  if (!has_date_components && !has_yyyymmdd) {
+    warning("Informações de data (YEAR, MO, DY ou YYYYMMDD) ausentes. Agregação não é possível.")
+    return(data)
+  }
+  
+  # Se não temos YYYYMMDD mas temos os componentes, criar a coluna
+  if (!has_yyyymmdd && has_date_components) {
+    tryCatch({
+      data <- data %>%
+        dplyr::mutate(YYYYMMDD = paste0(YEAR, 
+                                      formatC(as.numeric(MO), width = 2, format = "d", flag = "0"),
+                                      formatC(as.numeric(DY), width = 2, format = "d", flag = "0")))
+      has_yyyymmdd <- TRUE
+      message("Coluna YYYYMMDD criada para agregação de dados horários.")
+    }, error = function(e) {
+      warning("Erro ao criar coluna YYYYMMDD: ", e$message, ". Usando abordagem alternativa.")
+    })
+  }
+  
+  # Criar uma chave para agrupar - adaptativa conforme disponibilidade de colunas
+  tryCatch({
+    if (has_env && has_yyyymmdd) {
+      # Caso ideal: Agrupar por ambiente e data
+      message("Agregando dados horários por ENV e YYYYMMDD")
+      grouped_data <- data %>%
+        dplyr::group_by(ENV, YYYYMMDD) %>%
+        dplyr::summarise(
+          T2M_MIN = min(T2M, na.rm = TRUE),
+          T2M_MAX = max(T2M, na.rm = TRUE),
+          T2M_MEAN = mean(T2M, na.rm = TRUE),
+          T2M_RANGE = T2M_MAX - T2M_MIN,
+          .groups = "drop"
+        )
+    } else if (!has_env && has_yyyymmdd) {
+      # Sem ambiente, mas temos data
+      message("ENV não encontrado. Agregando dados horários apenas por YYYYMMDD")
+      grouped_data <- data %>%
+        dplyr::group_by(YYYYMMDD) %>%
+        dplyr::summarise(
+          T2M_MIN = min(T2M, na.rm = TRUE),
+          T2M_MAX = max(T2M, na.rm = TRUE),
+          T2M_MEAN = mean(T2M, na.rm = TRUE),
+          T2M_RANGE = T2M_MAX - T2M_MIN,
+          .groups = "drop"
+        )
+    } else if (has_env && has_date_components) {
+      # Temos ambiente e componentes de data
+      message("YYYYMMDD não encontrado. Agregando por ENV, YEAR, MO, DY")
+      grouped_data <- data %>%
+        dplyr::group_by(ENV, YEAR, MO, DY) %>%
+        dplyr::summarise(
+          T2M_MIN = min(T2M, na.rm = TRUE),
+          T2M_MAX = max(T2M, na.rm = TRUE),
+          T2M_MEAN = mean(T2M, na.rm = TRUE),
+          T2M_RANGE = T2M_MAX - T2M_MIN,
+          .groups = "drop"
+        )
+    } else if (!has_env && has_date_components) {
+      # Apenas componentes de data, sem ambiente
+      message("ENV e YYYYMMDD não encontrados. Agregando apenas por YEAR, MO, DY")
+      grouped_data <- data %>%
+        dplyr::group_by(YEAR, MO, DY) %>%
+        dplyr::summarise(
+          T2M_MIN = min(T2M, na.rm = TRUE),
+          T2M_MAX = max(T2M, na.rm = TRUE),
+          T2M_MEAN = mean(T2M, na.rm = TRUE),
+          T2M_RANGE = T2M_MAX - T2M_MIN,
+          .groups = "drop"
+        )
+    } else {
+      # Sem informações adequadas para agrupamento
+      warning("Não foi possível determinar as colunas para agrupamento. Dados originais retornados.")
+      return(data)
+    }
+    
+    # Tratar valores infinitos (caso haja apenas NAs em um grupo)
+    grouped_data <- grouped_data %>%
+      dplyr::mutate(
+        T2M_MIN = ifelse(is.infinite(T2M_MIN), NA, T2M_MIN),
+        T2M_MAX = ifelse(is.infinite(T2M_MAX), NA, T2M_MAX),
+        T2M_MEAN = ifelse(is.nan(T2M_MEAN), NA, T2M_MEAN),
+        T2M_RANGE = ifelse(is.na(T2M_MIN) | is.na(T2M_MAX), NA, T2M_RANGE)
+      )
+    
+    # Juntar os valores agregados de volta aos dados originais
+    if (has_env && has_yyyymmdd) {
+      result <- data %>%
+        dplyr::left_join(grouped_data, by = c("ENV", "YYYYMMDD"))
+    } else if (!has_env && has_yyyymmdd) {
+      result <- data %>%
+        dplyr::left_join(grouped_data, by = "YYYYMMDD")
+    } else if (has_env && has_date_components) {
+      result <- data %>%
+        dplyr::left_join(grouped_data, by = c("ENV", "YEAR", "MO", "DY"))
+    } else {
+      result <- data %>%
+        dplyr::left_join(grouped_data, by = c("YEAR", "MO", "DY"))
+    }
+    
+    message("Hourly data aggregation completed successfully.")
+    return(result)
+    
+    }, error = function(e) {
+    # Capture and handle any error during the aggregation process
+    warning("Error during hourly data aggregation: ", e$message, 
+         "\nReturning original data without aggregation.")
+    return(data)
+    })
+  }
