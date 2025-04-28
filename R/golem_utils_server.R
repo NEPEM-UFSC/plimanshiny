@@ -1149,96 +1149,156 @@ get_climate <- function(env = NULL,
     }
     return(dados)
   }
-
   fetch_data <- function(lat_i, lon_i, env_i) {
-    if (scale %in% c("hourly", "daily", "monthly")) {
-      suitableparams <- nasaparams[nasaparams$level == scale, ]$abbreviation
-      if (any(!params %in% suitableparams)) {
-        stop("Parâmetros não disponíveis para ", scale, ": ",
-             paste(params[!params %in% suitableparams], collapse = ", "))
-      }
-      if (scale == "monthly") {
-        start_fmt <- sub("^.*?(\\d{4}).*$", "\\1", start)
-        end_fmt <- sub("^.*?(\\d{4}).*$", "\\1", end)
+    tryCatch({
+      scale_lowercase <- tolower(scale)
+      if (scale_lowercase %in% c("hourly", "daily", "monthly")) {
+        suitableparams <- nasaparams[nasaparams$level == scale_lowercase, ]$abbreviation
+        if (any(!params %in% suitableparams)) {
+          stop("Parameters not available for ", scale_lowercase, ": ",
+               paste(params[!params %in% suitableparams], collapse = ", "))
+        }
+        if (scale_lowercase == "monthly") {
+          start_fmt <- sub("^.*?(\\d{4}).*$", "\\1", start)
+          end_fmt <- sub("^.*?(\\d{4}).*$", "\\1", end)
+        } else {
+          start_fmt <- gsub("-", "", start)
+          end_fmt <- gsub("-", "", end)
+        }
+        url <- glue::glue("https://power.larc.nasa.gov/api/temporal/{scale_lowercase}/point?parameters={params_str}&community=AG&longitude={lon_i}&latitude={lat_i}&start={start_fmt}&end={end_fmt}&format=CSV")
       } else {
-        start_fmt <- gsub("-", "", start)
-        end_fmt <- gsub("-", "", end)
+        suitableparams <- nasaparams[nasaparams$level == "climatology", ]$abbreviation
+        if (any(!params %in% suitableparams)) {
+          stop("Parameters not available for climatology: ",
+               paste(params[!params %in% suitableparams], collapse = ", "))
+        }
+        url <- glue::glue("https://power.larc.nasa.gov/api/temporal/climatology/point?parameters={params_str}&community=AG&longitude={lon_i}&latitude={lat_i}&format=CSV")
       }
-      url <- glue::glue("https://power.larc.nasa.gov/api/temporal/{scale}/point?parameters={params_str}&community=AG&longitude={lon_i}&latitude={lat_i}&start={start_fmt}&end={end_fmt}&format=CSV")
-    } else {
-      suitableparams <- nasaparams[nasaparams$level == "climatology", ]$abbreviation
-      if (any(!params %in% suitableparams)) {
-        stop("Parâmetros não disponíveis para climatologia: ",
-             paste(params[!params %in% suitableparams], collapse = ", "))
+
+      req <- httr2::request(url[[1]]) |> httr2::req_options(timeout = 30, ssl_verifypeer = 0)
+      
+      resp <- tryCatch(
+        httr2::req_perform(req), 
+        error = function(e) {
+          warning("Error accessing API for coordinates (", lat_i, ", ", lon_i, "): ", e$message)
+          return(NULL)
+        }
+      )
+      
+      if (is.null(resp)) return(NULL)
+      
+      file <- tempfile(fileext = ".csv")
+      content <- httr2::resp_body_string(resp)
+      
+      # Check if the response contains valid data
+      if (grepl("No data was found that matched your query", content)) {
+        warning("No data available for coordinates (", lat_i, ", ", lon_i, ")")
+        return(NULL)
       }
-      url <- glue::glue("https://power.larc.nasa.gov/api/temporal/climatology/point?parameters={params_str}&community=AG&longitude={lon_i}&latitude={lat_i}&format=CSV")
-    }
-
-    req <- httr2::request(url[[1]]) |> httr2::req_options(timeout = 30, ssl_verifypeer = 0)
-
-    resp <- tryCatch(httr2::req_perform(req), error = function(e) {
-      warning("Erro ao acessar API para ", env_i, ": ", e$message)
+      
+      writeLines(content, file)
+      
+      # Using tryCatch to capture errors during file reading
+      dfnasa <- tryCatch({
+        results <- get_cleandata(file)
+        results |> dplyr::mutate(ENV = env_i, LAT = lat_i, LON = lon_i, .before = 1)
+      }, error = function(e) {
+        warning("Error processing data for coordinates (", lat_i, ", ", lon_i, "): ", e$message)
+        return(NULL)
+      })
+      
+      if (is.null(dfnasa) || nrow(dfnasa) == 0) {
+        warning("No valid data obtained for coordinates (", lat_i, ", ", lon_i, ")")
+        return(NULL)
+      }
+      
+      # Processamento adicional do dataframe
+      names(dfnasa)[grepl("PRECTOT", names(dfnasa))] <- "PRECTOT"
+      if ("PRECTOT" %in% names(dfnasa) && "EVPTRNS" %in% names(dfnasa)) {
+        dfnasa$P_ETP <- dfnasa$PRECTOT - dfnasa$EVPTRNS
+      }
+      
+      # Processamento específico por escala
+      if (scale == "hourly") {
+        dfnasa <- dfnasa |>
+          dplyr::mutate(
+            DATE = as.POSIXct(paste0(YEAR, "-", MO, "-", DY, " ", HR), format = "%Y-%m-%d %H"),
+            DOY = as.numeric(format(DATE, "%j")),
+            DFS = DOY - as.numeric(format(as.Date(start[[1]]), "%j")) + 1
+          ) |> dplyr::select(-DATE) |> dplyr::relocate(DOY, DFS, .after = HR)
+        
+        if (all(c("T2M", "RH2M") %in% names(dfnasa))) {
+          vpd_results <- tryCatch(
+            vpd(dfnasa$T2M, dfnasa$RH2M),
+            error = function(e) NULL
+          )
+          if (!is.null(vpd_results)) {
+            dfnasa <- dplyr::bind_cols(dfnasa, vpd_results)
+          }
+        }
+        
+        if ("T2MDEW" %in% names(dfnasa) && "T2M" %in% names(dfnasa)) {
+          dfnasa$TH2 <- dfnasa$T2M + (0.36 * dfnasa$T2MDEW) + 41.2
+        }
+      } else if (scale == "daily") {
+        if (all(c("T2M", "RH2M") %in% names(dfnasa))) {
+          vpd_results <- tryCatch(
+            vpd(dfnasa$T2M, dfnasa$RH2M),
+            error = function(e) NULL
+          )
+          if (!is.null(vpd_results)) {
+            dfnasa <- dplyr::bind_cols(dfnasa, vpd_results)
+          }
+        }
+        
+        if ("T2M" %in% names(dfnasa) && "RH2M" %in% names(dfnasa)) {
+          dfnasa$TH1 <- (1.8 * dfnasa$T2M + 32) - (0.55 - 0.0055 * dfnasa$RH2M) * (1.8 * dfnasa$T2M - 26)
+        }
+        
+        if ("T2MDEW" %in% names(dfnasa) && "T2M" %in% names(dfnasa)) {
+          dfnasa$TH2 <- dfnasa$T2M + (0.36 * dfnasa$T2MDEW) + 41.2
+        }
+        
+        if (all(c("DOY", "LAT") %in% names(dfnasa))) {
+          rad_data <- tryCatch(
+            Ra_fun(dfnasa$DOY, dfnasa$LAT),
+            error = function(e) NULL
+          )
+          if (!is.null(rad_data)) {
+            dfnasa$N <- round(rad_data$N, 3)
+            dfnasa$RTA <- round(rad_data$Ra, 3)
+          }
+        }
+        
+        # Verificar se DATE existe antes de tentar manipulá-la
+        if ("DATE" %in% names(dfnasa)) {
+          tryCatch({
+            dfnasa <- dfnasa |>
+              dplyr::relocate(DATE, .after = LON) |>
+              dplyr::select(-YEAR) |>
+              tidyr::separate_wider_delim(DATE, names = c("YEAR", "MO", "DY"), delim = "-") |>
+              dplyr::mutate(DFS = 1:nrow(dfnasa), .after = DOY)
+          }, error = function(e) {
+            # Se falhar, manter o dataframe original
+            warning("Error while processing data: ", e$message)
+          })
+        }
+        
+        if("PRECTOT" %in% colnames(dfnasa)){
+          dfnasa <- dfnasa |>
+            dplyr::mutate(PRECTOT_CUMSUM = cumsum(PRECTOT),
+                          .after = PRECTOT)
+        }
+      }
+      
+      # Substituir valores inválidos por NA
+      dfnasa[dfnasa == -999.00] <- NA
+      
+      return(dfnasa)
+    }, error = function(e) {
+      warning("General error while processind coordinates: (", lat_i, ", ", lon_i, "): ", e$message)
       return(NULL)
     })
-
-    if (is.null(resp)) return(NULL)
-
-    file <- tempfile(fileext = ".csv")
-    writeLines(httr2::resp_body_string(resp), file)
-
-    dfnasa <-
-      get_cleandata(file) |>
-      dplyr::mutate(ENV = env_i, LAT = lat_i, LON = lon_i, .before = 1)
-
-    names(dfnasa)[grepl("PRECTOT", names(dfnasa))] <- "PRECTOT"
-    if ("PRECTOT" %in% names(dfnasa) && "EVPTRNS" %in% names(dfnasa)) {
-      dfnasa$P_ETP <- dfnasa$PRECTOT - dfnasa$EVPTRNS
-    }
-    if (scale == "hourly") {
-      dfnasa <- dfnasa |>
-        dplyr::mutate(
-          DATE = as.POSIXct(paste0(YEAR, "-", MO, "-", DY, " ", HR), format = "%Y-%m-%d %H"),
-          DOY = as.numeric(format(DATE, "%j")),
-          DFS = DOY - as.numeric(format(as.Date(start[[1]]), "%j")) + 1
-        ) |> select(-DATE) |> relocate(DOY, DFS, .after = HR)
-      if (all(c("T2M", "RH2M") %in% names(dfnasa))) {
-        dfnasa <- dplyr::bind_cols(dfnasa, vpd(dfnasa$T2M, dfnasa$RH2M))
-      }
-      if ("T2MDEW" %in% names(dfnasa) && "T2M" %in% names(dfnasa)) {
-        dfnasa$TH2 <- dfnasa$T2M + (0.36 * dfnasa$T2MDEW) + 41.2
-      }
-    } else if (scale == "daily") {
-      if (all(c("T2M", "RH2M") %in% names(dfnasa))) {
-        dfnasa <- dplyr::bind_cols(dfnasa, vpd(dfnasa$T2M, dfnasa$RH2M))
-      }
-      if ("T2M" %in% names(dfnasa) && "RH2M" %in% names(dfnasa)) {
-        dfnasa$TH1 <- (1.8 * dfnasa$T2M + 32) - (0.55 - 0.0055 * dfnasa$RH2M) * (1.8 * dfnasa$T2M - 26)
-      }
-      if ("T2MDEW" %in% names(dfnasa) && "T2M" %in% names(dfnasa)) {
-        dfnasa$TH2 <- dfnasa$T2M + (0.36 * dfnasa$T2MDEW) + 41.2
-      }
-      if (all(c("DOY", "LAT") %in% names(dfnasa))) {
-        rad_data <- Ra_fun(dfnasa$DOY, dfnasa$LAT)
-        dfnasa$N <- round(rad_data$N, 3)
-        dfnasa$RTA <- round(rad_data$Ra, 3)
-      }
-
-      dfnasa <-
-        dfnasa |>
-        dplyr::relocate(DATE, .after = LON) |>
-        dplyr::select(-YEAR) |>
-        tidyr::separate_wider_delim(DATE, names = c("YEAR", "MO", "DY"), delim = "-") |>
-        dplyr::mutate(DFS = 1:nrow(dfnasa), .after = DOY)
-
-      if("PRECTOT" %in% colnames(dfnasa)){
-        dfnasa <-
-          dfnasa |>
-          dplyr::mutate(PRECTOT_CUMSUM = cumsum(PRECTOT),
-                        .after = PRECTOT)
-      }
-    }
-    dfnasa[dfnasa == -999.00] <- NA
-    return(dfnasa)
   }
 
   # Plano de execução
@@ -1274,7 +1334,7 @@ get_climate <- function(env = NULL,
           if(parallel){
             p(message = glue::glue("{env[i]}"))
           } else{
-            p(message = glue::glue("{env[i]} ({i} of {length(lat)})"))
+            p(message = glue::glue("{env[i]} ({i} of {length(lat})"))
           }
           fetch_data(lat[i], lon[i], env[i])
         },
@@ -1288,7 +1348,7 @@ get_climate <- function(env = NULL,
         if(parallel){
           p(message = glue::glue("{env[i]}"))
         } else{
-          p(message = glue::glue("{env[i]} ({i} of {length(lat)})"))
+          p(message = glue::glue("{env[i]} ({i} of {length(lat})"))
         }
         fetch_data(lat[i], lon[i], env[i])
       },
@@ -1305,20 +1365,64 @@ gdd_ometto_frue <- function(df,
                             Tceil = 40,
                             Topt1 = 26,
                             Topt2 = 32) {
-  stopifnot(all(c("T2M_MAX", "T2M_MIN") %in% names(df)))
+  # Check if required columns exist and create them if they don't
+  required_cols <- c("T2M_MAX", "T2M_MIN")
+  missing_cols <- required_cols[!required_cols %in% names(df)]
+  
+  # If there are missing columns, try to derive them from T2M (when hourly data)
+  if (length(missing_cols) > 0) {
+    if ("T2M" %in% names(df) && "HOUR" %in% names(df)) {
+      # For hourly data, calculate daily min/max from hourly T2M
+      message("Deriving T2M_MIN and T2M_MAX from hourly temperature data")
+      
+      # Create a key to group by environment and date
+      df <- df %>%
+        dplyr::mutate(date_key = paste(ENV, YEAR, MO, DY, sep = "_"))
+      
+      # Calculate T2M_MIN and T2M_MAX per day for each environment
+      daily_minmax <- df %>%
+        dplyr::group_by(date_key) %>%
+        dplyr::summarise(
+          T2M_MIN = min(T2M, na.rm = TRUE),
+          T2M_MAX = max(T2M, na.rm = TRUE),
+          .groups = "drop"
+        ) %>%
+        # Handle cases where only one value exists per day
+        dplyr::mutate(
+          T2M_MIN = ifelse(is.infinite(T2M_MIN), NA, T2M_MIN),
+          T2M_MAX = ifelse(is.infinite(T2M_MAX), NA, T2M_MAX)
+        )
+      
+      # Join the min/max values back to the original data
+      df <- df %>%
+        dplyr::left_join(daily_minmax, by = "date_key") %>%
+        dplyr::select(-date_key)  # Remove the temporary key
+      
+    } else if ("T2M" %in% names(df)) {
+      # For non-hourly data with only T2M, use T2M as both min and max
+      # This is a simplification but allows the computation to proceed
+      message("Creating T2M_MIN and T2M_MAX using available T2M values")
+      df$T2M_MIN <- df$T2M
+      df$T2M_MAX <- df$T2M
+    } else {
+      stop("Required columns for GDD calculation are missing and cannot be derived: ", 
+           paste(missing_cols, collapse=", "), 
+           ". Please include T2M or T2M_MIN and T2M_MAX in the selected parameters.")
+    }
+  }
 
   Tb <- Tbase
   TB <- Tceil
   df <-
     df |>
     dplyr::mutate(
-      # Temperatura média (real ou estimada)
+      # Mean temperature (real or estimated)
       Tmed = dplyr::case_when(
         "T2M" %in% names(df) ~ dplyr::if_else(is.na(T2M), (T2M_MAX + T2M_MIN) / 2, T2M),
         TRUE ~ (T2M_MAX + T2M_MIN) / 2
       ),
 
-      # GDD: usa Tmed quando presente, caso contrário calcula com Ometto
+      # GDD: uses Tmed when present, otherwise calculates with Ometto
       GDD = dplyr::case_when(
         "T2M" %in% names(df) & !is.na(T2M) ~ pmax(pmin(Tmed, Tceil), Tbase) - Tbase,
         Tceil > T2M_MAX & T2M_MAX > T2M_MIN & T2M_MIN > Tbase ~ (T2M_MAX - T2M_MIN) / 2 + T2M_MIN - Tbase,
@@ -1330,19 +1434,29 @@ gdd_ometto_frue <- function(df,
           0.5 * (((T2M_MAX - Tbase)^2 - (T2M_MAX - Tceil)^2) / (T2M_MAX - T2M_MIN)),
         TRUE ~ 0
       ),
-      # FRUE: com base em Tmed
+      # FRUE: based on Tmed
       FRUE = dplyr::case_when(
         Tmed < Topt1 ~ (Tmed - Tbase) / (Topt1 - Tbase),
         Tmed > Topt2 ~ (Tmed - Topt2) / (Tceil - Topt2),
         TRUE ~ 1
       ),
       FRUE = pmax(pmin(FRUE, 1), 0)
-    ) |>
-    dplyr::mutate(
-      GDD_CUMSUM = cumsum(GDD),
-      RTA_CUMSUM = cumsum(RTA),
-    ) |>
-    dplyr::ungroup()
+    )
+
+  # Add cumulative sum columns only if RTA is available
+  if ("RTA" %in% names(df)) {
+    df <- df |>
+      dplyr::mutate(
+        GDD_CUMSUM = cumsum(GDD),
+        RTA_CUMSUM = cumsum(RTA)
+      )
+  } else {
+    df <- df |>
+      dplyr::mutate(
+        GDD_CUMSUM = cumsum(GDD)
+      )
+  }
+  
   return(df)
 }
 
