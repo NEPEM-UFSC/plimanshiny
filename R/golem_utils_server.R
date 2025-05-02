@@ -1112,28 +1112,43 @@ gdd_ometto_frue <- function(df,
       Tb <- Tbase
       TB <- Tceil
 
-      # Step 1: Calculate intermediate numeric and Tmed columns
+      # Step 1: Calculate intermediate numeric columns explicitly
       df_intermediate <- df |>
         dplyr::mutate(
-          # Ensure temps are numeric
-          T2M_MAX_num = as.numeric(T2M_MAX),
-          T2M_MIN_num = as.numeric(T2M_MIN),
-          # Use T2M directly if it exists and represents daily mean, otherwise calculate from min/max
+          # Ensure temps are numeric (use suppressWarnings for robustness)
+          T2M_MAX_num = suppressWarnings(as.numeric(T2M_MAX)),
+          T2M_MIN_num = suppressWarnings(as.numeric(T2M_MIN)),
+          # Also pre-calculate T2M_num if T2M exists, otherwise NA
+          T2M_num = if ("T2M" %in% names(df)) suppressWarnings(as.numeric(T2M)) else NA_real_
+        )
+
+      # Step 2: Calculate Tmed using pre-calculated numeric columns
+      df_intermediate <- df_intermediate |>
+        dplyr::mutate(
           Tmed = dplyr::case_when(
-            "T2M" %in% names(df) & !is.na(as.numeric(T2M)) ~ as.numeric(T2M), # Prefer existing T2M if valid
+            # Use T2M_num if it's valid (not NA)
+            !is.na(T2M_num) ~ T2M_num,
+            # Fallback to MIN/MAX if they are valid numerics
             !is.na(T2M_MAX_num) & !is.na(T2M_MIN_num) ~ (T2M_MAX_num + T2M_MIN_num) / 2,
+            # Default if neither T2M_num nor MIN/MAX are usable
             TRUE ~ NA_real_
           )
         )
 
-      # Step 2: Calculate GDD and FRUE using Tmed from the previous step
+      # Step 3: Calculate GDD and FRUE using Tmed and numeric temps
       df_out <- df_intermediate |>
         dplyr::mutate(
           # GDD Calculation (Ometto method, handling NAs and edge cases)
           GDD = dplyr::case_when(
-            is.na(Tmed) | is.na(T2M_MAX_num) | is.na(T2M_MIN_num) ~ NA_real_, # Cannot calculate if temps are NA
+            # Use pre-calculated numeric columns directly
+            is.na(T2M_MAX_num) | is.na(T2M_MIN_num) ~ NA_real_, # Cannot calculate if temps are NA
 
-            # Ometto logic using Tmin/Tmax primarily, Tmed is used for FRUE
+            # Handle case where Tmin == Tmax first to avoid division by zero later
+            T2M_MAX_num == T2M_MIN_num & T2M_MAX_num >= Tb & T2M_MAX_num <= TB ~ T2M_MAX_num - Tb,
+            T2M_MAX_num == T2M_MIN_num & T2M_MAX_num < Tb ~ 0,
+            T2M_MAX_num == T2M_MIN_num & T2M_MAX_num > TB ~ TB - Tb,
+
+            # Ometto logic using Tmin/Tmax primarily (now safe from division by zero)
             TB > T2M_MAX_num & T2M_MAX_num > T2M_MIN_num & T2M_MIN_num >= Tb ~ (T2M_MAX_num + T2M_MIN_num) / 2 - Tb,
             TB > T2M_MAX_num & T2M_MAX_num > Tb & Tb > T2M_MIN_num ~ ((T2M_MAX_num - Tb)^2) / (2 * (T2M_MAX_num - T2M_MIN_num)),
             TB > Tb & Tb >= T2M_MAX_num & T2M_MAX_num >= T2M_MIN_num ~ 0, # Tmax below Tbase
@@ -1144,7 +1159,8 @@ gdd_ometto_frue <- function(df,
             T2M_MAX_num >= Tb & T2M_MIN_num >= TB ~ TB - Tb, # Tmin above Tceil
             T2M_MAX_num >= TB & T2M_MIN_num < Tb ~ # Added case: Max > Ceil, Min < Base
                  ( (T2M_MAX_num - Tb)^2 - (T2M_MAX_num - TB)^2 ) / (2 * (T2M_MAX_num - T2M_MIN_num)), # Same as Tmax>TB>Tb>Tmin case
-            TRUE ~ 0 # Default case (e.g., Tmin > Tmax, should be rare)
+
+            TRUE ~ 0 # Default case (should be rare if NA handled)
           ),
           # Ensure GDD is not negative
           GDD = pmax(0, GDD),
@@ -1160,7 +1176,7 @@ gdd_ometto_frue <- function(df,
           FRUE = pmax(0, pmin(FRUE, 1))
         ) |>
         # Remove temporary numeric columns
-        dplyr::select(-dplyr::any_of(c("T2M_MAX_num", "T2M_MIN_num"))) # Keep Tmed if it was calculated
+        dplyr::select(-dplyr::any_of(c("T2M_MAX_num", "T2M_MIN_num", "T2M_num"))) # Remove T2M_num as well
 
 
       # Add cumulative sums per environment if ENV exists
@@ -1251,14 +1267,15 @@ envirotype <- function(data,
 
 # Função para agregar dados horários para dados diários
 aggregate_hourly_data <- function(data) {
-  # Assume que 'data' já possui uma coluna 'DATE' da classe Date
-  # Se a coluna de data tiver outro nome ou formato, ajuste a linha abaixo
-  if (!"DATE" %in% colnames(data) || !inherits(data$DATE, "Date")) {
-     stop("A coluna 'DATE' (classe Date) é esperada no dataframe de entrada.") 
+  # Assume que 'data' já possui colunas 'ENV' e 'YYYYMMDD'
+  required_cols <- c("ENV", "YYYYMMDD", "T2M")
+  if (!all(required_cols %in% colnames(data))) {
+     stop(paste("Colunas necessárias para agregação horária ausentes:",
+                paste(setdiff(required_cols, colnames(data)), collapse=", ")))
   }
 
   data |>
-    dplyr::group_by(DATE) |> # Agrupa pela coluna DATE existente
+    dplyr::group_by(ENV, YYYYMMDD) |> # Agrupa por ENV e YYYYMMDD
     dplyr::summarise(
       # Calcula min e max para T2M, nomeando como T2M_MIN e T2M_MAX
       T2M_MIN = min(T2M, na.rm = TRUE),
@@ -1268,11 +1285,12 @@ aggregate_hourly_data <- function(data) {
       dplyr::across(
          dplyr::where(is.numeric) & !dplyr::all_of(c("T2M")), # Exclui T2M já processado
          list(mean = mean, sum = sum), # Adicione outras funções se necessário
-         na.rm = TRUE, 
+         na.rm = TRUE,
          .names = "{.col}_{.fn}" # Mantém o padrão para outras colunas
        ),
-      .groups = 'drop'
+      .groups = 'keep' # Mantém as colunas de agrupamento (ENV, YYYYMMDD)
     ) |>
+    dplyr::ungroup() |> # Remove o agrupamento após summarise
     # Garante que Inf/-Inf de min/max em dias sem dados sejam NA
     dplyr::mutate(
         T2M_MIN = ifelse(is.infinite(T2M_MIN), NA, T2M_MIN),
