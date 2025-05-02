@@ -741,40 +741,207 @@ FetchWeatherCommand <- R6::R6Class("FetchWeatherCommand",
 
           # Call the service function (get_climate)
           all_weather_data <- private$.service_fun(
-             env = df$env, lat = df$lat, lon = df$lon, start = df$start, end = df$end,
-             params = req_params$params, scale = req_params$scale,
-             parallel = req_params$parallel, workers = req_params$workers,
-             progress = TRUE, environment = "shiny"
+            env = df$env,
+            lat = df$lat,
+            lon = df$lon,
+            start = df$start,
+            end = df$end,
+            params = req_params$params,
+            scale = req_params$scale,
+            parallel = req_params$parallel,
+            workers = req_params$workers,
+            environment = "shiny" # Ensure shiny progress is used
           )
 
           if (is.null(all_weather_data) || nrow(all_weather_data) == 0) {
-            stop("No data retrieved from the API or data is empty.")
+            stop("No weather data retrieved from the API.")
           }
 
-          # 5. Post-processing (GDD, Chilling Hours) - Remains the same
-          if (req_params$compute_gdd || req_params$compute_ch$w || req_params$compute_ch$utah || req_params$compute_ch$nc) {
-            if (req_params$scale == "hourly") {
-              if (!("T2M" %in% colnames(all_weather_data))) stop("T2M parameter is required for GDD/CH calculation with hourly data.")
-              all_weather_data <- aggregate_hourly_data(all_weather_data)
-            } else if (req_params$compute_gdd) {
-               if (!all(c("T2M_MIN", "T2M_MAX") %in% colnames(all_weather_data))) stop("T2M_MIN and T2M_MAX parameters are required for GDD calculation with daily/monthly data.")
+          # --- Data Inspection and Cleaning (Added) ---
+          message("--- Inspecting all_weather_data before GDD/CH ---")
+          print(str(all_weather_data))
+          print(summary(all_weather_data[, intersect(c("T2M", "T2M_MIN", "T2M_MAX"), names(all_weather_data)), drop = FALSE]))
+
+          # Clean temperature columns before GDD/CH calculations
+          temp_cols_to_clean <- intersect(c("T2M", "T2M_MIN", "T2M_MAX"), names(all_weather_data))
+          if (length(temp_cols_to_clean) > 0) {
+            message("Cleaning temperature columns: ", paste(temp_cols_to_clean, collapse=", "))
+            for (col in temp_cols_to_clean) {
+              if (!is.numeric(all_weather_data[[col]])) {
+                 message("Converting column '", col, "' to numeric.")
+                 # Use suppressWarnings to avoid flooding console if conversion creates NAs
+                 all_weather_data[[col]] <- suppressWarnings(as.numeric(all_weather_data[[col]]))
+              }
             }
-            if (req_params$compute_gdd) {
-              all_weather_data <- gdd_ometto_frue(all_weather_data, Tbase = req_params$gdd_params$basemin, Tceil = req_params$gdd_params$baseupp, Topt1 = req_params$gdd_params$optimallower, Topt2 = req_params$gdd_params$optimalupper)
-            }
-            if (req_params$compute_ch$w) {
-              all_weather_data <- calculate_weinberger_ch(all_weather_data)
-            }
-            if (req_params$compute_ch$utah) {
-              all_weather_data <- calculate_utah_ch(all_weather_data)
-            }
-            if (req_params$compute_ch$nc) {
-              all_weather_data <- calculate_nc_ch(all_weather_data)
-            }
-          } else {
+            # Optional: Re-check summary after cleaning
+            # message("--- Summary after cleaning ---")
+            # print(summary(all_weather_data[, temp_cols_to_clean, drop = FALSE]))
           }
+          # --- End Inspection and Cleaning ---
+
+
+          # 5. Post-processing (GDD, Chilling Hours)
+          if (req_params$compute_gdd || req_params$compute_ch$w || req_params$compute_ch$utah || req_params$compute_ch$nc) {
+
+            # --- Ensure Date/Time columns are present ---
+            if (!"YYYYMMDD" %in% names(all_weather_data)) {
+               if ("DATE" %in% names(all_weather_data)) {
+                  message("Creating YYYYMMDD column from DATE.")
+                  all_weather_data$YYYYMMDD <- format(as.Date(all_weather_data$DATE), "%Y%m%d")
+               } else if (all(c("YEAR", "MO", "DY") %in% names(all_weather_data))) {
+                  message("Creating YYYYMMDD column from YEAR, MO, DY.")
+                  all_weather_data$YYYYMMDD <- paste0(
+                     all_weather_data$YEAR,
+                     formatC(all_weather_data$MO, width = 2, flag = "0"),
+                     formatC(all_weather_data$DY, width = 2, flag = "0")
+                  )
+               } else {
+                  stop("Cannot proceed: Missing required date columns (YYYYMMDD or DATE or YEAR/MO/DY).")
+               }
+            }
+            if (!"DATE" %in% names(all_weather_data)) {
+                all_weather_data$DATE <- as.Date(all_weather_data$YYYYMMDD, format = "%Y%m%d")
+            }
+            if (!"DOY" %in% names(all_weather_data)) {
+               all_weather_data$DOY <- as.numeric(format(all_weather_data$DATE, "%j"))
+            }
+            # Ensure HR exists if scale is hourly (needed for CH accumulation order)
+            if (req_params$scale == "hourly" && !"HR" %in% names(all_weather_data) && "HOUR" %in% names(all_weather_data)) {
+                all_weather_data$HR <- all_weather_data$HOUR
+            }
+             if (req_params$scale == "hourly" && !"HR" %in% names(all_weather_data)) {
+                 # Attempt to infer HR if missing, maybe from row number within a day? Risky.
+                 warning("Hourly scale selected but HR column missing. CH accumulation might be incorrect if data isn't ordered chronologically.")
+                 # Add a dummy HR if absolutely necessary, but this is not ideal
+                 # all_weather_data <- all_weather_data %>% dplyr::group_by(ENV, YYYYMMDD) %>% dplyr::mutate(HR = dplyr::row_number() - 1) %>% dplyr::ungroup()
+             }
+            # --- End Date/Time columns ---
+
+
+            # Initialize placeholders for results
+            ch_results_daily <- NULL
+            gdd_results_daily <- NULL
+            final_data_daily <- NULL # Will hold the combined daily results
+
+            # --- Chilling Hours Calculation (Operates on HOURLY data) ---
+            if (req_params$scale == "hourly" && (req_params$compute_ch$w || req_params$compute_ch$utah || req_params$compute_ch$nc)) {
+              message("Calculating Chilling Hours (from hourly data)...")
+              # Work on a copy to avoid modifying the original before aggregation for GDD
+              all_weather_data_for_ch <- all_weather_data
+
+              if (req_params$compute_ch$w) {
+                all_weather_data_for_ch <- calculate_weinberger_ch(all_weather_data_for_ch)
+                message("Weinberger CH calculation complete.")
+              }
+              if (req_params$compute_ch$utah) {
+                all_weather_data_for_ch <- calculate_utah_ch(all_weather_data_for_ch)
+                message("Utah CH calculation complete.")
+              }
+              if (req_params$compute_ch$nc) {
+                all_weather_data_for_ch <- calculate_nc_ch(all_weather_data_for_ch)
+                message("North Carolina CH calculation complete.")
+              }
+
+              # Select unique daily rows containing the accumulated CH values
+              ch_cols_to_keep <- intersect(names(all_weather_data_for_ch), c("ENV", "YYYYMMDD", "DATE", "ch_w_accum", "CH_Utah_accum", "CH_NC_accum")) # Add other relevant daily CH cols if created
+              if(length(ch_cols_to_keep) > 3) { # More than just ENV, YYYYMMDD, DATE
+                 ch_results_daily <- all_weather_data_for_ch[!duplicated(all_weather_data_for_ch[, c("ENV", "YYYYMMDD")]), ch_cols_to_keep, drop = FALSE]
+                 message("Daily CH results extracted.")
+                 # print(str(ch_results_daily)) # Debug CH results
+              } else {
+                 message("No CH columns were generated.")
+              }
+            } else if (req_params$compute_ch$w || req_params$compute_ch$utah || req_params$compute_ch$nc) {
+                 warning("Chilling hours requested but scale is not hourly. Calculation skipped.", call. = FALSE)
+            }
+
+
+            # --- Aggregation and GDD Calculation (Operates on DAILY data) ---
+            # Aggregate hourly to daily IF the original scale was hourly OR if GDD is needed (requires Tmin/Tmax)
+            if (req_params$scale == "hourly") {
+              message("Aggregating hourly data for GDD/daily results...")
+              daily_aggregated_data <- aggregate_hourly_data(all_weather_data) # Use original hourly data
+              message("Hourly data aggregated.")
+
+              # Prepare the base daily data by taking unique daily rows from original hourly
+              # Keep all original columns EXCEPT T2M and HR
+              cols_to_keep_orig_daily <- setdiff(names(all_weather_data), c("T2M", "HR", "HOUR"))
+              final_data_daily <- all_weather_data[!duplicated(all_weather_data[, c("ENV", "YYYYMMDD")]), intersect(cols_to_keep_orig_daily, names(all_weather_data)), drop = FALSE]
+
+              # Join the aggregated Tmin/Tmax into the base daily data
+              final_data_daily <- dplyr::left_join(
+                  final_data_daily,
+                  daily_aggregated_data[, intersect(c("ENV", "YYYYMMDD", "T2M_MIN", "T2M_MAX"), names(daily_aggregated_data)), drop = FALSE],
+                  by = c("ENV", "YYYYMMDD")
+              )
+              message("Aggregated Min/Max temperatures joined.")
+
+            } else {
+               # If scale was already daily/monthly, use the data directly
+               final_data_daily <- all_weather_data
+               # Ensure Tmin/Tmax exist if GDD is requested
+               if(req_params$compute_gdd && !all(c("T2M_MIN", "T2M_MAX") %in% names(final_data_daily))){
+                   warning("GDD requested for daily/monthly scale, but T2M_MIN/T2M_MAX are missing. GDD calculation might fail or be inaccurate.", call. = FALSE)
+                   # Attempt fallback using T2M if available? Risky.
+                   if("T2M" %in% names(final_data_daily)){
+                       final_data_daily$T2M_MIN <- final_data_daily$T2M
+                       final_data_daily$T2M_MAX <- final_data_daily$T2M
+                       warning("Using T2M as both T2M_MIN and T2M_MAX for GDD calculation.", call. = FALSE)
+                   }
+               }
+            }
+
+            # Calculate GDD if requested (operates on the daily dataframe)
+            if (req_params$compute_gdd) {
+                message("Calculating GDD/FRUE (on daily data)...")
+                # Ensure required columns (Tmin/Tmax) are present before calling
+                if(all(c("T2M_MIN", "T2M_MAX") %in% names(final_data_daily))) {
+                   gdd_results_daily <- gdd_ometto_frue(
+                     df = final_data_daily, # Pass the prepared daily data
+                     Tbase = req_params$gdd_params$basemin,
+                     Tceil = req_params$gdd_params$baseupp,
+                     Topt1 = req_params$gdd_params$optimallower,
+                     Topt2 = req_params$gdd_params$optimalupper
+                   )
+                   message("GDD/FRUE calculation complete.")
+                   # Select only relevant GDD columns to avoid duplication later
+                   gdd_cols_to_keep <- intersect(names(gdd_results_daily), c("ENV", "YYYYMMDD", "GDD", "FRUE", "GDD_CUMSUM", "RTA_CUMSUM")) # Add others if needed
+                   gdd_results_daily <- gdd_results_daily[, gdd_cols_to_keep, drop = FALSE]
+                   # print(str(gdd_results_daily)) # Debug GDD results
+                } else {
+                   warning("Skipping GDD calculation because T2M_MIN or T2M_MAX are missing in the daily data.", call. = FALSE)
+                }
+            }
+
+
+            # --- Combine Results ---
+            message("Combining results...")
+            # Start with the base daily data (either aggregated unique hourly rows or original daily/monthly data)
+            combined_data <- final_data_daily
+
+            # Join GDD results if they exist
+            if (!is.null(gdd_results_daily)) {
+               combined_data <- dplyr::left_join(combined_data, gdd_results_daily, by = c("ENV", "YYYYMMDD"))
+               message("GDD results joined.")
+            }
+
+            # Join CH results if they exist
+            if (!is.null(ch_results_daily)) {
+               combined_data <- dplyr::left_join(combined_data, ch_results_daily, by = c("ENV", "YYYYMMDD", "DATE")) # Join also by DATE if present in both
+               message("CH results joined.")
+            }
+
+            # Assign the final combined data back to all_weather_data
+            all_weather_data <- combined_data
+            message("Final data combined.")
+            # print(str(all_weather_data)) # Debug final combined data
+
+          } else {
+            message("Skipping GDD/FRUE/CH calculations as none were requested.")
+          }
+
           # 6. Save to Cache using CacheService
-          message("Command saving fetched data to cache.")
+          message("Command saving final processed data to cache.")
           private$.cache_service$save(cache_key, all_weather_data)
 
           # 7. Update Reactives - Remains the same
