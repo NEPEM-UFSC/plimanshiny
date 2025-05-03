@@ -156,7 +156,7 @@ mod_weather_ui <- function(id) {
                     col_12(
                       prettySwitch(
                         inputId = ns("ch_w"),
-                        label = "Weinberger (< 7.2°C)",
+                        label = "Weinberger (< 7.2°C/45°F)",
                         value = FALSE,
                         status = "success",
                         fill = TRUE
