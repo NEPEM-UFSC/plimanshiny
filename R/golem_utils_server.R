@@ -1299,14 +1299,68 @@ aggregate_hourly_data <- function(data) {
 }
 
 is_duplicate_point <- function(new_lat, new_lon, points_data) {
-  if (length(points_data) == 0) return(FALSE)
+  message("--- is_duplicate_point START ---")
+  message("Checking coords: lat=", new_lat, ", lon=", new_lon)
 
-  existing_points <- tryCatch(do.call(rbind, points_data), error = function(e) NULL)
-  if (is.null(existing_points)) return(FALSE)
+  # Ensure new lat/lon are valid numbers before proceeding
+  new_lat_num <- suppressWarnings(as.numeric(new_lat))
+  new_lon_num <- suppressWarnings(as.numeric(new_lon))
+  if (is.na(new_lat_num) || is.na(new_lon_num)) {
+    warning("is_duplicate_point called with NA coordinates.")
+    message("--- is_duplicate_point END (returning FALSE due to NA input) ---")
+    return(FALSE) # Treat NA input as non-duplicate
+  }
+  new_lat_rnd <- round(new_lat_num, 4)
+  new_lon_rnd <- round(new_lon_num, 4)
+  message("Rounded coords: lat=", new_lat_rnd, ", lon=", new_lon_rnd)
 
-  existing_points <- as.data.frame(existing_points)
-  any(round(as.numeric(existing_points$lat), 4) == round(new_lat, 4) &
-      round(as.numeric(existing_points$lon), 4) == round(new_lon, 4))
+  # Handle empty list case
+  if (!is.list(points_data) || length(points_data) == 0) {
+    message("Points list is empty.")
+    message("--- is_duplicate_point END (returning FALSE) ---")
+    return(FALSE)
+  }
+  message("Points list length: ", length(points_data))
+
+  # Iterate through the list, checking each point individually
+  is_dup <- FALSE
+  for (i in seq_along(points_data)) {
+    point_df <- points_data[[i]]
+    message("Checking against point #", i)
+    # Basic check: is it a data frame with lat/lon?
+    if (!is.data.frame(point_df) || !all(c("lat", "lon") %in% names(point_df))) {
+      message("  Skipping point #", i, ": Not a valid data frame or missing lat/lon columns.")
+      next # Skip malformed list elements
+    }
+    # Ensure it has at least one row
+    if (nrow(point_df) == 0) {
+        message("  Skipping point #", i, ": Data frame has zero rows.")
+        next
+    }
+
+    # Extract and validate coordinates from the existing point
+    existing_lat_num <- suppressWarnings(as.numeric(point_df$lat[1])) # Check first row only
+    existing_lon_num <- suppressWarnings(as.numeric(point_df$lon[1])) # Check first row only
+
+    if (is.na(existing_lat_num) || is.na(existing_lon_num)) {
+      message("  Skipping point #", i, ": Existing point has NA coordinates.")
+      next # Skip points with NA coordinates
+    }
+
+    existing_lat_rnd <- round(existing_lat_num, 4)
+    existing_lon_rnd <- round(existing_lon_num, 4)
+    message("  Comparing with existing: lat=", existing_lat_rnd, ", lon=", existing_lon_rnd)
+
+    # Compare
+    if (existing_lat_rnd == new_lat_rnd && existing_lon_rnd == new_lon_rnd) {
+      message("  Duplicate found at point #", i)
+      is_dup <- TRUE
+      break # Found a duplicate, no need to check further
+    }
+  }
+
+  message("--- is_duplicate_point END (returning ", is_dup, ") ---")
+  return(is_dup)
 }
 
 calculate_weinberger_ch <- function(data) {

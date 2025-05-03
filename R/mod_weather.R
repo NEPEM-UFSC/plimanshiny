@@ -1282,12 +1282,21 @@ mod_weather_server <- function(id, dfs) {
         hideGroup("Esri World Imagery")
     })
     observeEvent(input$map2_click, {
+      message("--- map2_click START ---")
       click <- input$map2_click
+      message("Click coords: lat=", click$lat, ", lng=", click$lng)
       req(click$lat, click$lng, input$envname, input$dates)
+      message("Required inputs present (lat, lng, envname, dates)")
       new_lat <- round(click$lat, 4)
       new_lon <- round(click$lng, 4)
+      message("Rounded coords: lat=", new_lat, ", lon=", new_lon)
 
-      if (!is_duplicate_point(new_lat, new_lon, points$data)) {
+      message("Calling is_duplicate_point...")
+      is_dup <- is_duplicate_point(new_lat, new_lon, points$data)
+      message("is_duplicate_point returned: ", is_dup)
+
+      if (!is_dup) {
+        message("Point is NOT a duplicate. Creating new point...")
         new_point <- data.frame(
           env = input$envname,
           lat = new_lat,
@@ -1296,55 +1305,155 @@ mod_weather_server <- function(id, dfs) {
           end = input$dates[[2]],
           stringsAsFactors = FALSE
         )
+        message("New point data frame created:")
+        print(new_point)
         # Append data safely
         current_length <- length(points$data)
+        message("Current points$data length: ", current_length)
         points$data[[current_length + 1]] <- new_point
+        message("New point appended to points$data. New length: ", length(points$data))
       } else {
+         message("Point IS a duplicate. Showing notification.")
          showNotification("Point already exists at these coordinates.", type = "warning")
       }
+      message("--- map2_click END ---")
     })
     observeEvent(input$mun, {
+      message("--- mun observer START ---")
       req(input$state, input$mun, input$dates)
+      message("Selected state(s): ", paste(input$state, collapse=", "))
+      message("Selected mun(s): ", paste(input$mun, collapse=", "))
 
+      # Leitura do arquivo de municípios (mantido)
+      message("Reading municipality CSV...")
       mun_df_path <- system.file("app/www/coords_muni.csv", package = "plimanshiny", mustWork = FALSE)
       if(mun_df_path == "") {
-          showNotification("Municipality coordinate file not found.", type = "error")
+          message("ERROR: Municipality coordinates file not found.")
+          showNotification("Arquivo de coordenadas de municípios não encontrado.", type = "error")
+          message("--- mun observer END (Error) ---")
           return()
       }
       mun_df <- read.csv(file = mun_df_path, sep = ",")
-
+      message("Filtering selected municipalities...")
       selected_mun <- dplyr::filter(mun_df,
-                                    abbrev_state %in% input$state,
-                                    name_muni %in% input$mun) |>
-        dplyr::arrange(abbrev_state, name_muni)
+                                   abbrev_state %in% input$state,
+                                   name_muni %in% input$mun)
+      message("Number of selected municipalities found: ", nrow(selected_mun))
 
-      added_count <- 0
-      skipped_count <- 0
-      current_length <- length(points$data)
+      # Verificação se há municípios selecionados (mantido)
+      if(nrow(selected_mun) == 0) {
+        message("No municipalities found matching selection. Showing notification.")
+        showNotification("Nenhum município encontrado com os critérios selecionados.", type = "warning")
+        message("--- mun observer END (No municipalities found) ---")
+        return()
+      }
 
-      for (i in 1:nrow(selected_mun)) {
-        mun_info <- selected_mun[i, ]
-        new_lat <- round(mun_info$lat, 4)
-        new_lon <- round(mun_info$lon, 4)
+      # Obter o intervalo de datas atual (usar o mesmo que está no dateRangeInput)
+      start_date <- input$dates[[1]]
+      end_date <- input$dates[[2]]
+      message("Start date: ", start_date)
+      message("End date: ", end_date)
 
-        if (!is_duplicate_point(new_lat, new_lon)) {
+      # Validação de datas
+      if(is.null(start_date) || is.null(end_date) || end_date < start_date) {
+        message("ERROR: Invalid date range detected (start=", start_date, ", end=", end_date, "). Showing notification.")
+        showNotification("Por favor, selecione um intervalo de datas válido.", type = "error")
+        message("--- mun observer END (Invalid date range) ---")
+        return()
+      }
+
+      # Lista temporária para novos pontos
+      points_to_add <- list()
+      skipped_invalid_count <- 0 # Contador para coordenadas inválidas
+      skipped_duplicate_count <- 0 # Contador para duplicatas (apenas para log)
+      current_point_count <- length(isolate(points$data)) # Contagem inicial isolada
+      message("Initializing loop. Current point count (isolated): ", current_point_count)
+
+      # Processar cada município selecionado
+      for(i in 1:nrow(selected_mun)) {
+        message("Processing municipality #", i, " of ", nrow(selected_mun))
+        mun_row <- selected_mun[i, ]
+        message("  Municipality data:")
+        print(mun_row)
+
+        # Conversão explícita para numérico com verificação
+        message("  Converting coordinates: lat=", mun_row$lat, ", lon=", mun_row$lon) # Use lat/lon
+        new_lat <- suppressWarnings(as.numeric(as.character(mun_row$lat))) # Use lat
+        new_lon <- suppressWarnings(as.numeric(as.character(mun_row$lon))) # Use lon
+        message("  Converted coords: lat=", new_lat, ", lon=", new_lon)
+
+        # Verificar se as coordenadas são válidas
+        if(is.na(new_lat) || is.na(new_lon)) {
+          message("  Skipping: Invalid (NA) coordinates.")
+          skipped_invalid_count <- skipped_invalid_count + 1 # Incrementa contador de inválidos
+          next
+        }
+
+        # Arredondar coordenadas para comparação consistente
+        new_lat_rnd <- round(new_lat, 4)
+        new_lon_rnd <- round(new_lon, 4)
+        message("  Rounded coords: lat=", new_lat_rnd, ", lon=", new_lon_rnd)
+
+        # Verificar se é ponto duplicado (usando a função refatorada)
+        # Comparar com os pontos já existentes E com os que estão sendo adicionados nesta leva
+        message("  Checking for duplicates against existing (", length(isolate(points$data)), ") and newly added (", length(points_to_add), ") points...")
+        existing_points_combined <- c(isolate(points$data), points_to_add) # Combina existentes e os já coletados neste loop
+        is_duplicate <- is_duplicate_point(new_lat_rnd, new_lon_rnd, existing_points_combined)
+        message("  is_duplicate_point returned: ", is_duplicate)
+
+        if(!is_duplicate) {
+          message("  Point is NOT a duplicate. Creating new point...")
+          # Gerar nome único para o ambiente, considerando os pontos a serem adicionados
+          # Usar o nome do município como 'env' por padrão
+          env_name <- mun_row$name_muni
+          message("    Using municipality name as env name: ", env_name)
+
+          # Criar novo ponto data frame
           new_point <- data.frame(
-            env = mun_info$name_muni,
-            lat = new_lat,
-            lon = new_lon,
-            start = input$dates[[1]],
-            end = input$dates[[2]],
+            env = env_name,
+            lat = new_lat_rnd, # Usar coordenadas arredondadas
+            lon = new_lon_rnd, # Usar coordenadas arredondadas
+            start = as.Date(start_date), # Garantir que é Date
+            end = as.Date(end_date),     # Garantir que é Date
             stringsAsFactors = FALSE
           )
-          points$data[[current_length + i]] <- new_point
-          added_count <- added_count + 1
-        } else {
-          skipped_count <- skipped_count + 1
-        }
-      }
-      if(added_count > 0) showNotification(paste("Added", added_count, "municipalities."), type = "message")
-      if(skipped_count > 0) showNotification(paste("Skipped", skipped_count, "duplicate municipalities."), type = "warning")
+          message("    New point data frame created:")
+          print(new_point)
 
+          # Adicionar à lista temporária
+          points_to_add[[length(points_to_add) + 1]] <- new_point
+          message("    Point added to temporary list points_to_add. List size: ", length(points_to_add))
+
+        } else {
+          message("  Skipping: Point IS a duplicate (expected behavior).")
+          skipped_duplicate_count <- skipped_duplicate_count + 1 # Incrementa contador de duplicatas (para log)
+        }
+      } # Fim do loop for
+      message("Loop finished. Points to add: ", length(points_to_add), ". Skipped invalid: ", skipped_invalid_count, ". Skipped duplicates: ", skipped_duplicate_count)
+
+      # Adicionar todos os novos pontos de uma vez
+      if(length(points_to_add) > 0) {
+        message("Adding collected points to points$data...")
+        temp_list <- isolate(points$data)
+        message("  Current points$data length (isolated): ", length(temp_list))
+        points$data <- c(temp_list, points_to_add)
+        message("  New points$data length: ", length(points$data))
+      } else {
+        message("No new points to add.")
+      }
+
+      # Feedback para o usuário (mantido)
+      added_count <- length(points_to_add)
+      if(added_count > 0) {
+        message("Showing notification: Added ", added_count, " municipalities.")
+        showNotification(paste("Adicionados", added_count, "municípios."), type = "message")
+      }
+      # Apenas notifica sobre inválidos, não sobre duplicatas esperadas
+      if(skipped_invalid_count > 0) {
+        message("Showing notification: Skipped ", skipped_invalid_count, " municipalities due to invalid coordinates.")
+        showNotification(paste("Pulados", skipped_invalid_count, "municípios (coordenadas inválidas).", type = "warning"))
+      }
+      message("--- mun observer END ---")
     })
     observe({
       req(input$state)
