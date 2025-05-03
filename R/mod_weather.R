@@ -87,57 +87,71 @@ mod_weather_ui <- function(id) {
                 ),
                 hl(),
                 prettySwitch(
-                  inputId = ns("computegdd"),
-                  label = "Compute thermal parameters",
+                  inputId = ns("show_thermal_opts"),
+                  label = "Show thermal parameters options",
                   value = FALSE,
                   status = "success",
                   fill = TRUE
                 ),
                 conditionalPanel(
-                  condition = "input.computegdd == true", ns = ns,
+                  condition = "input.show_thermal_opts == true", ns = ns,
+                  
+                    # GDD SECTION
+                    div(
+                    style = "background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 15px;",
+                    h4(icon("sun"), "Growing Degree Days (GDD)", style = "margin-top: 0;"),
+                    p("GDD quantifies the heat required for plant development based on daily temperatures, using the Ometto method for greater precision in thermal limits."),
+                    ),
                   fluidRow(
                     col_12(
-                      div(
-                        style = "background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 15px;",
-                        HTML("<b>Degree-days</b>: A measure of heat accumulation needed for plant/insect development. It's calculated using base temperatures below which development stops.")
+                      prettySwitch(
+                        inputId = ns("computegdd"),
+                        label = "Calculate Growing Degree Days (GDD)",
+                        value = FALSE,
+                        status = "success",
+                        fill = TRUE
                       )
                     )
                   ),
-                  fluidRow(
-                    col_3(
-                      numericInput(ns("basemin"),
-                                   label = "Tbase lower (ºC)",
-                                   value = 10,
-                                   step = 0.1)
-                    ),
-                    col_3(
-                      numericInput(ns("baseupp"),
-                                   label = "Tbase upper (ºC)",
-                                   value = 40,
-                                   step = 0.1)
-                    ),
-                    col_3(
-                      numericInput(ns("optimallower"),
-                                   label = "Topt lower (ºC)",
-                                   value = 26,
-                                   step = 0.1)
-                    ),
-                    col_3(
-                      numericInput(ns("optimalupper"),
-                                   label = "Topt upper (ºC)",
-                                   value = 32,
-                                   step = 0.1)
+                  conditionalPanel(
+                    condition = "input.computegdd == true", ns = ns,
+                    fluidRow(
+                      col_3(
+                        numericInput(ns("basemin"),
+                                     label = "Base temp (°C)",
+                                     value = 10,
+                                     step = 0.1)
+                      ),
+                      col_3(
+                        numericInput(ns("baseupp"),
+                                     label = "Ceiling temp (°C)",
+                                     value = 40,
+                                     step = 0.1)
+                      ),
+                      col_3(
+                        numericInput(ns("optimallower"),
+                                     label = "Optimal lower (°C)",
+                                     value = 26,
+                                     step = 0.1)
+                      ),
+                      col_3(
+                        numericInput(ns("optimalupper"),
+                                     label = "Optimal upper (°C)",
+                                     value = 32,
+                                     step = 0.1)
+                      )
                     )
                   ),
+                  
                   hl(),
-                  fluidRow(
-                    col_12(
-                      div(
-                        style = "background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 15px;",
-                        HTML("<b>Chilling hours</b>: Accumulated hours in specific temperature ranges required for dormancy breaking in perennial crops. <i>Select methods appropriate for your specific crop and region.</i>")
-                      )
-                    )
-                  ),
+                  
+                    # CHILLING HOURS SECTION
+                    div(
+                    style = "background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 15px;",
+                    h4(icon("snowflake"), "Chilling Hours", style = "margin-top: 0;"),
+                    p("Accumulated hours in specific temperature ranges required for dormancy breaking in some perennial crops."),
+                    p("Scale will be automatically set to hourly."),
+                    ),
                   fluidRow(
                     col_12(
                       prettySwitch(
@@ -1864,6 +1878,113 @@ mod_weather_server <- function(id, dfs) {
       }
     })
 
+    # GDD Calculator Observer
+    observeEvent(input$calculate_gdd, {
+      # Check if we have data to perform the calculation
+      climate_data <- resclimate()
+      if (is.null(climate_data) || nrow(climate_data) == 0) {
+        sendSweetAlert(
+          session = session,
+          title = "No Data Available",
+          text = "Please fetch climate data first before calculating GDD.",
+          type = "warning"
+        )
+        return()
+      }
+      
+      # Verify required parameters are present
+      required_cols <- NULL
+      if ("T2M_MIN" %in% names(climate_data) && "T2M_MAX" %in% names(climate_data)) {
+        required_cols <- c("T2M_MIN", "T2M_MAX")
+      } else if ("T2M" %in% names(climate_data)) {
+        required_cols <- "T2M"
+      }
+      
+      if (is.null(required_cols)) {
+        sendSweetAlert(
+          session = session,
+          title = "Missing Required Parameters",
+          text = paste("GDD calculation requires either T2M_MIN & T2M_MAX for daily data or T2M for hourly data.",
+                       "Please ensure these parameters are included in your query."),
+          type = "error"
+        )
+        return()
+      }
+      
+      # Prepare dataset for GDD calculation
+      withProgress(message = "Calculating GDD...", {
+        # Step 1: Create daily data if we're working with hourly data
+        daily_data <- climate_data
+        if ("HR" %in% names(climate_data) || "HOUR" %in% names(climate_data)) {
+          incProgress(0.2, detail = "Aggregating hourly data to daily...")
+          daily_data <- aggregate_hourly_data(climate_data)
+          
+          # Ensure Date column 
+          if (!"DATE" %in% names(daily_data)) {
+            daily_data$DATE <- as.Date(as.character(daily_data$YYYYMMDD), format = "%Y%m%d")
+          }
+        } else {
+          # Ensure DATE exists for daily data
+          if (!"DATE" %in% names(daily_data) && "YYYYMMDD" %in% names(daily_data)) {
+            daily_data$DATE <- as.Date(as.character(daily_data$YYYYMMDD), format = "%Y%m%d")
+          }
+        }
+        
+        # Step 2: Calculate GDD using the Ometto method
+        incProgress(0.5, detail = "Computing growing degree days...")
+        gdd_result <- gdd_ometto_frue(
+          df = daily_data,
+          Tbase = input$basemin,
+          Tceil = input$baseupp,
+          Topt1 = input$optimallower,
+          Topt2 = input$optimalupper
+        )
+        
+        # Step 3: Merge results back into main dataset
+        incProgress(0.8, detail = "Updating results...")
+        
+        # Keep only original columns plus GDD columns to avoid duplicating common columns
+        original_cols <- setdiff(names(climate_data), c("GDD", "FRUE", "GDD_CUMSUM"))
+        gdd_cols <- c("GDD", "FRUE", "GDD_CUMSUM") 
+        
+        # For hourly data, we need to join back to original hourly data
+        if ("HR" %in% names(climate_data) || "HOUR" %in% names(climate_data)) {
+          # Merge GDD data back with original hourly data
+          # First prepare join columns - ensure YYYYMMDD exists in both
+          if (!"YYYYMMDD" %in% names(climate_data)) {
+            climate_data$YYYYMMDD <- format(climate_data$DATE, "%Y%m%d")
+          }
+          
+          # Join by ENV and YYYYMMDD (date)
+          merged_data <- dplyr::left_join(
+            climate_data,
+            gdd_result[, c("ENV", "YYYYMMDD", gdd_cols)],
+            by = c("ENV", "YYYYMMDD")
+          )
+        } else {
+          # For daily data, just update with GDD columns
+          merged_data <- gdd_result
+        }
+        
+        # Step 4: Update the reactive values with new data
+        resclimate(merged_data)
+        dfs[["weather"]] <- create_reactval("weather", merged_data)
+        
+        # Step 5: Notify user
+        incProgress(1.0, detail = "Complete!")
+      })
+      
+      sendSweetAlert(
+        session = session,
+        title = "GDD Calculation Complete",
+        text = paste("Growing Degree Days calculated successfully using the Ometto method with:",
+                     paste("Base temp:", input$basemin, "°C"),
+                     paste("Ceiling temp:", input$baseupp, "°C"),
+                     paste("Optimal range:", input$optimallower, "-", input$optimalupper, "°C"),
+                     sep = "\n"),
+        type = "success"
+      )
+    })
 
   }) # End moduleServer
 }
