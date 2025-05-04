@@ -1466,64 +1466,90 @@ calculate_utah_ch <- function(data) {
   return(ch_data)
 }
 calculate_nc_ch <- function(data) {
-  #North Carolina model (adaptation of the Utah model for milder climates)
+# Calculation of Cold Units (CU) based on the North Carolina model:
+# 
+# The North Carolina model is an adaptation of the Utah model, used in milder climates, 
+# such as the southeastern United States. This model is specifically designed to account 
+# for the impact of higher temperatures during winter, which can **reduce or even reverse** 
+# part of the cold accumulation that occurred earlier. This is represented by negative 
+# cold units (CU), which occur when temperatures exceed certain critical thresholds.
+#
+# The model formulation uses temperature ranges to assign positive and negative values 
+# for Cold Units. For example, temperatures between 16.5°C and 19°C contribute negative 
+# values (from -0.5 to -2.0 CU), because warmth can impair plant dormancy, which is 
+# physiologically significant in warmer climates.
+#
+# The accumulation function is done using `cumsum(CH_NC)`, meaning the negative values 
+# **are not constrained to zero**. This allows the total CU value over time to become negative,
+# reflecting the impact of higher temperatures on the cooling process. In other models, 
+# accumulation is limited to positive values to avoid this, but in the North Carolina model, 
+# this feature is intentional, as the model was developed to reflect mild climate conditions 
+# and the effect of excessive heat during winter.
+#
+# Therefore, unlike models like Utah’s or more conservative methods that **stop at zero**, 
+# the North Carolina model allows the accumulated Cold Units value to become negative, 
+# **representing the actual loss of chilling**.
+#
+# This is crucial in environments where chilling periods are followed by warm days, which 
+# is common in many subtropical and temperate regions, such as North Carolina in the USA.
 
   if (!("T2M" %in% colnames(data))) {
     warning("T2M column is required for chilling hours calculation (North Carolina)")
     return(data)
   }
+
   has_env <- "ENV" %in% colnames(data)
   if (!has_env) message("ENV column not found for North Carolina calculation. Calculating accumulation globally.")
 
-  #Weights according to the North Carolina model
+  # Atribuição dos pesos conforme o modelo da Carolina do Norte
   ch_data <- data %>%
     dplyr::mutate(
       CH_NC = dplyr::case_when(
-        is.na(T2M) ~ 0, #Handle NA
+        is.na(T2M) ~ 0,
         T2M < 1.4 ~ 0,
         T2M >= 1.4 & T2M < 7.2 ~ 1.0,
         T2M >= 7.2 & T2M < 13.0 ~ 0.5,
-        T2M >= 13.0 & T2M < 16.5 ~ 0,
+        T2M >= 13.0 & T2M < 16.5 ~ 0.0,
         T2M >= 16.5 & T2M < 19.0 ~ -0.5,
         T2M >= 19.0 & T2M < 20.7 ~ -1.0,
         T2M >= 20.7 ~ -2.0,
-        TRUE ~ 0 #Should not happen
+        TRUE ~ 0
       )
     )
 
-  #Optional: Calculate daily sums if hourly
+  # Verificação e construção da coluna de data, se necessário
   if ("HR" %in% colnames(ch_data) || "HOUR" %in% colnames(ch_data)) {
-      if (!"DATE" %in% colnames(ch_data)) {
-        if (all(c("YEAR", "MO", "DY") %in% colnames(ch_data))) {
-          date_str <- paste(ch_data$YEAR, formatC(as.numeric(ch_data$MO), width = 2, flag = "0"), formatC(as.numeric(ch_data$DY), width = 2, flag = "0"), sep = "-")
-          ch_data$DATE <- tryCatch(as.Date(date_str), error = function(e) NA)
-          if(any(is.na(ch_data$DATE))) warning("Could not create DATE column reliably for daily CH grouping (NC).")
-        } else {
-          warning("Cannot group by day for daily CH sum (NC): Missing YEAR, MO, DY or DATE columns.")
-        }
+    if (!"DATE" %in% colnames(ch_data)) {
+      if (all(c("YEAR", "MO", "DY") %in% colnames(ch_data))) {
+        date_str <- paste(ch_data$YEAR, formatC(as.numeric(ch_data$MO), width = 2, flag = "0"), formatC(as.numeric(ch_data$DY), width = 2, flag = "0"), sep = "-")
+        ch_data$DATE <- tryCatch(as.Date(date_str), error = function(e) NA)
+        if (any(is.na(ch_data$DATE))) warning("Could not create DATE column reliably for daily CH grouping (NC).")
+      } else {
+        warning("Cannot group by day for daily CH sum (NC): Missing YEAR, MO, DY or DATE columns.")
       }
-      if ("DATE" %in% colnames(ch_data) && !any(is.na(ch_data$DATE))) {
-        grouping_vars <- if(has_env) c("ENV", "DATE") else "DATE"
-        ch_data <- ch_data %>%
-          dplyr::group_by(dplyr::across(dplyr::all_of(grouping_vars))) %>%
-          dplyr::mutate(CH_NC_daily = sum(CH_NC, na.rm = TRUE)) %>%
-          dplyr::ungroup()
-      }
+    }
+
+    # Cálculo opcional do total diário de CH_NC
+    if ("DATE" %in% colnames(ch_data) && !any(is.na(ch_data$DATE))) {
+      grouping_vars <- if (has_env) c("ENV", "DATE") else "DATE"
+      ch_data <- ch_data %>%
+        dplyr::group_by(dplyr::across(dplyr::all_of(grouping_vars))) %>%
+        dplyr::mutate(CH_NC_daily = sum(CH_NC, na.rm = TRUE)) %>%
+        dplyr::ungroup()
+    }
   }
 
-  #Calculate accumulated chilling units per environment (preventing negative contributions from reducing sum)
+  # Acúmulo fiel dos valores de CH_NC, incluindo valores negativos
   if (has_env) {
-      ch_data <- ch_data %>%
-        dplyr::arrange(ENV, DATE, HR) %>%
-        dplyr::group_by(ENV) %>%
-        # Accumulate only non-negative hourly contributions
-        dplyr::mutate(CH_NC_accum = cumsum(pmax(0, CH_NC))) %>%
-        dplyr::ungroup()
+    ch_data <- ch_data %>%
+      dplyr::arrange(ENV, DATE, HR) %>%
+      dplyr::group_by(ENV) %>%
+      dplyr::mutate(CH_NC_accum = cumsum(CH_NC)) %>%
+      dplyr::ungroup()
   } else {
-      ch_data <- ch_data %>%
-        dplyr::arrange(DATE, HR) %>% #Ensure correct order
-        # Accumulate only non-negative hourly contributions
-        dplyr::mutate(CH_NC_accum = cumsum(pmax(0, CH_NC)))
+    ch_data <- ch_data %>%
+      dplyr::arrange(DATE, HR) %>%
+      dplyr::mutate(CH_NC_accum = cumsum(CH_NC))
   }
 
   return(ch_data)
