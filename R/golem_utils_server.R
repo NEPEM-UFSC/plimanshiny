@@ -1511,19 +1511,19 @@ calculate_nc_ch <- function(data) {
       }
   }
 
-  #Calculate accumulated chilling units per environment (cannot go below 0)
+  #Calculate accumulated chilling units per environment (preventing negative contributions from reducing sum)
   if (has_env) {
       ch_data <- ch_data %>%
         dplyr::arrange(ENV, DATE, HR) %>%
         dplyr::group_by(ENV) %>%
-        dplyr::mutate(CH_NC_accum = cumsum(CH_NC)) %>%
-        dplyr::mutate(CH_NC_accum = pmax(0, CH_NC_accum)) %>% #Ensure non-negative
+        # Accumulate only non-negative hourly contributions
+        dplyr::mutate(CH_NC_accum = cumsum(pmax(0, CH_NC))) %>%
         dplyr::ungroup()
   } else {
       ch_data <- ch_data %>%
         dplyr::arrange(DATE, HR) %>% #Ensure correct order
-        dplyr::mutate(CH_NC_accum = cumsum(CH_NC)) %>%
-        dplyr::mutate(CH_NC_accum = pmax(0, CH_NC_accum)) #Ensure non-negative
+        # Accumulate only non-negative hourly contributions
+        dplyr::mutate(CH_NC_accum = cumsum(pmax(0, CH_NC)))
   }
 
   return(ch_data)
