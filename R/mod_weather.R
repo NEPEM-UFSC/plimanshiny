@@ -921,7 +921,14 @@ FetchWeatherCommand <- R6::R6Class("FetchWeatherCommand",
           }
 
           # 6. Save to Cache using CacheService
-          private$.cache_service$save(cache_key, all_weather_data)
+          message(paste("Attempting to save data with cache key:", cache_key)) # DEBUG
+          if (is.null(all_weather_data) || nrow(all_weather_data) == 0) {
+          } else {
+             private$.cache_service$save(cache_key, all_weather_data)
+             # Check memory cache status immediately after saving
+             mem_status_after_save <- private$.cache_service$getMemoryCacheStatus()
+          }
+
 
           # 7. Update Reactives - Remains the same
           private$.resclimate(all_weather_data)
