@@ -1467,30 +1467,30 @@ calculate_utah_ch <- function(data) {
 }
 calculate_nc_ch <- function(data) {
 # Calculation of Cold Units (CU) based on the North Carolina model:
-# 
-# The North Carolina model is an adaptation of the Utah model, used in milder climates, 
-# such as the southeastern United States. This model is specifically designed to account 
-# for the impact of higher temperatures during winter, which can **reduce or even reverse** 
-# part of the cold accumulation that occurred earlier. This is represented by negative 
+#
+# The North Carolina model is an adaptation of the Utah model, used in milder climates,
+# such as the southeastern United States. This model is specifically designed to account
+# for the impact of higher temperatures during winter, which can **reduce or even reverse**
+# part of the cold accumulation that occurred earlier. This is represented by negative
 # cold units (CU), which occur when temperatures exceed certain critical thresholds.
 #
-# The model formulation uses temperature ranges to assign positive and negative values 
-# for Cold Units. For example, temperatures between 16.5°C and 19°C contribute negative 
-# values (from -0.5 to -2.0 CU), because warmth can impair plant dormancy, which is 
+# The model formulation uses temperature ranges to assign positive and negative values
+# for Cold Units. For example, temperatures between 16.5°C and 19°C contribute negative
+# values (from -0.5 to -2.0 CU), because warmth can impair plant dormancy, which is
 # physiologically significant in warmer climates.
 #
-# The accumulation function is done using `cumsum(CH_NC)`, meaning the negative values 
+# The accumulation function is done using `cumsum(CH_NC)`, meaning the negative values
 # **are not constrained to zero**. This allows the total CU value over time to become negative,
-# reflecting the impact of higher temperatures on the cooling process. In other models, 
-# accumulation is limited to positive values to avoid this, but in the North Carolina model, 
-# this feature is intentional, as the model was developed to reflect mild climate conditions 
+# reflecting the impact of higher temperatures on the cooling process. In other models,
+# accumulation is limited to positive values to avoid this, but in the North Carolina model,
+# this feature is intentional, as the model was developed to reflect mild climate conditions
 # and the effect of excessive heat during winter.
 #
-# Therefore, unlike models like Utah’s or more conservative methods that **stop at zero**, 
-# the North Carolina model allows the accumulated Cold Units value to become negative, 
+# Therefore, unlike models like Utah’s or more conservative methods that **stop at zero**,
+# the North Carolina model allows the accumulated Cold Units value to become negative,
 # **representing the actual loss of chilling**.
 #
-# This is crucial in environments where chilling periods are followed by warm days, which 
+# This is crucial in environments where chilling periods are followed by warm days, which
 # is common in many subtropical and temperate regions, such as North Carolina in the USA.
 
   if (!("T2M" %in% colnames(data))) {
@@ -1553,4 +1553,18 @@ calculate_nc_ch <- function(data) {
   }
 
   return(ch_data)
+}
+get_weather_info <- function(df){
+  df2 <-
+    df  |>
+    sf::st_as_sf(coords = c("x", "y"), crs = 32721) |>
+    sf::st_transform(crs = 4326) |>
+    sf::st_bbox()
+  start <- min(df$date)
+  end <- max(df$date)
+  return(list(lat = mean(df2[c("ymin", "ymax")]),
+              lon = mean(df2[c("xmin", "xmax")]),
+              start = as.character(start),
+              end = as.character(end))
+  )
 }
