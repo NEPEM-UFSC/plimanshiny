@@ -92,7 +92,7 @@ sf_to_polygon <- function(shps) {
 roundcols <- function(df, ..., digits = 3){
   is_mat <- is.matrix(df)
   if (is_mat == TRUE) {
-    df <- df %>% as.data.frame() %>% pliman::rownames_to_column()
+    df <- df |> as.data.frame() |> pliman::rownames_to_column()
   }
   has_rownames <- function(x) {
     Negate(is.null)(rownames(x))
@@ -1198,11 +1198,11 @@ gdd_ometto_frue <- function(df,
       } else if ("DATE" %in% names(df_out)) {
          # Global cumulative sum if no ENV but DATE exists
          df_out <- df_out |>
-           dplyr::arrange(DATE) %>% # Ensure order
+           dplyr::arrange(DATE) |> # Ensure order
            dplyr::mutate(GDD_CUMSUM = cumsum(ifelse(is.na(GDD), 0, GDD)))
          if ("RTA" %in% names(df_out)) {
             df_out <- df_out |>
-              dplyr::arrange(DATE) %>% # Ensure order
+              dplyr::arrange(DATE) |> # Ensure order
               dplyr::mutate(RTA_CUMSUM = cumsum(ifelse(is.na(RTA), 0, RTA)))
          }
       } else {
@@ -1228,6 +1228,7 @@ envirotype <- function(data,
     stage_exprs <- purrr::map2(lim_inf, lim_sup, function(from, to) {
       rlang::expr(dplyr::between(DFS, !!from, !!to) ~ !!fases[which(lim_inf == from)])
     })
+
     stage_case_when <- rlang::expr(dplyr::case_when(!!!stage_exprs))
     df |> dplyr::mutate(stage = !!stage_case_when)
   }
@@ -1361,7 +1362,7 @@ calculate_weinberger_ch <- function(data) {
   }
 
   #Calculate hourly chilling contribution
-  ch_data <- data %>%
+  ch_data <- data |>
     dplyr::mutate(ch_w = ifelse(!is.na(T2M) & T2M < 7.2, 1, 0))
 
   #If the data is hourly, group by day to get daily sums (optional, but can be useful)
@@ -1379,24 +1380,24 @@ calculate_weinberger_ch <- function(data) {
 
     if ("DATE" %in% colnames(ch_data) && !any(is.na(ch_data$DATE))) {
       grouping_vars <- if(has_env) c("ENV", "DATE") else "DATE"
-      ch_data <- ch_data %>%
-        dplyr::group_by(dplyr::across(dplyr::all_of(grouping_vars))) %>%
-        dplyr::mutate(ch_w_daily = sum(ch_w, na.rm = TRUE)) %>%
+      ch_data <- ch_data |>
+        dplyr::group_by(dplyr::across(dplyr::all_of(grouping_vars))) |>
+        dplyr::mutate(ch_w_daily = sum(ch_w, na.rm = TRUE)) |>
         dplyr::ungroup()
     }
   }
 
   #Calculate accumulated chilling hours per environment
   if (has_env) {
-      ch_data <- ch_data %>%
-        dplyr::arrange(ENV, DATE, HR) %>% #Ensure correct order for cumsum
-        dplyr::group_by(ENV) %>%
-        dplyr::mutate(ch_w_accum = cumsum(ch_w)) %>%
+      ch_data <- ch_data |>
+        dplyr::arrange(ENV, DATE, HR) |> #Ensure correct order for cumsum
+        dplyr::group_by(ENV) |>
+        dplyr::mutate(ch_w_accum = cumsum(ch_w)) |>
         dplyr::ungroup()
   } else {
     #Calculate global accumulation if ENV is missing
-    ch_data <- ch_data %>%
-      dplyr::arrange(DATE, HR) %>% #Ensure correct order
+    ch_data <- ch_data |>
+      dplyr::arrange(DATE, HR) |> #Ensure correct order
       dplyr::mutate(ch_w_accum = cumsum(ch_w))
   }
 
@@ -1413,7 +1414,7 @@ calculate_utah_ch <- function(data) {
   if (!has_env) message("ENV column not found for Utah calculation. Calculating accumulation globally.")
 
   #Weights according to the Utah model
-  ch_data <- data %>%
+  ch_data <- data |>
     dplyr::mutate(
       CH_Utah = dplyr::case_when(
         is.na(T2M) ~ 0, #Handle NA
@@ -1441,25 +1442,25 @@ calculate_utah_ch <- function(data) {
       }
       if ("DATE" %in% colnames(ch_data) && !any(is.na(ch_data$DATE))) {
         grouping_vars <- if(has_env) c("ENV", "DATE") else "DATE"
-        ch_data <- ch_data %>%
-          dplyr::group_by(dplyr::across(dplyr::all_of(grouping_vars))) %>%
-          dplyr::mutate(CH_Utah_daily = sum(CH_Utah, na.rm = TRUE)) %>%
+        ch_data <- ch_data |>
+          dplyr::group_by(dplyr::across(dplyr::all_of(grouping_vars))) |>
+          dplyr::mutate(CH_Utah_daily = sum(CH_Utah, na.rm = TRUE)) |>
           dplyr::ungroup()
       }
   }
 
   #Calculate accumulated chilling units per environment (cannot go below 0)
   if (has_env) {
-      ch_data <- ch_data %>%
-        dplyr::arrange(ENV, DATE, HR) %>%
-        dplyr::group_by(ENV) %>%
-        dplyr::mutate(CH_Utah_accum = cumsum(CH_Utah)) %>%
-        dplyr::mutate(CH_Utah_accum = pmax(0, CH_Utah_accum)) %>% #Ensure non-negative
+      ch_data <- ch_data |>
+        dplyr::arrange(ENV, DATE, HR) |>
+        dplyr::group_by(ENV) |>
+        dplyr::mutate(CH_Utah_accum = cumsum(CH_Utah)) |>
+        dplyr::mutate(CH_Utah_accum = pmax(0, CH_Utah_accum)) |> #Ensure non-negative
         dplyr::ungroup()
   } else {
-      ch_data <- ch_data %>%
-        dplyr::arrange(DATE, HR) %>% #Ensure correct order
-        dplyr::mutate(CH_Utah_accum = cumsum(CH_Utah)) %>%
+      ch_data <- ch_data |>
+        dplyr::arrange(DATE, HR) |> #Ensure correct order
+        dplyr::mutate(CH_Utah_accum = cumsum(CH_Utah)) |>
         dplyr::mutate(CH_Utah_accum = pmax(0, CH_Utah_accum)) #Ensure non-negative
   }
 
@@ -1502,7 +1503,7 @@ calculate_nc_ch <- function(data) {
   if (!has_env) message("ENV column not found for North Carolina calculation. Calculating accumulation globally.")
 
   # Atribuição dos pesos conforme o modelo da Carolina do Norte
-  ch_data <- data %>%
+  ch_data <- data |>
     dplyr::mutate(
       CH_NC = dplyr::case_when(
         is.na(T2M) ~ 0,
@@ -1532,23 +1533,23 @@ calculate_nc_ch <- function(data) {
     # Cálculo opcional do total diário de CH_NC
     if ("DATE" %in% colnames(ch_data) && !any(is.na(ch_data$DATE))) {
       grouping_vars <- if (has_env) c("ENV", "DATE") else "DATE"
-      ch_data <- ch_data %>%
-        dplyr::group_by(dplyr::across(dplyr::all_of(grouping_vars))) %>%
-        dplyr::mutate(CH_NC_daily = sum(CH_NC, na.rm = TRUE)) %>%
+      ch_data <- ch_data |>
+        dplyr::group_by(dplyr::across(dplyr::all_of(grouping_vars))) |>
+        dplyr::mutate(CH_NC_daily = sum(CH_NC, na.rm = TRUE)) |>
         dplyr::ungroup()
     }
   }
 
   # Acúmulo fiel dos valores de CH_NC, incluindo valores negativos
   if (has_env) {
-    ch_data <- ch_data %>%
-      dplyr::arrange(ENV, DATE, HR) %>%
-      dplyr::group_by(ENV) %>%
-      dplyr::mutate(CH_NC_accum = cumsum(CH_NC)) %>%
+    ch_data <- ch_data |>
+      dplyr::arrange(ENV, DATE, HR) |>
+      dplyr::group_by(ENV) |>
+      dplyr::mutate(CH_NC_accum = cumsum(CH_NC)) |>
       dplyr::ungroup()
   } else {
-    ch_data <- ch_data %>%
-      dplyr::arrange(DATE, HR) %>%
+    ch_data <- ch_data |>
+      dplyr::arrange(DATE, HR) |>
       dplyr::mutate(CH_NC_accum = cumsum(CH_NC))
   }
 
