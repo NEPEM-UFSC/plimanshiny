@@ -96,12 +96,12 @@ mod_weather_ui <- function(id) {
                 conditionalPanel(
                   condition = "input.show_thermal_opts == true", ns = ns,
 
-                  # GDD SECTION
-                  div(
+                    # GDD SECTION
+                    div(
                     style = "background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 15px;",
                     h4(icon("sun"), "Growing Degree Days (GDD)", style = "margin-top: 0;"),
                     p("GDD quantifies the heat required for plant development based on daily temperatures, using the Ometto method for greater precision in thermal limits."),
-                  ),
+                    ),
                   fluidRow(
                     col_12(
                       prettySwitch(
@@ -145,13 +145,13 @@ mod_weather_ui <- function(id) {
 
                   hl(),
 
-                  # CHILLING HOURS SECTION
-                  div(
+                    # CHILLING HOURS SECTION
+                    div(
                     style = "background-color: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 15px;",
                     h4(icon("snowflake"), "Chilling Hours", style = "margin-top: 0;"),
                     p("Accumulated hours in specific temperature ranges required for dormancy breaking in some perennial crops."),
                     p("Scale will be automatically set to hourly."),
-                  ),
+                    ),
                   fluidRow(
                     col_12(
                       prettySwitch(
@@ -325,469 +325,641 @@ mod_weather_ui <- function(id) {
 
 # --- Builder Pattern ---
 WeatherRequestBuilder <- R6::R6Class("WeatherRequestBuilder",
-                                     private = list(
-                                       .coordinates = NULL,
-                                       .params = NULL,
-                                       .scale = NULL,
-                                       .parallel = FALSE,
-                                       .workers = 1,
-                                       .compute_gdd = FALSE,
-                                       .gdd_params = list(),
-                                       .compute_ch = list(w = FALSE, utah = FALSE, nc = FALSE)
-                                     ),
-                                     public = list(
-                                       initialize = function() {
-                                         # Default values can be set here if needed
-                                         private$.scale <- "daily"
-                                         private$.gdd_params <- list(basemin = 10, baseupp = 40, optimallower = 26, optimalupper = 32)
-                                         return(self)
-                                       },
-                                       with_coordinates = function(coords_df) {
-                                         stopifnot(is.data.frame(coords_df), all(c("env", "lat", "lon", "start", "end") %in% colnames(coords_df)))
-                                         private$.coordinates <- coords_df
-                                         return(self)
-                                       },
-                                       with_parameters = function(params) {
-                                         stopifnot(is.character(params))
-                                         private$.params <- params
-                                         return(self)
-                                       },
-                                       with_scale = function(scale) {
-                                         stopifnot(scale %in% c("hourly", "daily", "monthly", "climatology"))
-                                         private$.scale <- scale
-                                         return(self)
-                                       },
-                                       with_parallel = function(parallel, workers = 1) {
-                                         stopifnot(is.logical(parallel), is.numeric(workers))
-                                         private$.parallel <- parallel
-                                         private$.workers <- if(parallel) workers else 1
-                                         return(self)
-                                       },
-                                       with_gdd = function(compute, basemin, baseupp, optimallower, optimalupper) {
-                                         stopifnot(is.logical(compute), is.numeric(basemin), is.numeric(baseupp), is.numeric(optimallower), is.numeric(optimalupper))
-                                         private$.compute_gdd <- compute
-                                         if(compute) {
-                                           private$.gdd_params <- list(basemin = basemin, baseupp = baseupp, optimallower = optimallower, optimalupper = optimalupper)
-                                         }
-                                         return(self)
-                                       },
-                                       with_chilling_hours = function(ch_w, ch_utah, ch_nc) {
-                                         stopifnot(is.logical(ch_w), is.logical(ch_utah), is.logical(ch_nc))
-                                         private$.compute_ch <- list(w = ch_w, utah = ch_utah, nc = ch_nc)
-                                         # If any CH method is enabled, force scale to hourly
-                                         if(ch_w || ch_utah || ch_nc) {
-                                           private$.scale <- "hourly"
-                                         }
-                                         return(self)
-                                       },
-                                       build = function() {
-                                         # Validation before building
-                                         if (is.null(private$.coordinates) || nrow(private$.coordinates) == 0) {
-                                           stop("Coordinates are required.")
-                                         }
-                                         if (is.null(private$.params) || length(private$.params) == 0) {
-                                           stop("At least one parameter is required.")
-                                         }
+  private = list(
+    .coordinates = NULL,
+    .params = NULL,
+    .scale = NULL,
+    .parallel = FALSE,
+    .workers = 1,
+    .compute_gdd = FALSE,
+    .gdd_params = list(),
+    .compute_ch = list(w = FALSE, utah = FALSE, nc = FALSE)
+  ),
+  public = list(
+    initialize = function() {
+      # Default values can be set here if needed
+      private$.scale <- "daily"
+      private$.gdd_params <- list(basemin = 10, baseupp = 40, optimallower = 26, optimalupper = 32)
+      return(self)
+    },
+    with_coordinates = function(coords_df) {
+      stopifnot(is.data.frame(coords_df), all(c("env", "lat", "lon", "start", "end") %in% colnames(coords_df)))
+      private$.coordinates <- coords_df
+      return(self)
+    },
+    with_parameters = function(params) {
+      stopifnot(is.character(params))
+      private$.params <- params
+      return(self)
+    },
+    with_scale = function(scale) {
+      stopifnot(scale %in% c("hourly", "daily", "monthly", "climatology"))
+      private$.scale <- scale
+      return(self)
+    },
+    with_parallel = function(parallel, workers = 1) {
+      stopifnot(is.logical(parallel), is.numeric(workers))
+      private$.parallel <- parallel
+      private$.workers <- if(parallel) workers else 1
+      return(self)
+    },
+    with_gdd = function(compute, basemin, baseupp, optimallower, optimalupper) {
+      stopifnot(is.logical(compute), is.numeric(basemin), is.numeric(baseupp), is.numeric(optimallower), is.numeric(optimalupper))
+      private$.compute_gdd <- compute
+      if(compute) {
+        private$.gdd_params <- list(basemin = basemin, baseupp = baseupp, optimallower = optimallower, optimalupper = optimalupper)
+      }
+      return(self)
+    },
+    with_chilling_hours = function(ch_w, ch_utah, ch_nc) {
+       stopifnot(is.logical(ch_w), is.logical(ch_utah), is.logical(ch_nc))
+       private$.compute_ch <- list(w = ch_w, utah = ch_utah, nc = ch_nc)
+       # If any CH method is enabled, force scale to hourly
+       if(ch_w || ch_utah || ch_nc) {
+         private$.scale <- "hourly"
+       }
+       return(self)
+    },
+    build = function() {
+      # Validation before building
+      if (is.null(private$.coordinates) || nrow(private$.coordinates) == 0) {
+        stop("Coordinates are required.")
+      }
+      if (is.null(private$.params) || length(private$.params) == 0) {
+        stop("At least one parameter is required.")
+      }
 
-                                         # Ensure required params for GDD/CH are included if requested
-                                         if (private$.compute_gdd || private$.compute_ch$w || private$.compute_ch$utah || private$.compute_ch$nc) {
-                                           required_temp_params <- character(0)
-                                           if (private$.scale == "hourly") {
-                                             required_temp_params <- "T2M"
-                                           } else if (private$.scale %in% c("daily", "monthly")) {
-                                             required_temp_params <- c("T2M_MIN", "T2M_MAX")
-                                           }
+      # Ensure required params for GDD/CH are included if requested
+      if (private$.compute_gdd || private$.compute_ch$w || private$.compute_ch$utah || private$.compute_ch$nc) {
+         required_temp_params <- character(0)
+         if (private$.scale == "hourly") {
+           required_temp_params <- "T2M"
+         } else if (private$.scale %in% c("daily", "monthly")) {
+           required_temp_params <- c("T2M_MIN", "T2M_MAX")
+         }
 
-                                           missing_req_params <- required_temp_params[!required_temp_params %in% private$.params]
-                                           if(length(missing_req_params) > 0) {
-                                             private$.params <- unique(c(private$.params, required_temp_params))
-                                             message("Automatically added required parameters for thermal calculations: ", paste(missing_req_params, collapse=", "))
-                                           }
-                                         }
+         missing_req_params <- required_temp_params[!required_temp_params %in% private$.params]
+         if(length(missing_req_params) > 0) {
+            private$.params <- unique(c(private$.params, required_temp_params))
+            message("Automatically added required parameters for thermal calculations: ", paste(missing_req_params, collapse=", "))
+         }
+      }
 
 
-                                         return(list(
-                                           coordinates = private$.coordinates,
-                                           params = private$.params,
-                                           scale = private$.scale,
-                                           parallel = private$.parallel,
-                                           workers = private$.workers,
-                                           compute_gdd = private$.compute_gdd,
-                                           gdd_params = private$.gdd_params,
-                                           compute_ch = private$.compute_ch
-                                         ))
-                                       }
-                                     )
+      return(list(
+        coordinates = private$.coordinates,
+        params = private$.params,
+        scale = private$.scale,
+        parallel = private$.parallel,
+        workers = private$.workers,
+        compute_gdd = private$.compute_gdd,
+        gdd_params = private$.gdd_params,
+        compute_ch = private$.compute_ch
+      ))
+    }
+  )
 )
 
 # --- Cache Service Layer ---
 WeatherCacheService <- R6::R6Class("WeatherCacheService",
-                                   private = list(
-                                     .memory_cache = list(), # In-memory cache store
-                                     .cache_dir = NULL,     # Disk cache directory path
+  private = list(
+    .memory_cache = list(), # In-memory cache store
+    .cache_dir = NULL,     # Disk cache directory path
 
-                                     # Moved cache functions become private methods
-                                     .generate_cache_key = function(df, params, scale) {
-                                       # Format dates consistently
-                                       formatted_dates <- lapply(1:nrow(df), function(i) {
-                                         start_date <- as.Date(df$start[i])
-                                         end_date <- as.Date(df$end[i])
-                                         paste(format(start_date, "%Y%m%d"), format(end_date, "%Y%m%d"), sep = "_")
-                                       })
+    # Moved cache functions become private methods
+    .generate_cache_key = function(df, params, scale) {
+      # Format dates consistently
+      formatted_dates <- lapply(1:nrow(df), function(i) {
+          start_date <- as.Date(df$start[i])
+          end_date <- as.Date(df$end[i])
+          paste(format(start_date, "%Y%m%d"), format(end_date, "%Y%m%d"), sep = "_")
+      })
 
-                                       # Combine coordinates and formatted dates into a unique identifier
-                                       location_date_str <- paste(
-                                         paste(round(df$lat, 4), round(df$lon, 4), sep = ":"), # Round coords for consistency
-                                         unlist(formatted_dates),
-                                         sep = "_"
-                                       )
-                                       location_date_str <- paste(location_date_str, collapse = "|")
+      # Combine coordinates and formatted dates into a unique identifier
+      location_date_str <- paste(
+        paste(round(df$lat, 4), round(df$lon, 4), sep = ":"), # Round coords for consistency
+        unlist(formatted_dates),
+        sep = "_"
+      )
+      location_date_str <- paste(location_date_str, collapse = "|")
 
-                                       # Add climate parameters and scale to the key
-                                       params_str <- paste(sort(params), collapse = "_") # Sort for consistency
+      # Add climate parameters and scale to the key
+      params_str <- paste(sort(params), collapse = "_") # Sort for consistency
 
-                                       # Create MD5 hash for a shorter, reliable key
-                                       digest::digest(paste(location_date_str, params_str, scale, sep = "::"), algo = "md5")
-                                     },
+      # Create MD5 hash for a shorter, reliable key
+      digest::digest(paste(location_date_str, params_str, scale, sep = "::"), algo = "md5")
+    },
 
-                                     .get_disk_cache = function(cache_key) {
-                                       cache_file <- file.path(private$.cache_dir, paste0(cache_key, ".rds"))
-                                       if (file.exists(cache_file)) {
-                                         file_info <- file.info(cache_file)
-                                         cache_age <- difftime(Sys.time(), file_info$mtime, units = "days")
+    .get_disk_cache = function(cache_key) {
+      cache_file <- file.path(private$.cache_dir, paste0(cache_key, ".rds"))
+      if (file.exists(cache_file)) {
+        file_info <- file.info(cache_file)
+        cache_age <- difftime(Sys.time(), file_info$mtime, units = "days")
 
-                                         # If cache is older than 30 days, invalidate
-                                         if (cache_age > 30) {
-                                           file.remove(cache_file)
-                                           return(NULL)
-                                         }
-                                         tryCatch({
-                                           cached_data <- readRDS(cache_file)
-                                           return(cached_data)
-                                         }, error = function(e) {
-                                           warning("Error reading cache file ", cache_file, ": ", e$message)
-                                           if(file.exists(cache_file)) file.remove(cache_file)
-                                           return(NULL)
-                                         })
-                                       }
-                                       return(NULL)
-                                     },
+        # If cache is older than 30 days, invalidate
+        if (cache_age > 30) {
+          file.remove(cache_file)
+          return(NULL)
+        }
+        tryCatch({
+          cached_data <- readRDS(cache_file)
+          return(cached_data)
+        }, error = function(e) {
+          warning("Error reading cache file ", cache_file, ": ", e$message)
+          if(file.exists(cache_file)) file.remove(cache_file)
+          return(NULL)
+        })
+      }
+      return(NULL)
+    },
 
-                                     .validate_cache_dates = function(cached_data, requested_df) {
-                                       # If we don't have dates in the structure, we can't validate
-                                       if (!("YYYYMMDD" %in% colnames(cached_data))) {
-                                         warning("Cache validation failed: YYYYMMDD column missing.")
-                                         return(FALSE)
-                                       }
-                                       if (!("ENV" %in% colnames(cached_data))) {
-                                         warning("Cache validation failed: ENV column missing.")
-                                         return(FALSE)
-                                       }
+    .validate_cache_dates = function(cached_data, requested_df) {
+      # If we don't have dates in the structure, we can't validate
+      if (!("YYYYMMDD" %in% colnames(cached_data))) {
+        warning("Cache validation failed: YYYYMMDD column missing.")
+        return(FALSE)
+      }
+      if (!("ENV" %in% colnames(cached_data))) {
+        warning("Cache validation failed: ENV column missing.")
+        return(FALSE)
+      }
 
-                                       # Check each unique combination of location and dates
-                                       all_covered <- TRUE
-                                       for (i in 1:nrow(requested_df)) {
-                                         env_name <- requested_df$env[i]
-                                         start_date <- as.Date(requested_df$start[i])
-                                         end_date <- as.Date(requested_df$end[i])
+      # Check each unique combination of location and dates
+      all_covered <- TRUE
+      for (i in 1:nrow(requested_df)) {
+        env_name <- requested_df$env[i]
+        start_date <- as.Date(requested_df$start[i])
+        end_date <- as.Date(requested_df$end[i])
 
-                                         # Filter cache data by environment
-                                         env_data <- cached_data[cached_data$ENV == env_name, ]
-                                         if (nrow(env_data) == 0) {
-                                           all_covered <- FALSE
-                                           break # Environment not found in cache
-                                         }
+        # Filter cache data by environment
+        env_data <- cached_data[cached_data$ENV == env_name, ]
+        if (nrow(env_data) == 0) {
+          all_covered <- FALSE
+          break # Environment not found in cache
+        }
 
-                                         # Convert dates for comparison
-                                         env_dates <- tryCatch(as.Date(env_data$YYYYMMDD, format = "%Y%m%d"), error = function(e) NULL)
-                                         if(is.null(env_dates) || all(is.na(env_dates))) {
-                                           warning("Cache validation: Could not parse dates in YYYYMMDD for env ", env_name)
-                                           all_covered <- FALSE
-                                           break
-                                         }
-                                         env_dates <- na.omit(env_dates)
+        # Convert dates for comparison
+        env_dates <- tryCatch(as.Date(env_data$YYYYMMDD, format = "%Y%m%d"), error = function(e) NULL)
+        if(is.null(env_dates) || all(is.na(env_dates))) {
+            warning("Cache validation: Could not parse dates in YYYYMMDD for env ", env_name)
+            all_covered <- FALSE
+            break
+        }
+        env_dates <- na.omit(env_dates)
 
-                                         # Check if all requested dates are in the cache
-                                         requested_dates_seq <- seq.Date(start_date, end_date, by = "day")
-                                         if (!all(requested_dates_seq %in% env_dates)) {
-                                           all_covered <- FALSE
-                                           break # Missing dates in cache
-                                         }
-                                       }
-                                       return(all_covered)
-                                     },
+        # Check if all requested dates are in the cache
+        requested_dates_seq <- seq.Date(start_date, end_date, by = "day")
+        if (!all(requested_dates_seq %in% env_dates)) {
+          all_covered <- FALSE
+          break # Missing dates in cache
+        }
+      }
+      return(all_covered)
+    },
 
-                                     .save_to_disk_cache = function(cache_key, data) {
-                                       cache_file <- file.path(private$.cache_dir, paste0(cache_key, ".rds"))
-                                       tryCatch({
-                                         saveRDS(data, cache_file)
-                                       }, error = function(e) {
-                                         warning("Error saving to disk cache ", cache_file, ": ", e$message)
-                                         if (file.exists(cache_file)) {
-                                           file.remove(cache_file)
-                                         }
-                                       })
-                                     },
+    .save_to_disk_cache = function(cache_key, data) {
+       cache_file <- file.path(private$.cache_dir, paste0(cache_key, ".rds"))
+       tryCatch({
+         saveRDS(data, cache_file)
+       }, error = function(e) {
+         warning("Error saving to disk cache ", cache_file, ": ", e$message)
+         if (file.exists(cache_file)) {
+           file.remove(cache_file)
+         }
+       })
+    },
 
-                                     .add_to_memory_cache = function(cache_key, data) {
-                                       # Limit in-memory cache size (simple FIFO)
-                                       if (length(private$.memory_cache) >= 5) {
-                                         try({
-                                           oldest_key <- names(private$.memory_cache)[1]
-                                           private$.memory_cache[[oldest_key]] <- NULL
-                                         }, silent = TRUE)
-                                       }
-                                       private$.memory_cache[[cache_key]] <- data
-                                     }
-                                   ),
+    .add_to_memory_cache = function(cache_key, data) {
+       # Limit in-memory cache size (simple FIFO)
+       if (length(private$.memory_cache) >= 5) {
+         try({
+           oldest_key <- names(private$.memory_cache)[1]
+           private$.memory_cache[[oldest_key]] <- NULL
+         }, silent = TRUE)
+       }
+       private$.memory_cache[[cache_key]] <- data
+    }
+  ),
 
-                                   public = list(
-                                     initialize = function(cache_dir = file.path(rappdirs::user_cache_dir("plimanshiny"), "weather_cache")) {
-                                       private$.cache_dir <- cache_dir
-                                       if (!dir.exists(private$.cache_dir)) {
-                                         dir.create(private$.cache_dir, recursive = TRUE)
-                                       }
-                                       return(self)
-                                     },
+  public = list(
+    initialize = function(cache_dir = file.path(rappdirs::user_cache_dir("plimanshiny"), "weather_cache")) {
+      private$.cache_dir <- cache_dir
+      if (!dir.exists(private$.cache_dir)) {
+        dir.create(private$.cache_dir, recursive = TRUE)
+      }
+      return(self)
+    },
 
-                                     # The core method implementing the Cache Pattern + Chain of Responsibility logic
-                                     getOrFetch = function(request_params, fetch_function, ...) {
-                                       # 1. Generate Cache Key
-                                       df <- request_params$coordinates
-                                       cache_key <- private$.generate_cache_key(df, request_params$params, request_params$scale)
+    # The core method implementing the Cache Pattern + Chain of Responsibility logic
+    getOrFetch = function(request_params, fetch_function, ...) {
+      # 1. Generate Cache Key
+      df <- request_params$coordinates
+      cache_key <- private$.generate_cache_key(df, request_params$params, request_params$scale)
 
-                                       # 2. Check Memory Cache (First level)
-                                       in_memory_cache <- private$.memory_cache[[cache_key]]
-                                       if (!is.null(in_memory_cache)) {
-                                         if (private$.validate_cache_dates(in_memory_cache, df)) {
-                                           return(list(
-                                             data = in_memory_cache,
-                                             source = "memory",
-                                             cache_key = cache_key,
-                                             needs_fetch = FALSE
-                                           ))
-                                         } else {
-                                           private$.memory_cache[[cache_key]] <- NULL # Remove invalid entry
-                                         }
-                                       }
+      # 2. Check Memory Cache (First level)
+      in_memory_cache <- private$.memory_cache[[cache_key]]
+      if (!is.null(in_memory_cache)) {
+        if (private$.validate_cache_dates(in_memory_cache, df)) {
+          return(list(
+            data = in_memory_cache,
+            source = "memory",
+            cache_key = cache_key,
+            needs_fetch = FALSE
+          ))
+        } else {
+           private$.memory_cache[[cache_key]] <- NULL # Remove invalid entry
+        }
+      }
 
-                                       # 3. Check Disk Cache (Second level)
-                                       disk_cache <- private$.get_disk_cache(cache_key)
-                                       if (!is.null(disk_cache)) {
-                                         if (private$.validate_cache_dates(disk_cache, df)) {
-                                           private$.add_to_memory_cache(cache_key, disk_cache) # Load into memory
-                                           return(list(
-                                             data = disk_cache,
-                                             source = "disk",
-                                             cache_key = cache_key,
-                                             needs_fetch = FALSE
-                                           ))
-                                         } else {
-                                           # Remove the invalid disk file
-                                           file.remove(file.path(private$.cache_dir, paste0(cache_key, ".rds")))
-                                         }
-                                       }
+      # 3. Check Disk Cache (Second level)
+      disk_cache <- private$.get_disk_cache(cache_key)
+      if (!is.null(disk_cache)) {
+        if (private$.validate_cache_dates(disk_cache, df)) {
+          private$.add_to_memory_cache(cache_key, disk_cache) # Load into memory
+          return(list(
+            data = disk_cache,
+            source = "disk",
+            cache_key = cache_key,
+            needs_fetch = FALSE
+          ))
+        } else {
+           # Remove the invalid disk file
+           file.remove(file.path(private$.cache_dir, paste0(cache_key, ".rds")))
+        }
+      }
 
-                                       # 4. Cache Miss - Need to Fetch (Pass responsibility to fetch)
-                                       return(list(
-                                         data = NULL,
-                                         source = "fetch",
-                                         cache_key = cache_key,
-                                         needs_fetch = TRUE
-                                       ))
-                                     },
+      # 4. Cache Miss - Need to Fetch (Pass responsibility to fetch)
+      return(list(
+        data = NULL,
+        source = "fetch",
+        cache_key = cache_key,
+        needs_fetch = TRUE
+      ))
+    },
 
-                                     # Method to save data to cache (both memory and disk)
-                                     save = function(cache_key, data) {
-                                       if (is.null(data) || nrow(data) == 0) {
-                                         warning("Attempted to save NULL or empty data to cache. Skipping.")
-                                         return(invisible(self))
-                                       }
-                                       private$.add_to_memory_cache(cache_key, data)
-                                       private$.save_to_disk_cache(cache_key, data)
-                                       return(invisible(self)) # Allow chaining
-                                     },
+    # Method to save data to cache (both memory and disk)
+    save = function(cache_key, data) {
+      if (is.null(data) || nrow(data) == 0) {
+         warning("Attempted to save NULL or empty data to cache. Skipping.")
+         return(invisible(self))
+      }
+      private$.add_to_memory_cache(cache_key, data)
+      private$.save_to_disk_cache(cache_key, data)
+      return(invisible(self)) # Allow chaining
+    },
 
-                                     # Method to clean cache
-                                     cleanCache = function(age_days = NULL) {
-                                       # Clear memory cache
-                                       private$.memory_cache <- list()
+    # Method to clean cache
+    cleanCache = function(age_days = NULL) {
+      # Clear memory cache
+      private$.memory_cache <- list()
 
-                                       # Clear disk cache
-                                       files_removed_count <- 0
-                                       disk_cleared_status <- FALSE
+      # Clear disk cache
+      files_removed_count <- 0
+      disk_cleared_status <- FALSE
 
-                                       if (!dir.exists(private$.cache_dir)) {
-                                         return(list(memory_cleared = TRUE, disk_cleared = FALSE, files_removed = 0, reason = "Cache directory does not exist"))
-                                       }
+      if (!dir.exists(private$.cache_dir)) {
+        return(list(memory_cleared = TRUE, disk_cleared = FALSE, files_removed = 0, reason = "Cache directory does not exist"))
+      }
 
-                                       cache_files <- list.files(private$.cache_dir, pattern = "\\.rds$", full.names = TRUE)
-                                       files_to_remove <- cache_files # Default to remove all
+      cache_files <- list.files(private$.cache_dir, pattern = "\\.rds$", full.names = TRUE)
+      files_to_remove <- cache_files # Default to remove all
 
-                                       if (!is.null(age_days) && is.numeric(age_days) && age_days > 0) {
-                                         file_infos <- file.info(cache_files)
-                                         files_to_remove <- cache_files[difftime(Sys.time(), file_infos$mtime, units = "days") > age_days]
-                                       }
+      if (!is.null(age_days) && is.numeric(age_days) && age_days > 0) {
+         file_infos <- file.info(cache_files)
+         files_to_remove <- cache_files[difftime(Sys.time(), file_infos$mtime, units = "days") > age_days]
+      }
 
-                                       if (length(files_to_remove) > 0) {
-                                         removed_status <- unlink(files_to_remove)
-                                         files_removed_count <- length(files_to_remove)
-                                         disk_cleared_status <- all(removed_status == 0)
-                                       } else {
-                                         disk_cleared_status <- TRUE
-                                       }
+      if (length(files_to_remove) > 0) {
+        removed_status <- unlink(files_to_remove)
+        files_removed_count <- length(files_to_remove)
+        disk_cleared_status <- all(removed_status == 0)
+      } else {
+         disk_cleared_status <- TRUE
+      }
 
-                                       list(
-                                         memory_cleared = TRUE,
-                                         disk_cleared = disk_cleared_status,
-                                         files_removed = files_removed_count
-                                       )
-                                     },
-                                     # Expose memory cache length for UI status
-                                     getMemoryCacheStatus = function() {
-                                       return(length(private$.memory_cache))
-                                     },
-                                     # Expose disk cache status for UI status
-                                     getDiskCacheStatus = function() {
-                                       return(dir.exists(private$.cache_dir) && length(list.files(private$.cache_dir, pattern = "\\.rds$")) > 0)
-                                     }
-                                   )
+      list(
+        memory_cleared = TRUE,
+        disk_cleared = disk_cleared_status,
+        files_removed = files_removed_count
+      )
+    },
+    # Expose memory cache length for UI status
+    getMemoryCacheStatus = function() {
+      return(length(private$.memory_cache))
+    },
+    # Expose disk cache status for UI status
+    getDiskCacheStatus = function() {
+       return(dir.exists(private$.cache_dir) && length(list.files(private$.cache_dir, pattern = "\\.rds$")) > 0)
+    }
+  )
 )
 
 
 # --- Command Pattern (Refactored) ---
 FetchWeatherCommand <- R6::R6Class("FetchWeatherCommand",
-                                   private = list(
-                                     .request_params = NULL,
-                                     .session = NULL,
-                                     .rv = NULL,
-                                     .resclimate = NULL,
-                                     .dfs = NULL,
-                                     .cache_service = NULL, # Use CacheService instance
-                                     .service_fun = NULL
-                                   ),
-                                   public = list(
-                                     # Updated initialize to accept cache_service
-                                     initialize = function(request_params, session, rv, resclimate, dfs, cache_service, service_fun) {
-                                       private$.request_params <- request_params
-                                       private$.session <- session
-                                       private$.rv <- rv
-                                       private$.resclimate <- resclimate
-                                       private$.dfs <- dfs
-                                       private$.cache_service <- cache_service # Store the service instance
-                                       private$.service_fun <- service_fun
-                                       return(self)
-                                     },
-                                     execute = function() {
-                                       req_params <- private$.request_params
-                                       df <- req_params$coordinates
+  private = list(
+    .request_params = NULL,
+    .session = NULL,
+    .rv = NULL,
+    .resclimate = NULL,
+    .dfs = NULL,
+    .cache_service = NULL, # Use CacheService instance
+    .service_fun = NULL
+  ),
+  public = list(
+    # Updated initialize to accept cache_service
+    initialize = function(request_params, session, rv, resclimate, dfs, cache_service, service_fun) {
+      private$.request_params <- request_params
+      private$.session <- session
+      private$.rv <- rv
+      private$.resclimate <- resclimate
+      private$.dfs <- dfs
+      private$.cache_service <- cache_service # Store the service instance
+      private$.service_fun <- service_fun
+      return(self)
+    },
+    execute = function() {
+      req_params <- private$.request_params
+      df <- req_params$coordinates
 
-                                       # 1. Check if API call is already in progress
-                                       if (private$.rv$api_in_progress) {
-                                         sendSweetAlert(
-                                           session = private$.session,
-                                           title = "Processing in progress",
-                                           text = "There is already a data request in progress. Please wait.",
-                                           type = "warning"
-                                         )
-                                         return()
-                                       }
+      # 1. Check if API call is already in progress
+      if (private$.rv$api_in_progress) {
+        sendSweetAlert(
+          session = private$.session,
+          title = "Processing in progress",
+          text = "There is already a data request in progress. Please wait.",
+          type = "warning"
+        )
+        return()
+      }
 
-                                       # 2. Check Cache using CacheService
-                                       cache_result <- private$.cache_service$getOrFetch(req_params)
+      # 2. Check Cache using CacheService
+      cache_result <- private$.cache_service$getOrFetch(req_params)
 
-                                       # 3. Handle Cache Hit
-                                       if (!cache_result$needs_fetch) {
-                                         cached_data <- cache_result$data
-                                         private$.resclimate(cached_data)
-                                         private$.dfs[["weather"]] <- create_reactval("weather", cached_data)
-                                         cache_info <- paste0(
-                                           "Source: ", cache_result$source, "\n",
-                                           "Environments: ", length(unique(cached_data$ENV)), "\n",
-                                           "Parameters: ", length(req_params$params), "\n",
-                                           "Dates: ", min(as.Date(cached_data$YYYYMMDD, format = "%Y%m%d")), " to ",
-                                           max(as.Date(cached_data$YYYYMMDD, format = "%Y%m%d"))
-                                         )
-                                         sendSweetAlert(
-                                           session = private$.session,
-                                           title = "Data retrieved from cache!",
-                                           text = paste0("Climate information was retrieved from ", cache_result$source, " cache.\n\n", cache_info),
-                                           type = "success"
-                                         )
-                                         return() # Stop execution, data found in cache
-                                       }
+      # 3. Handle Cache Hit
+      if (!cache_result$needs_fetch) {
+          cached_data <- cache_result$data
+          private$.resclimate(cached_data)
+          private$.dfs[["weather"]] <- create_reactval("weather", cached_data)
+          cache_info <- paste0(
+              "Source: ", cache_result$source, "\n",
+              "Environments: ", length(unique(cached_data$ENV)), "\n",
+              "Parameters: ", length(req_params$params), "\n",
+              "Dates: ", min(as.Date(cached_data$YYYYMMDD, format = "%Y%m%d")), " to ",
+              max(as.Date(cached_data$YYYYMMDD, format = "%Y%m%d"))
+          )
+          sendSweetAlert(
+              session = private$.session,
+              title = "Data retrieved from cache!",
+              text = paste0("Climate information was retrieved from ", cache_result$source, " cache.\n\n", cache_info),
+              type = "success"
+          )
+          return() # Stop execution, data found in cache
+      }
 
-                                       # 4. Cache Miss - Proceed to Fetch Data
-                                       cache_key <- cache_result$cache_key # Get the key for saving later
+      # 4. Cache Miss - Proceed to Fetch Data
+      cache_key <- cache_result$cache_key # Get the key for saving later
 
-                                       private$.rv$api_in_progress <- TRUE
-                                       private$.rv$processing_error <- NULL
-                                       all_weather_data <- NULL
+      private$.rv$api_in_progress <- TRUE
+      private$.rv$processing_error <- NULL
+      all_weather_data <- NULL
 
-                                       # Use withProgress for feedback during fetch
-                                       withProgress(message = 'Fetching climate data...', value = 0, {
-                                         tryCatch({
-                                           # Call the service function (get_climate)
-                                           all_weather_data <- private$.service_fun(
-                                             env = df$env,
-                                             lat = df$lat,
-                                             lon = df$lon,
-                                             start = df$start,
-                                             end = df$end,
-                                             params = req_params$params,
-                                             scale = req_params$scale,
-                                             parallel = req_params$parallel,
-                                             workers = req_params$workers,
-                                             environment = "shiny" # Ensure shiny progress is used
-                                           )
+        tryCatch({
+          # Call the service function (get_climate)
+          all_weather_data <- private$.service_fun(
+            env = df$env,
+            lat = df$lat,
+            lon = df$lon,
+            start = df$start,
+            end = df$end,
+            params = req_params$params,
+            scale = req_params$scale,
+            parallel = req_params$parallel,
+            workers = req_params$workers,
+            environment = "shiny" # Ensure shiny progress is used
+          )
 
-                                           if (is.null(all_weather_data) || nrow(all_weather_data) == 0) {
-                                             stop("No weather data retrieved from the API.")
-                                           }
+          if (is.null(all_weather_data) || nrow(all_weather_data) == 0) {
+            stop("No weather data retrieved from the API.")
+          }
 
-                                           # --- REMOVED GDD/CH Post-processing Block ---
-                                           # The logic previously here (Data Inspection, GDD Calc, CH Calc, Combine Results) is removed.
-                                           # get_climate now returns data with basic processing done inside fetch_data_point.
+          # --- Data Inspection and Cleaning (Added) ---
 
-                                           # 5. Save to Cache using CacheService (using data directly from get_climate)
-                                           message(paste("Attempting to save data with cache key:", cache_key)) # DEBUG
-                                           if (!is.null(all_weather_data) && nrow(all_weather_data) > 0) {
-                                             private$.cache_service$save(cache_key, all_weather_data)
-                                           }
+          # Clean temperature columns before GDD/CH calculations
+          temp_cols_to_clean <- intersect(c("T2M", "T2M_MIN", "T2M_MAX"), names(all_weather_data))
+          if (length(temp_cols_to_clean) > 0) {
+            for (col in temp_cols_to_clean) {
+              if (!is.numeric(all_weather_data[[col]])) {
+                 # Use suppressWarnings to avoid flooding console if conversion creates NAs
+                 all_weather_data[[col]] <- suppressWarnings(as.numeric(all_weather_data[[col]]))
+              }
+            }
+          }
+          # --- End Inspection and Cleaning ---
+
+          # 5. Post-processing (GDD, Chilling Hours)
+          if (req_params$compute_gdd || req_params$compute_ch$w || req_params$compute_ch$utah || req_params$compute_ch$nc) {
+
+            # --- Ensure Date/Time columns are present ---
+            if (!"YYYYMMDD" %in% names(all_weather_data)) {
+               if ("DATE" %in% names(all_weather_data)) {
+                  all_weather_data$YYYYMMDD <- format(as.Date(all_weather_data$DATE), "%Y%m%d")
+               } else if (all(c("YEAR", "MO", "DY") %in% names(all_weather_data))) {
+                  all_weather_data$YYYYMMDD <- paste0(
+                     all_weather_data$YEAR,
+                     formatC(all_weather_data$MO, width = 2, flag = "0"),
+                     formatC(all_weather_data$DY, width = 2, flag = "0")
+                  )
+               } else {
+                  stop("Cannot proceed: Missing required date columns (YYYYMMDD or DATE or YEAR/MO/DY).")
+               }
+            }
+            if (!"DATE" %in% names(all_weather_data)) {
+                all_weather_data$DATE <- as.Date(all_weather_data$YYYYMMDD, format = "%Y%m%d")
+            }
+            if (!"DOY" %in% names(all_weather_data)) {
+               all_weather_data$DOY <- as.numeric(format(all_weather_data$DATE, "%j"))
+            }
+            # Ensure HR exists if scale is hourly (needed for CH accumulation order)
+            if (req_params$scale == "hourly" && !"HR" %in% names(all_weather_data) && "HOUR" %in% names(all_weather_data)) {
+                all_weather_data$HR <- all_weather_data$HOUR
+            }
+             if (req_params$scale == "hourly" && !"HR" %in% names(all_weather_data)) {
+                 # Attempt to infer HR if missing, maybe from row number within a day? Risky.
+                 warning("Hourly scale selected but HR column missing. CH accumulation might be incorrect if data isn't ordered chronologically.")
+                 # Add a dummy HR if absolutely necessary, but this is not ideal
+                 # all_weather_data <- all_weather_data %>% dplyr::group_by(ENV, YYYYMMDD) %>% dplyr::mutate(HR = dplyr::row_number() - 1) %>% dplyr::ungroup()
+             }
+            # --- End Date/Time columns ---
+
+            # Initialize placeholders for results
+            ch_results_hourly <- NULL # Will hold HOURLY CH results
+            gdd_results_daily <- NULL # Will hold DAILY GDD results
+
+            # --- Chilling Hours Calculation (Operates on HOURLY data) ---
+            if (req_params$scale == "hourly" && (req_params$compute_ch$w || req_params$compute_ch$utah || req_params$compute_ch$nc)) {
+              # Assume calculate_*_ch functions return hourly data with cumulative columns
+              # e.g., columns: ENV, YYYYMMDD, HR, DATE, T2M, ch_w, ch_w_accum, CH_Utah, CH_Utah_accum, CH_NC, CH_NC_accum
+              all_weather_data_for_ch <- all_weather_data # Work on a copy
+
+              if (req_params$compute_ch$w) {
+                all_weather_data_for_ch <- calculate_weinberger_ch(all_weather_data_for_ch) # Assumes this adds ch_w and ch_w_accum
+              }
+              if (req_params$compute_ch$utah) {
+                all_weather_data_for_ch <- calculate_utah_ch(all_weather_data_for_ch) # Assumes this adds CH_Utah and CH_Utah_accum
+              }
+              if (req_params$compute_ch$nc) {
+                all_weather_data_for_ch <- calculate_nc_ch(all_weather_data_for_ch) # Assumes this adds CH_NC and CH_NC_accum
+              }
+              # Keep only the necessary ID columns and the new CH columns
+              ch_cols_to_keep <- c("ENV", "YYYYMMDD", "HR", "DATE", # ID columns
+                                   grep("^ch_w", names(all_weather_data_for_ch), value = TRUE), # Weinberger cols
+                                   grep("^CH_Utah", names(all_weather_data_for_ch), value = TRUE), # Utah cols
+                                   grep("^CH_NC", names(all_weather_data_for_ch), value = TRUE)) # NC cols
+              ch_results_hourly <- all_weather_data_for_ch[, intersect(ch_cols_to_keep, names(all_weather_data_for_ch)), drop = FALSE]
+
+            } else if (req_params$compute_ch$w || req_params$compute_ch$utah || req_params$compute_ch$nc) {
+                 warning("Chilling hours requested but scale is not hourly. Calculation skipped.", call. = FALSE)
+            }
+
+            # --- GDD Calculation (Requires DAILY data) ---
+            if (req_params$compute_gdd) {
+                daily_data_for_gdd <- NULL
+                if (req_params$scale == "hourly") {
+                    # Aggregate hourly to daily to get Tmin/Tmax
+                    daily_aggregated_data <- aggregate_hourly_data(all_weather_data)
+                    # Ensure required columns exist
+                    if(all(c("T2M_MIN", "T2M_MAX") %in% names(daily_aggregated_data))) {
+                        daily_data_for_gdd <- daily_aggregated_data
+                    } else {
+                         warning("Could not aggregate T2M_MIN/T2M_MAX from hourly data. Skipping GDD.", call. = FALSE)
+                    }
+                } else {
+                    # Use the data directly if already daily/monthly
+                    daily_data_for_gdd <- all_weather_data
+                    # Ensure Tmin/Tmax exist
+                    if(!all(c("T2M_MIN", "T2M_MAX") %in% names(daily_data_for_gdd))){
+                         warning("GDD requested for daily/monthly scale, but T2M_MIN/T2M_MAX are missing. Skipping GDD.", call. = FALSE)
+                         daily_data_for_gdd <- NULL # Prevent calculation
+                    }
+                }
+
+                # Calculate GDD if we have valid daily data
+                if (!is.null(daily_data_for_gdd)) {
+                    # Ensure DATE column exists for gdd_ometto_frue if it needs it
+                     if (!"DATE" %in% names(daily_data_for_gdd) && "YYYYMMDD" %in% names(daily_data_for_gdd)) {
+                        daily_data_for_gdd$DATE <- as.Date(daily_data_for_gdd$YYYYMMDD, format = "%Y%m%d")
+                     }
+
+                    gdd_results_daily_temp <- gdd_ometto_frue(
+                        df = daily_data_for_gdd,
+                        Tbase = req_params$gdd_params$basemin,
+                        Tceil = req_params$gdd_params$baseupp,
+                        Topt1 = req_params$gdd_params$optimallower,
+                        Topt2 = req_params$gdd_params$optimalupper
+                    )
+                    # Select only relevant GDD columns to avoid duplication
+                    gdd_cols_to_keep <- intersect(names(gdd_results_daily_temp), c("ENV", "YYYYMMDD", "DATE", "GDD", "FRUE", "GDD_CUMSUM", "RTA_CUMSUM")) # Add DATE if present
+                    gdd_results_daily <- gdd_results_daily_temp[, gdd_cols_to_keep, drop = FALSE]
+                }
+            }
 
 
-                                           # 6. Update Reactives (using data directly from get_climate)
-                                           private$.resclimate(all_weather_data)
-                                           private$.dfs[["weather"]] <- create_reactval("weather", all_weather_data)
+            # --- Combine Results ---
+            combined_data <- all_weather_data # Start with the original fetched data (hourly or daily)
 
-                                           private$.rv$api_in_progress <- FALSE
-                                           private$.rv$processing_error <- NULL
+            # Join GDD results (Daily values broadcasted to hourly rows if scale is hourly)
+            if (!is.null(gdd_results_daily)) {
+                # Join by ENV and YYYYMMDD. DATE might also be useful if present in both.
+                join_by_gdd <- c("ENV", "YYYYMMDD")
+                if("DATE" %in% names(combined_data) && "DATE" %in% names(gdd_results_daily)) {
+                    join_by_gdd <- c(join_by_gdd, "DATE")
+                }
+                # Select GDD columns to join, excluding the join keys themselves to avoid suffixing
+                gdd_cols_to_join <- setdiff(names(gdd_results_daily), join_by_gdd)
+                # Ensure no columns to join already exist in combined_data to avoid suffixes
+                gdd_cols_to_join <- gdd_cols_to_join[!gdd_cols_to_join %in% names(combined_data)]
 
-                                           # 7. Notify Success (remains the same)
-                                           sendSweetAlert(
-                                             session = private$.session,
-                                             title = "Data successfully retrieved!",
-                                             text = sprintf("Data processed for %d locations with %d climate parameters.", length(unique(all_weather_data$ENV)), length(req_params$params)),
-                                             type = "success"
-                                           )
+                if(length(gdd_cols_to_join) > 0) {
+                  combined_data <- dplyr::left_join(combined_data,
+                                                    gdd_results_daily[, c(join_by_gdd, gdd_cols_to_join), drop = FALSE],
+                                                    by = join_by_gdd)
+                } else {
+                   warning("No new GDD columns to join or columns already exist.", call. = FALSE)
+                }
+            }
 
-                                         }, error = function(e) {
-                                           # Error Handling (remains the same)
-                                           private$.rv$api_in_progress <- FALSE
-                                           private$.rv$processing_error <- e$message
-                                           private$.resclimate(NULL)
-                                           private$.dfs[["weather"]] <- NULL
-                                           sendSweetAlert(
-                                             session = private$.session,
-                                             title = "Error during processing",
-                                             text = paste("An error occurred:", e$message),
-                                             type = "error"
-                                           )
-                                         }) # end tryCatch
-                                       }) # end withProgress
-                                     }
-                                   ) # end public list
-) # end R6 class
+            # Join CH results (Hourly values joined to hourly rows) - Only if scale was hourly
+            if (req_params$scale == "hourly" && !is.null(ch_results_hourly)) {
+                # Join by ENV, YYYYMMDD, HR. DATE might also be useful.
+                join_by_ch <- c("ENV", "YYYYMMDD", "HR")
+                 if("DATE" %in% names(combined_data) && "DATE" %in% names(ch_results_hourly)) {
+                    join_by_ch <- c(join_by_ch, "DATE")
+                }
+                # Select CH columns to join, excluding the join keys
+                ch_cols_to_join <- setdiff(names(ch_results_hourly), join_by_ch)
+                # Ensure no columns to join already exist in combined_data to avoid suffixes
+                ch_cols_to_join <- ch_cols_to_join[!ch_cols_to_join %in% names(combined_data)]
+
+                if(length(ch_cols_to_join) > 0) {
+                  combined_data <- dplyr::left_join(combined_data,
+                                                    ch_results_hourly[, c(join_by_ch, ch_cols_to_join), drop = FALSE],
+                                                    by = join_by_ch)
+                } else {
+                   warning("No new CH columns to join or columns already exist.", call. = FALSE)
+                }
+            }
+
+            # Assign the final combined data back
+            all_weather_data <- combined_data
+            # print(str(all_weather_data)) # Debug final combined data
+
+          } else {
+             # This 'else' corresponds to the main 'if' checking if GDD or CH calculation is needed.
+             # No post-processing needed if neither GDD nor CH was requested.
+             # all_weather_data remains as fetched.
+          }
+
+          # 6. Save to Cache using CacheService
+          message(paste("Attempting to save data with cache key:", cache_key)) # DEBUG
+          if (is.null(all_weather_data) || nrow(all_weather_data) == 0) {
+          } else {
+             private$.cache_service$save(cache_key, all_weather_data)
+             # Check memory cache status immediately after saving
+             mem_status_after_save <- private$.cache_service$getMemoryCacheStatus()
+          }
+
+
+          # 7. Update Reactives - Remains the same
+          private$.resclimate(all_weather_data)
+          private$.dfs[["weather"]] <- create_reactval("weather", all_weather_data)
+
+          private$.rv$api_in_progress <- FALSE
+          private$.rv$processing_error <- NULL
+
+          # 8. Notify Success - Remains the same
+          sendSweetAlert(
+            session = private$.session,
+            title = "Data successfully retrieved!",
+            text = sprintf("Data processed for %d locations with %d climate parameters.", length(unique(all_weather_data$ENV)), length(req_params$params)),
+            type = "success"
+          )
+
+        }, error = function(e) {
+          # Error Handling - Remains the same
+          private$.rv$api_in_progress <- FALSE
+          private$.rv$processing_error <- e$message
+          private$.resclimate(NULL)
+          private$.dfs[["weather"]] <- NULL
+          sendSweetAlert(
+            session = private$.session,
+            title = "Error during processing",
+            text = paste("An error occurred:", e$message),
+            type = "error"
+        )
+      }) # end tryCatch
+    }) # end withProgress
+  ) # end public list
 
 
 #' weather Server Functions (Refactored)
@@ -808,22 +980,274 @@ mod_weather_server <- function(id, dfs) {
       processing_error = NULL
     )
 
+    # --- Service Layer Function (get_climate) ---
+    get_climate <- function(env = NULL, lat, lon, start, end, params = c("T2M", "T2M_MIN", "T2M_MAX", "PRECTOT", "RH2M", "WS2M"), scale = c("hourly", "daily", "monthly", "climatology"), parallel = FALSE, workers = 2, progress = TRUE, tbase_lower = 9, tbase_upper = 45, toptm_lower = 26, toptm_upper = 32, environment = c("r", "shiny")) {
+      # Initial validations
+      stopifnot(length(lat) == length(lon))
+      if (is.null(env)) {
+        env <- paste0("ENV", seq_along(lat))
+      }
+      stopifnot(length(env) == length(lat))
+
+      scale <- match.arg(scale)
+      environment <- match.arg(environment)
+      params_str <- paste(params, collapse = ",")
+
+      # Read allowed parameters
+      nasaparams_path <- system.file("app/www/nasaparams.csv", package = "plimanshiny", mustWork = FALSE)
+      if (nasaparams_path == "") stop("Could not find nasaparams.csv")
+      nasaparams <- read.csv(nasaparams_path)
 
 
+      # Helper functions (kept from original)
+      deg2rad <- function(deg) (deg * pi) / 180
+      Ra_fun <- function(J, lat) {
+        rlat <- deg2rad(lat)
+        fi <- 0.409 * sin((2 * pi / 365) * J - 1.39)
+        dr <- 1 + 0.033 * cos((2 * pi / 365) * J)
+        ws <- acos(-tan(rlat) * tan(fi))
+        Ra <- (1440 / pi) * 0.082 * dr * (ws * sin(rlat) * sin(fi) + cos(rlat) * cos(fi) * sin(ws))
+        P <- asin(0.39795 * cos(0.2163108 + 2 * atan(0.9671396 * tan(0.0086 * (J - 186)))))
+        # Ensure P calculation is safe
+        P_arg <- (sin(0.8333 * pi / 180) + sin(lat * pi / 180) * sin(P)) /
+                 (cos(lat * pi / 180) * cos(P))
+        P_arg <- pmin(pmax(P_arg, -1), 1) # Clamp value to [-1, 1] to avoid acos domain error
+        DL <- 24 - (24 / pi) * acos(P_arg)
+        data.frame(Ra = Ra, N = DL)
+      }
+
+      vpd <- function(temp, rh) {
+        es <- 0.61078 * exp((17.27 * temp) / (temp + 237.3))
+        ea <- es * (rh / 100)
+        vpd <- es - ea
+        return(data.frame(ES = es, EA = ea, VPD = vpd))
+      }
+
+      get_cleandata <- function(arquivo) {
+        linhas <- readLines(arquivo)
+        linha_inicio_dados <- which(grepl("-END HEADER-", linhas)) + 1
+        if(length(linha_inicio_dados) == 0) {
+           warning("Could not find '-END HEADER-' in CSV file.")
+           # Try reading from the start if header marker is missing
+           dados <- tryCatch(read.csv(arquivo, check.names = FALSE), error = function(e) NULL)
+           if(is.null(dados)) stop("Failed to read CSV data.")
+        } else {
+           dados <- read.csv(arquivo, skip = linha_inicio_dados - 1, check.names = FALSE)
+        }
+
+        # Attempt to create DATE column robustly
+        if ("YEAR" %in% names(dados) && "DOY" %in% names(dados)) {
+          dados$DATE <- tryCatch(as.Date(paste0(dados$YEAR, "-", dados$DOY), format = "%Y-%j"), error = function(e) NA)
+        } else if ("YYYYMMDD" %in% names(dados)) {
+          dados$DATE <- tryCatch(as.Date(as.character(dados$YYYYMMDD), format = "%Y%m%d"), error = function(e) NA)
+        } else if (all(c("YEAR", "MO", "DY") %in% names(dados))) {
+           date_str <- paste(dados$YEAR,
+                             formatC(as.numeric(dados$MO), width = 2, flag = "0"),
+                             formatC(as.numeric(dados$DY), width = 2, flag = "0"), sep = "-")
+           dados$DATE <- tryCatch(as.Date(date_str), error = function(e) NA)
+        }
+        return(dados)
+      }
+
+      # Internal function to fetch data for one point
+      fetch_data_point <- function(lat_i, lon_i, env_i, start_i, end_i) {
+        tryCatch({
+          scale_lowercase <- tolower(scale)
+          api_scale <- scale_lowercase
+          if(scale_lowercase == "climatology") api_scale <- "climatology" # API uses 'climatology'
+
+          # Check parameters against allowed list for the scale
+          suitableparams <- nasaparams[nasaparams$level == scale_lowercase, ]$abbreviation
+          invalid_params <- params[!params %in% suitableparams]
+          if (length(invalid_params) > 0) {
+            warning("Invalid parameters requested for scale '", scale_lowercase, "': ",
+                    paste(invalid_params, collapse = ", "), ". These will be ignored.", call. = FALSE)
+            params_valid <- params[params %in% suitableparams]
+            if(length(params_valid) == 0) {
+               warning("No valid parameters left for scale '", scale_lowercase, "' for point (", lat_i, ", ", lon_i, "). Skipping.", call. = FALSE)
+               return(NULL)
+            }
+            params_str_i <- paste(params_valid, collapse = ",")
+          } else {
+            params_str_i <- params_str # Use the original if all are valid
+          }
+
+          # Build URL based on scale
+          base_url <- "https://power.larc.nasa.gov/api/temporal"
+          if (api_scale %in% c("hourly", "daily", "monthly")) {
+            # Format dates
+            start_fmt <- tryCatch(format(as.Date(start_i), "%Y%m%d"), error = function(e) stop("Invalid start date format"))
+            end_fmt <- tryCatch(format(as.Date(end_i), "%Y%m%d"), error = function(e) stop("Invalid end date format"))
+            if (api_scale == "monthly") {
+               # Monthly API uses YYYYMM format, but seems to accept YYYYMMDD too. Let's use YYYYMMDD for consistency.
+            }
+            url <- glue::glue("{base_url}/{api_scale}/point?parameters={params_str_i}&community=AG&longitude={lon_i}&latitude={lat_i}&start={start_fmt}&end={end_fmt}&format=CSV")
+          } else { # Climatology
+            url <- glue::glue("{base_url}/climatology/point?parameters={params_str_i}&community=AG&longitude={lon_i}&latitude={lat_i}&format=CSV")
+          }
+
+          # Perform request
+          req <- httr2::request(url) |> httr2::req_options(timeout = 60, ssl_verifypeer = 0) # Increased timeout
+
+          resp <- tryCatch(
+            httr2::req_perform(req),
+            error = function(e) {
+              warning("API request failed for point (", lat_i, ", ", lon_i, "): ", e$message, call. = FALSE)
+              return(NULL) # Return NULL on HTTP error
+            }
+          )
+
+          if (is.null(resp) || httr2::resp_status(resp) >= 400) {
+             if(!is.null(resp)) warning("API request returned status ", httr2::resp_status(resp), " for point (", lat_i, ", ", lon_i, ")", call. = FALSE)
+             return(NULL)
+          }
+
+          file <- tempfile(fileext = ".csv")
+          on.exit(unlink(file), add = TRUE) # Ensure temp file cleanup
+          content <- httr2::resp_body_string(resp)
+
+          # Check for "No data" message from NASA POWER
+          if (grepl("No data was found that matched your query", content, ignore.case = TRUE)) {
+            warning("No data available from NASA POWER for point (", lat_i, ", ", lon_i, ") for the specified period/parameters.", call. = FALSE)
+            return(NULL)
+          }
+          # Check for other potential error messages in content
+          if (nchar(content) < 100 && grepl("error|fail|invalid", content, ignore.case = TRUE)) {
+             warning("API response suggests an error for point (", lat_i, ", ", lon_i, "): ", substr(content, 1, 100), call. = FALSE)
+             return(NULL)
+          }
+
+
+          writeLines(content, file)
+
+          # Read and process data
+          dfnasa <- tryCatch({
+            results <- get_cleandata(file)
+            if(is.null(results) || nrow(results) == 0) return(NULL)
+            results |> dplyr::mutate(ENV = env_i, LAT = lat_i, LON = lon_i, .before = 1)
+          }, error = function(e) {
+            warning("Error processing CSV data for point (", lat_i, ", ", lon_i, "): ", e$message, call. = FALSE)
+            return(NULL)
+          })
+
+          if (is.null(dfnasa) || nrow(dfnasa) == 0) {
+            # warning("No valid data obtained after processing for point (", lat_i, ", ", lon_i, ")", call. = FALSE)
+            return(NULL)
+          }
+
+          # --- Additional Processing (Robustly) ---
+          # Rename PRECTOTCORR if present
+          if("PRECTOTCORR" %in% names(dfnasa)) names(dfnasa)[names(dfnasa) == "PRECTOTCORR"] <- "PRECTOT"
+
+          # Calculate P_ETP if possible
+          if ("PRECTOT" %in% names(dfnasa) && "EVPTRNS" %in% names(dfnasa)) {
+            dfnasa$P_ETP <- dfnasa$PRECTOT - dfnasa$EVPTRNS
+          }
+
+          # Calculate VPD, ES, EA if possible
+          temp_col <- if("T2M" %in% names(dfnasa)) "T2M" else if("T2M_MAX" %in% names(dfnasa)) "T2M_MAX" else NULL
+          rh_col <- if("RH2M" %in% names(dfnasa)) "RH2M" else NULL
+
+          if (!is.null(temp_col) && !is.null(rh_col)) {
+             vpd_results <- vpd(dfnasa[[temp_col]], dfnasa[[rh_col]])
+             dfnasa$ES <- vpd_results$ES
+             dfnasa$EA <- vpd_results$EA
+             dfnasa$VPD <- vpd_results$VPD
+          }
+
+          # Calculate Ra and N if possible (for daily/monthly)
+          if (scale %in% c("daily", "monthly") && all(c("DOY", "LAT") %in% names(dfnasa))) {
+             ra_n_results <- Ra_fun(dfnasa$DOY, dfnasa$LAT)
+             dfnasa$RA <- ra_n_results$Ra
+             dfnasa$N <- ra_n_results$N
+          }
+
+          # Calculate RTA if possible
+          if ("ALLSKY_SFC_SW_DWN" %in% names(dfnasa) && "RA" %in% names(dfnasa)) {
+             dfnasa$RTA <- dfnasa$ALLSKY_SFC_SW_DWN / dfnasa$RA
+          }
+
+          # Calculate accumulated precipitation if possible
+          if("PRECTOT" %in% names(dfnasa)){
+             dfnasa <- dfnasa |>
+               dplyr::mutate(PRECTOT_ACC = cumsum(ifelse(is.na(PRECTOT), 0, PRECTOT)))
+          }
+
+          # Replace NASA's -999 fill value with NA
+          dfnasa[dfnasa == -999] <- NA
+          dfnasa[dfnasa == -99] <- NA # Just in case
+
+          return(dfnasa)
+
+        }, error = function(e) {
+          # General error catch for the point
+          warning("General error processing point (", lat_i, ", ", lon_i, "): ", e$message, call. = FALSE)
+          return(NULL)
+        })
+      }
+
+      # --- Execution Plan (Parallel/Sequential) ---
+      if (parallel) {
+        future::plan(future::multisession, workers = workers)
+      } else {
+        future::plan(future::sequential)
+      }
+      on.exit(future::plan(future::sequential), add = TRUE) # Ensure sequential plan is restored
+
+      # --- Map over points ---
+      result_list <- NULL
+      if (progress && environment == "shiny") {
+        progressr::withProgressShiny({
+          p <- progressr::progressor(steps = length(lat))
+          result_list <- furrr::future_map(seq_along(lat), function(i) {
+            p(message = sprintf("Fetching %s (%d/%d)", env[i], i, length(lat)))
+            fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
+          }, .options = furrr::furrr_options(seed = TRUE))
+        }, message = "Fetching climate data...")
+      } else if (progress && environment == "r") {
+        progressr::handlers(global = TRUE) # Ensure handlers are active
+        progressr::with_progress({
+          p <- progressr::progressor(steps = length(lat))
+          result_list <- furrr::future_map(seq_along(lat), function(i) {
+            p(message = sprintf("Fetching %s", env[i]))
+            fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
+          }, .options = furrr::furrr_options(seed = TRUE))
+        })
+      } else { # No progress bar
+        result_list <- furrr::future_map(seq_along(lat), function(i) {
+          fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
+        }, .options = furrr::furrr_options(seed = TRUE))
+      }
+
+      # Combine results, removing NULLs
+      result_list <- result_list[!sapply(result_list, is.null)]
+      if (length(result_list) == 0) {
+        warning("No data successfully retrieved for any location.", call. = FALSE)
+        return(NULL) # Return NULL if no data at all
+      }
+
+      # Use bind_rows for robust combination
+      final_df <- tryCatch(dplyr::bind_rows(result_list), error = function(e) {
+         warning("Error combining results: ", e$message, call. = FALSE)
+         return(NULL)
+      })
+
+      return(final_df)
+    }
     # --- UI Logic and Observers ---
     coords <- reactive({
       if (length(points$data) == 0) return(NULL)
       # Ensure consistent column types before binding
       points_list <- lapply(points$data, function(p) {
-        p$lat <- as.numeric(p$lat)
-        p$lon <- as.numeric(p$lon)
-        p$start <- as.Date(p$start)
-        p$end <- as.Date(p$end)
-        p
+         p$lat <- as.numeric(p$lat)
+         p$lon <- as.numeric(p$lon)
+         p$start <- as.Date(p$start)
+         p$end <- as.Date(p$end)
+         p
       })
       df <- tryCatch(dplyr::bind_rows(points_list), error = function(e) {
-        warning("Error binding points: ", e$message)
-        return(NULL) # Return NULL if binding fails
+          warning("Error binding points: ", e$message)
+          return(NULL) # Return NULL if binding fails
       })
       if(is.null(df) || nrow(df) == 0) return(NULL)
       as.data.frame(df)
@@ -860,7 +1284,7 @@ mod_weather_server <- function(id, dfs) {
         current_length <- length(points$data)
         points$data[[current_length + 1]] <- new_point
       } else {
-        showNotification("Point already exists at these coordinates.", type = "warning")
+         showNotification("Point already exists at these coordinates.", type = "warning")
       }
     })
     observeEvent(input$mun, {
@@ -870,13 +1294,13 @@ mod_weather_server <- function(id, dfs) {
 
       mun_df_path <- system.file("app/www/coords_muni.csv", package = "plimanshiny", mustWork = FALSE)
       if(mun_df_path == "") {
-        showNotification("Municipality coordinates file not found.", type = "error") # Translated
-        return()
+          showNotification("Municipality coordinates file not found.", type = "error") # Translated
+          return()
       }
       mun_df <- read.csv(file = mun_df_path, sep = ",")
       selected_mun <- dplyr::filter(mun_df,
-                                    abbrev_state %in% input$state,
-                                    name_muni %in% input$mun)
+                                   abbrev_state %in% input$state,
+                                   name_muni %in% input$mun)
 
       # Check if municipalities were selected
       if(nrow(selected_mun) == 0) {
@@ -981,12 +1405,12 @@ mod_weather_server <- function(id, dfs) {
       showNotification("All points cleared.", type = "message")
     })
     observe({
-      current_coords <- coords() # Use the reactive expression
-      if(is.null(current_coords) || nrow(current_coords) == 0){
-        updateTextInput(session, "envname", value = "ENV_1")
-      } else{
-        updateTextInput(session, "envname", value = paste0("ENV_", nrow(current_coords) + 1))
-      }
+       current_coords <- coords() # Use the reactive expression
+       if(is.null(current_coords) || nrow(current_coords) == 0){
+         updateTextInput(session, "envname", value = "ENV_1")
+       } else{
+         updateTextInput(session, "envname", value = paste0("ENV_", nrow(current_coords) + 1))
+       }
     })
 
     # Display selected points table (latlondata) - Updated for delete button
@@ -995,14 +1419,14 @@ mod_weather_server <- function(id, dfs) {
       req(df_coords, nrow(df_coords) > 0)
 
       # Add row IDs and delete buttons
-      display_df <- df_coords |>
+      display_df <- df_coords %>%
         dplyr::mutate(
           row_id = dplyr::row_number(), # Add a unique ID for each row
           delete = sprintf(
             '<button class="btn btn-danger btn-sm delete-point-btn" data-rowid="%s" type="button"><i class="fa fa-trash"></i></button>',
             row_id # Use the row ID
           )
-        ) |>
+        ) %>%
         dplyr::select(row_id, env, lat, lon, start, end, delete) # Keep row_id for internal use if needed, or remove
 
       DT::datatable(
@@ -1033,7 +1457,7 @@ mod_weather_server <- function(id, dfs) {
         if (row_id_to_delete > 0 && row_id_to_delete <= length(points$data)) {
           points$data <- points$data[-row_id_to_delete]
         } else {
-          warning("Invalid row ID received for deletion: ", row_id_to_delete)
+           warning("Invalid row ID received for deletion: ", row_id_to_delete)
         }
       })
     })
@@ -1043,8 +1467,8 @@ mod_weather_server <- function(id, dfs) {
       # Use req() to proceed only if df_coords is valid (not NULL, not empty)
       req(df_coords, nrow(df_coords) > 0)
 
-      leafletProxy("map2", session) |>
-        clearMarkers() |>
+      leafletProxy("map2", session) %>%
+        clearMarkers() %>%
         addMarkers(
           data = df_coords,
           lng = ~lon,
@@ -1065,11 +1489,11 @@ mod_weather_server <- function(id, dfs) {
 
       # Define default selections based on scale
       default_selection <- switch(scale_lowercase,
-                                  "hourly" = c("T2M", "RH2M", "PRECTOTCORR", "PS", "WS2M"),
-                                  "daily" = c("T2M", "T2M_MIN", "T2M_MAX", "T2M_RANGE", "RH2M", "PRECTOTCORR", "PS", "WS2M", "WD2M", "GWETTOP", "GWETROOT"),
-                                  "monthly" = c("T2M", "T2M_MIN", "T2M_MAX", "T2M_RANGE", "RH2M", "PRECTOTCORR", "PS", "WS2M", "WD2M", "GWETTOP", "GWETROOT"),
-                                  "climatology" = c("T2M", "T2M_MIN", "T2M_MAX", "T2M_RANGE", "RH2M", "PRECTOTCORR", "PS", "WS2M", "WD2M", "GWETTOP", "GWETROOT"),
-                                  NULL # Default if scale doesn't match
+        "hourly" = c("T2M", "RH2M", "PRECTOTCORR", "PS", "WS2M"),
+        "daily" = c("T2M", "T2M_MIN", "T2M_MAX", "T2M_RANGE", "RH2M", "PRECTOTCORR", "PS", "WS2M", "WD2M", "GWETTOP", "GWETROOT"),
+        "monthly" = c("T2M", "T2M_MIN", "T2M_MAX", "T2M_RANGE", "RH2M", "PRECTOTCORR", "PS", "WS2M", "WD2M", "GWETTOP", "GWETROOT"),
+        "climatology" = c("T2M", "T2M_MIN", "T2M_MAX", "T2M_RANGE", "RH2M", "PRECTOTCORR", "PS", "WS2M", "WD2M", "GWETTOP", "GWETROOT"),
+        NULL # Default if scale doesn't match
       )
       # Ensure default selection only contains suitable params for the scale
       valid_selection <- intersect(default_selection, suitableparams)
@@ -1097,23 +1521,23 @@ mod_weather_server <- function(id, dfs) {
       }
     })
 
-    # --- Trigger API Fetch (Remains the same, but now fetches data with legacy processing) ---
+    # --- Trigger API Fetch (Updated) ---
     observeEvent(input$get_weather, {
       current_coords <- coords()
       req(current_coords, nrow(current_coords) > 0)
 
       builder <- WeatherRequestBuilder$new()
       request_data <- tryCatch({
-        builder$with_coordinates(current_coords)$
-          with_parameters(input$params)$
-          with_scale(input$scale)$
-          with_parallel(input$parallel, input$ncores)$
-          with_gdd(input$computegdd, input$basemin, input$baseupp, input$optimallower, input$optimalupper)$
-          with_chilling_hours(input$ch_w, input$ch_utah, input$ch_nc)$
-          build()
+          builder$with_coordinates(current_coords)$
+                  with_parameters(input$params)$
+                  with_scale(input$scale)$
+                  with_parallel(input$parallel, input$ncores)$
+                  with_gdd(input$computegdd, input$basemin, input$baseupp, input$optimallower, input$optimalupper)$
+                  with_chilling_hours(input$ch_w, input$ch_utah, input$ch_nc)$
+                  build()
       }, error = function(e) {
-        sendSweetAlert(session, title = "Input Error", text = paste("Failed to build request:", e$message), type = "error")
-        return(NULL)
+          sendSweetAlert(session, title = "Input Error", text = paste("Failed to build request:", e$message), type = "error")
+          return(NULL)
       })
       req(request_data)
 
@@ -1144,63 +1568,62 @@ mod_weather_server <- function(id, dfs) {
 
         # Render the table (assuming render_reactable exists)
         render_reactable( # Use the helper function
-          formatted_data,
-          filterable = TRUE,
-          searchable = TRUE,
-          sortable = TRUE,
-          resizable = TRUE,
-          max_width = NULL, # Adjust as needed
-          defaultPageSize = 15,
-          paginationType = "jump",
-          highlight = TRUE,
-          striped = TRUE,
-          compact = TRUE,
-          wrap = FALSE,
-          showPageSizeOptions = TRUE,
-          pageSizeOptions = c(10, 15, 25, 50, 100)
-        )
+            formatted_data,
+            filterable = TRUE,
+            searchable = TRUE,
+            sortable = TRUE,
+            resizable = TRUE,
+            max_width = NULL, # Adjust as needed
+            defaultPageSize = 15,
+            paginationType = "jump",
+            highlight = TRUE,
+            striped = TRUE,
+            compact = TRUE,
+            wrap = FALSE,
+            showPageSizeOptions = TRUE,
+            pageSizeOptions = c(10, 15, 25, 50, 100)
+          )
       })
     })
     observe({
       data_res <- resclimate()
       if (!is.null(data_res) && nrow(data_res) > 0) {
-        # Get numeric columns suitable for distribution plot
-        numeric_cols <- names(data_res)[sapply(data_res, is.numeric)]
-        # Exclude lat/lon/year/doy etc. if desired
-        cols_to_exclude <- c("LAT", "LON", "YEAR", "DOY", "MO", "DY", "HR", "HOUR")
-        valid_choices <- setdiff(numeric_cols, cols_to_exclude)
+         # Get numeric columns suitable for distribution plot
+         numeric_cols <- names(data_res)[sapply(data_res, is.numeric)]
+         # Exclude lat/lon/year/doy etc. if desired
+         cols_to_exclude <- c("LAT", "LON", "YEAR", "DOY", "MO", "DY", "HR", "HOUR")
+         valid_choices <- setdiff(numeric_cols, cols_to_exclude)
 
-        selected_var <- isolate(input$variable) # Keep current selection if valid
-        if(is.null(selected_var) || !selected_var %in% valid_choices) {
-          selected_var <- valid_choices[1] # Default to first valid choice
-        }
+         selected_var <- isolate(input$variable) # Keep current selection if valid
+         if(is.null(selected_var) || !selected_var %in% valid_choices) {
+            selected_var <- valid_choices[1] # Default to first valid choice
+         }
 
-        updatePickerInput(session, "variable",
-                          choices = valid_choices,
-                          selected = selected_var)
+         updatePickerInput(session, "variable",
+                           choices = valid_choices,
+                           selected = selected_var)
       } else {
-        updatePickerInput(session, "variable", choices = NULL, selected = NULL)
+         updatePickerInput(session, "variable", choices = NULL, selected = NULL)
       }
     })
-
     observe({
       data_res <- resclimate()
       if (!is.null(data_res) && nrow(data_res) > 0) {
-        # Allow faceting by ENV or other categorical/discrete columns
-        potential_facets <- c("ENV") # Add others if relevant, e.g., YEAR, MO
-        valid_facets <- union(potential_facets, colnames(data_res))
-        choices <- c("none", valid_facets)
+         # Allow faceting by ENV or other categorical/discrete columns
+         potential_facets <- c("ENV") # Add others if relevant, e.g., YEAR, MO
+         valid_facets <- intersect(potential_facets, colnames(data_res))
+         choices <- c("none", valid_facets)
 
-        selected_facet <- isolate(input$facet)
-        if(is.null(selected_facet) || !selected_facet %in% choices) {
-          selected_facet <- "none"
-        }
+         selected_facet <- isolate(input$facet)
+         if(is.null(selected_facet) || !selected_facet %in% choices) {
+             selected_facet <- "none"
+         }
 
-        updatePickerInput(session, "facet",
-                          choices = choices,
-                          selected = selected_facet)
+         updatePickerInput(session, "facet",
+                           choices = choices,
+                           selected = selected_facet)
       } else {
-        updatePickerInput(session, "facet", choices = "none", selected = "none")
+         updatePickerInput(session, "facet", choices = "none", selected = "none")
       }
     })
     output$envirotypes_dist <- renderPlotly({
@@ -1213,18 +1636,17 @@ mod_weather_server <- function(id, dfs) {
 
       # Basic validation
       if (!variable %in% colnames(plot_data)) {
-        return(plotly::plot_ly() |> plotly::layout(title = paste("Variable", variable, "not found")))
+        return(plotly::plot_ly() %>% plotly::layout(title = paste("Variable", variable, "not found")))
       }
       if (!is.numeric(plot_data[[variable]])) {
-        return(plotly::plot_ly() |> plotly::layout(title = paste("Variable", variable, "is not numeric")))
+         return(plotly::plot_ly() %>% plotly::layout(title = paste("Variable", variable, "is not numeric")))
       }
       if (all(is.na(plot_data[[variable]]))) {
-        return(plotly::plot_ly() |> plotly::layout(title = paste("All values for", variable, "are NA")))
+        return(plotly::plot_ly() %>% plotly::layout(title = paste("All values for", variable, "are NA")))
       }
 
       # Create ggplot object
-      p <-
-        ggplot(plot_data, aes(x = !!sym(variable))) +
+      p <- ggplot(plot_data, aes(x = !!sym(variable))) +
         geom_density(fill = "steelblue", alpha = 0.6, na.rm = TRUE) +
         theme_minimal(base_size = 14) + # Slightly smaller base size
         labs(x = variable, y = "Density", title = paste("Distribution of", variable))
@@ -1239,10 +1661,9 @@ mod_weather_server <- function(id, dfs) {
       }
 
       # Convert to plotly
-      plotly::ggplotly(p, tooltip = c("x")) |>
+      plotly::ggplotly(p, tooltip = c("x")) %>%
         plotly::config(displaylogo = FALSE, modeBarButtonsToRemove = list('sendDataToCloud', 'select2d', 'lasso2d'))
     })
-
     output$envirotypes <- renderPlotly({
       # Basic requirements
       req(input$variable, resclimate(), nrow(resclimate()) > 0)
@@ -1267,49 +1688,46 @@ mod_weather_server <- function(id, dfs) {
           if (!"DATE" %in% names(plot_data_orig)) stop("DATE column is required for envirotyping.") # Assuming envirotype needs DATE
 
           # Ensure DATE is Date class
-          plot_data <- plot_data_orig |> dplyr::mutate(DATE = as.Date(DATE))
-
-
+          plot_data <- plot_data_orig %>% dplyr::mutate(DATE = as.Date(DATE))
           if(any(is.na(plot_data$DATE))) stop("Could not parse DATE column.")
 
           # Assuming 'datas' in envirotype refers to DOY
           if (!"DOY" %in% names(plot_data)) {
-            plot_data <- plot_data |> dplyr::mutate(DOY = as.numeric(format(DATE, "%j")))
+             plot_data <- plot_data %>% dplyr::mutate(DOY = as.numeric(format(DATE, "%j")))
           }
           # Rename DOY to DFS if that's what envirotype expects
           if (!"DFS" %in% names(plot_data) && "DOY" %in% names(plot_data)) {
-            plot_data <- plot_data |> dplyr::rename(DFS = DOY)
+             plot_data <- plot_data %>% dplyr::rename(DFS = DOY)
           }
           if (!"DFS" %in% names(plot_data)) stop("Column 'DFS' (Day From Sowing/Start or DOY) is required.")
 
 
           # 2. Optimize dataset (optional, keep if needed)
           incProgress(0.2, detail = "Preparing data...")
-          plot_data <- plot_data |> dplyr::filter(!is.na(!!sym(variable)), !is.na(DFS))
+          plot_data <- plot_data %>% dplyr::filter(!is.na(!!sym(variable)), !is.na(DFS))
           if(nrow(plot_data) == 0) stop("No valid data remaining after filtering NAs.")
 
           # 3. Calculate Envirotypes
           incProgress(0.4, detail = "Calculating envirotypes...")
           # Ensure envirotype function is available
           dfenviro <- envirotype(
-            data = plot_data, # Pass the prepared data
-            datas = cropdates_in, # Use parsed DOY/DFS values
-            fases = cropdates_label_in, # Use parsed labels
-            var = variable, # Use selected variable
-            breaks = quantiles_in, # Use parsed quantiles
-            labels = NULL # Let envirotype generate labels
-          )
-
+              data = plot_data, # Pass the prepared data
+              datas = cropdates_in, # Use parsed DOY/DFS values
+              fases = cropdates_label_in, # Use parsed labels
+              var = variable, # Use selected variable
+              breaks = quantiles_in, # Use parsed quantiles
+              labels = NULL # Let envirotype generate labels
+            )
 
           if (is.null(dfenviro) || nrow(dfenviro) == 0) stop("Envirotyping resulted in no data.")
 
           # 4. Update Envirotype Table
           incProgress(0.7, detail = "Updating table...")
           output$dataenviro <- reactable::renderReactable({
-            dfenviro |>
-              dplyr::select(ENV, stage, xcut, Freq, fr) |>
-              dplyr::rename(Environment = ENV, `Crop stage` = stage, Envirotype = xcut, Frequency = Freq, `Relative frequency` = fr) |>
-              roundcols(digits = 3) |> # Assuming roundcols exists
+            dfenviro %>%
+              dplyr::select(ENV, stage, xcut, Freq, fr) %>%
+              dplyr::rename(Environment = ENV, `Crop stage` = stage, Envirotype = xcut, Frequency = Freq, `Relative frequency` = fr) %>%
+              roundcols(digits = 3) %>% # Assuming roundcols exists
               render_reactable( # Assuming render_reactable exists
                 filterable = TRUE, searchable = TRUE, sortable = TRUE,
                 compact = TRUE, highlight = TRUE
@@ -1322,22 +1740,14 @@ mod_weather_server <- function(id, dfs) {
           num_colors <- length(unique(dfenviro$xcut))
           env_colors <- RColorBrewer::brewer.pal(max(3, min(9, num_colors)), "Blues") # Example palette
 
-          p <-
-            ggplot(dfenviro) +
-            geom_bar(aes(x=Freq,  y = ENV, fill = xcut),
-                     position = "fill",
-                     stat = "identity",
-                     width = 1,
-                     color = "white",
-                     size=.2) +
-            facet_wrap(~stage, ncol = 1) +
-            theme_minimal(base_size = 16) +
-            scale_y_discrete(expand = c(0,0))+
-            scale_x_continuous(expand = c(0,0))+
-            labs(x = 'Relative frequency',
-                 y = "Environment",
-                 fill='Envirotype')+
+          p <- ggplot(dfenviro, aes(x = fr, y = Environment, fill = Envirotype)) + # Use fr for relative frequency
+            geom_col(position = "stack", width = 0.9, color = "white", linewidth = 0.2) + # Use geom_col for stacked bars
+            facet_wrap(~`Crop stage`, ncol = 1, scales = "free_y") + # Use renamed column
+            scale_fill_manual(values = env_colors) + # Use defined colors
+            scale_x_continuous(labels = scales::percent_format(), expand = c(0, 0)) + # Percentage axis
+            scale_y_discrete(expand = c(0, 0.5)) + # Add some padding for y-axis
             theme_minimal(base_size = 12) +
+            labs(x = 'Relative Frequency', y = "Environment", fill = 'Envirotype') +
             theme(legend.position = "bottom",
                   strip.text = element_text(face = "bold"),
                   strip.background = element_rect(fill = "gray90", color = NA),
@@ -1346,15 +1756,15 @@ mod_weather_server <- function(id, dfs) {
           incProgress(1.0, detail = "Completed!")
 
           # Convert to plotly
-          plotly::ggplotly(p, tooltip = c("y", "fill", "x")) |>
-            plotly::config(displaylogo = FALSE, modeBarButtonsToRemove = list('sendDataToCloud')) |>
-            plotly::layout(legend = list(orientation = "h", x = 0.5, xanchor = "center", y = -0.2)) # Adjust legend
+          plotly::ggplotly(p, tooltip = c("y", "fill", "x")) %>%
+             plotly::config(displaylogo = FALSE, modeBarButtonsToRemove = list('sendDataToCloud')) %>%
+             plotly::layout(legend = list(orientation = "h", x = 0.5, xanchor = "center", y = -0.2)) # Adjust legend
 
 
         }, error = function(e) {
           # Handle errors during envirotyping
           output$dataenviro <- reactable::renderReactable(NULL) # Clear table on error
-          plotly::plot_ly() |>
+          plotly::plot_ly() %>%
             plotly::layout(title = paste("Error generating envirotypes:", e$message))
         })
       }) # End withProgress
@@ -1380,16 +1790,16 @@ mod_weather_server <- function(id, dfs) {
             tooltip = tooltipOptions(title = "Manage weather data cache"),
             # Content of the dropdown
             tags$div(style = "padding: 10px;",
-                     tags$b("Cache Status:"),
-                     tags$p(paste("Items in memory:", mem_items)),
-                     tags$p(paste("Disk cache:", if(disk_exists) "Exists" else "Empty/Not Found")),
-                     actionButton(
-                       inputId = ns("clear_cache"),
-                       label = "Clear All Cache",
-                       icon = icon("trash"),
-                       class = "btn-danger btn-sm", # Small red button
-                       width = "100%"
-                     )
+              tags$b("Cache Status:"),
+              tags$p(paste("Items in memory:", mem_items)),
+              tags$p(paste("Disk cache:", if(disk_exists) "Exists" else "Empty/Not Found")),
+              actionButton(
+                inputId = ns("clear_cache"),
+                label = "Clear All Cache",
+                icon = icon("trash"),
+                class = "btn-danger btn-sm", # Small red button
+                width = "100%"
+              )
             )
           )
         )
@@ -1404,11 +1814,11 @@ mod_weather_server <- function(id, dfs) {
     observeEvent(input$clear_cache, {
       result <- cache_service$cleanCache() # Use the service method
       if(result$memory_cleared && result$disk_cleared) {
-        text_msg <- paste0("Memory cache cleared. Disk cache: ", result$files_removed, " files deleted.")
-        type_msg <- "success"
+         text_msg <- paste0("Memory cache cleared. Disk cache: ", result$files_removed, " files deleted.")
+         type_msg <- "success"
       } else {
-        text_msg <- "Failed to clear cache completely."
-        type_msg <- "warning"
+         text_msg <- "Failed to clear cache completely."
+         type_msg <- "warning"
       }
       sendSweetAlert(
         session = session,
@@ -1419,24 +1829,24 @@ mod_weather_server <- function(id, dfs) {
       # Force UI update for cache status (re-render the UI element)
       output$cache_status_ui <- renderUI({}) # Trigger re-render
       output$cache_status_ui <- renderUI({
-        # Re-render the UI using the service status methods
-        mem_items <- cache_service$getMemoryCacheStatus()
-        disk_exists <- cache_service$getDiskCacheStatus()
-        if (mem_items > 0 || disk_exists) {
-          div(
-            style = "margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee;",
-            dropdown(
-              inputId = ns("cache_dropdown"), label = "Cache Manager", icon = icon("database"), status = "info", size = "sm", right = TRUE,
-              tooltip = tooltipOptions(title = "Manage weather data cache"),
-              tags$div(style = "padding: 10px;",
-                       tags$b("Cache Status:"),
-                       tags$p(paste("Items in memory:", mem_items)),
-                       tags$p(paste("Disk cache:", if(disk_exists) "Exists" else "Empty/Not Found")),
-                       actionButton(inputId = ns("clear_cache"), label = "Clear All Cache", icon = icon("trash"), class = "btn-danger btn-sm", width = "100%")
-              )
-            )
-          )
-        } else { NULL }
+         # Re-render the UI using the service status methods
+         mem_items <- cache_service$getMemoryCacheStatus()
+         disk_exists <- cache_service$getDiskCacheStatus()
+         if (mem_items > 0 || disk_exists) {
+           div(
+             style = "margin-top: 15px; padding-top: 10px; border-top: 1px solid #eee;",
+             dropdown(
+               inputId = ns("cache_dropdown"), label = "Cache Manager", icon = icon("database"), status = "info", size = "sm", right = TRUE,
+               tooltip = tooltipOptions(title = "Manage weather data cache"),
+               tags$div(style = "padding: 10px;",
+                 tags$b("Cache Status:"),
+                 tags$p(paste("Items in memory:", mem_items)),
+                 tags$p(paste("Disk cache:", if(disk_exists) "Exists" else "Empty/Not Found")),
+                 actionButton(inputId = ns("clear_cache"), label = "Clear All Cache", icon = icon("trash"), class = "btn-danger btn-sm", width = "100%")
+               )
+             )
+           )
+         } else { NULL }
       })
     })
 
@@ -1501,13 +1911,8 @@ mod_weather_server <- function(id, dfs) {
       }
     })
 
-    # --- ADD BACK GDD/CH Calculation Triggers ---
-
-    # GDD Calculator Observer (Copied from legacy)
-    observeEvent(input$computegdd, {
-      # Only trigger calculation if the switch is turned ON
-      req(isTRUE(input$computegdd))
-
+    # GDD Calculator Observer
+    observeEvent(input$calculate_gdd, {
       # Check if we have data to perform the calculation
       climate_data <- resclimate()
       if (is.null(climate_data) || nrow(climate_data) == 0) {
@@ -1522,18 +1927,17 @@ mod_weather_server <- function(id, dfs) {
 
       # Verify required parameters are present
       required_cols <- NULL
-      # Prefer Tmin/Tmax for daily/monthly, T2M for hourly
-      if (all(c("T2M_MIN", "T2M_MAX") %in% names(climate_data))) {
+      if ("T2M_MIN" %in% names(climate_data) && "T2M_MAX" %in% names(climate_data)) {
         required_cols <- c("T2M_MIN", "T2M_MAX")
       } else if ("T2M" %in% names(climate_data)) {
-        required_cols <- "T2M" # Will be aggregated if hourly
+        required_cols <- "T2M"
       }
 
       if (is.null(required_cols)) {
         sendSweetAlert(
           session = session,
           title = "Missing Required Parameters",
-          text = paste("GDD calculation requires either T2M_MIN & T2M_MAX (preferred) or T2M.",
+          text = paste("GDD calculation requires either T2M_MIN & T2M_MAX for daily data or T2M for hourly data.",
                        "Please ensure these parameters are included in your query."),
           type = "error"
         )
@@ -1541,192 +1945,81 @@ mod_weather_server <- function(id, dfs) {
       }
 
       # Prepare dataset for GDD calculation
-      withProgress(message = "Calculating GDD...", value = 0, {
-        tryCatch({
-          # Step 1: Create daily data if we're working with hourly data
-          daily_data <- climate_data
-          is_hourly <- any(c("HR", "HOUR") %in% names(climate_data))
+      withProgress(message = "Calculating GDD...", {
+        # Step 1: Create daily data if we're working with hourly data
+        daily_data <- climate_data
+        if ("HR" %in% names(climate_data) || "HOUR" %in% names(climate_data)) {
+          incProgress(0.2, detail = "Aggregating hourly data to daily...")
+          daily_data <- aggregate_hourly_data(climate_data)
 
-          if (is_hourly) {
-            incProgress(0.2, detail = "Aggregating hourly data to daily...")
-            # Ensure aggregate_hourly_data function is available/defined
-            daily_data <- aggregate_hourly_data(climate_data)
+          # Ensure Date column
+          if (!"DATE" %in% names(daily_data)) {
+            daily_data$DATE <- as.Date(as.character(daily_data$YYYYMMDD), format = "%Y%m%d")
+          }
+        } else {
+          # Ensure DATE exists for daily data
+          if (!"DATE" %in% names(daily_data) && "YYYYMMDD" %in% names(daily_data)) {
+            daily_data$DATE <- as.Date(as.character(daily_data$YYYYMMDD), format = "%Y%m%d")
+          }
+        }
 
-            # Ensure Date column exists after aggregation
-            if (!"DATE" %in% names(daily_data) && "YYYYMMDD" %in% names(daily_data)) {
-              daily_data$DATE <- as.Date(as.character(daily_data$YYYYMMDD), format = "%Y%m%d")
-            }
-          } else {
-            # Ensure DATE exists for daily/monthly data
-            if (!"DATE" %in% names(daily_data) && "YYYYMMDD" %in% names(daily_data)) {
-              daily_data$DATE <- as.Date(as.character(daily_data$YYYYMMDD), format = "%Y%m%d")
-            }
+        # Step 2: Calculate GDD using the Ometto method
+        incProgress(0.5, detail = "Computing growing degree days...")
+        gdd_result <- gdd_ometto_frue(
+          df = daily_data,
+          Tbase = input$basemin,
+          Tceil = input$baseupp,
+          Topt1 = input$optimallower,
+          Topt2 = input$optimalupper
+        )
+
+        # Step 3: Merge results back into main dataset
+        incProgress(0.8, detail = "Updating results...")
+
+        # Keep only original columns plus GDD columns to avoid duplicating common columns
+        original_cols <- setdiff(names(climate_data), c("GDD", "FRUE", "GDD_CUMSUM"))
+        gdd_cols <- c("GDD", "FRUE", "GDD_CUMSUM")
+
+        # For hourly data, we need to join back to original hourly data
+        if ("HR" %in% names(climate_data) || "HOUR" %in% names(climate_data)) {
+          # Merge GDD data back with original hourly data
+          # First prepare join columns - ensure YYYYMMDD exists in both
+          if (!"YYYYMMDD" %in% names(climate_data)) {
+            climate_data$YYYYMMDD <- format(climate_data$DATE, "%Y%m%d")
           }
 
-          # Check if DATE column is valid before proceeding
-          if (!"DATE" %in% names(daily_data) || any(is.na(daily_data$DATE))) {
-            stop("Could not obtain valid DATE column for GDD calculation.")
-          }
-          # Check if required temp columns exist in daily_data
-          if (!all(c("T2M_MIN", "T2M_MAX") %in% names(daily_data))) {
-            stop("Required columns T2M_MIN and T2M_MAX not found after potential aggregation.")
-          }
-
-
-          # Step 2: Calculate GDD using the Ometto method
-          incProgress(0.5, detail = "Computing growing degree days...")
-          # Ensure gdd_ometto_frue function is available/defined
-          gdd_result <- gdd_ometto_frue(
-            df = daily_data,
-            Tbase = input$basemin,
-            Tceil = input$baseupp,
-            Topt1 = input$optimallower,
-            Topt2 = input$optimalupper
+          # Join by ENV and YYYYMMDD (date)
+          merged_data <- dplyr::left_join(
+            climate_data,
+            gdd_result[, c("ENV", "YYYYMMDD", gdd_cols)],
+            by = c("ENV", "YYYYMMDD")
           )
+        } else {
+          # For daily data, just update with GDD columns
+          merged_data <- gdd_result
+        }
 
-          # Step 3: Merge results back into main dataset
-          incProgress(0.8, detail = "Updating results...")
+        # Step 4: Update the reactive values with new data
+        resclimate(merged_data)
+        dfs[["weather"]] <- create_reactval("weather", merged_data)
 
-          # Select GDD columns to join, avoid re-joining common keys like ENV, DATE, YYYYMMDD
-          gdd_cols_to_add <- intersect(c("GDD", "FRUE", "GDD_CUMSUM", "RTA_CUMSUM"), names(gdd_result)) # RTA_CUMSUM might be calculated here too
-          gdd_cols_to_add <- gdd_cols_to_add[!gdd_cols_to_add %in% names(climate_data)] # Only add truly new columns
+        # Step 5: Notify user
+        incProgress(1.0, detail = "Complete!")
+      })
 
-          join_keys <- intersect(c("ENV", "DATE", "YYYYMMDD"), names(climate_data), names(gdd_result))
-          if(length(join_keys) == 0) stop("Cannot find common keys (ENV, DATE, YYYYMMDD) to join GDD results.")
-
-          if(length(gdd_cols_to_add) > 0) {
-            # Join GDD results back to the original climate_data (hourly or daily)
-            merged_data <- dplyr::left_join(
-              climate_data,
-              gdd_result[, c(join_keys, gdd_cols_to_add), drop = FALSE],
-              by = join_keys
-            )
-          } else {
-            # If no new columns (e.g., already calculated), just use original data
-            merged_data <- climate_data
-            warning("GDD columns already seem to exist. No new columns added.", call. = FALSE)
-          }
-
-
-          # Step 4: Update the reactive values with new data
-          resclimate(merged_data)
-          dfs[["weather"]] <- create_reactval("weather", merged_data)
-
-          # Step 5: Notify user
-          incProgress(1.0, detail = "Complete!")
-
-          sendSweetAlert(
-            session = session,
-            title = "GDD Calculation Complete",
-            text = paste("Growing Degree Days calculated and added/updated.",
-                         # Optionally add parameters used
-                         sep = "\\n"),
-            type = "success"
-          )
-
-        }, error = function(e) {
-          sendSweetAlert(
-            session = session,
-            title = "GDD Calculation Error",
-            text = paste("An error occurred during GDD calculation:", e$message),
-            type = "error"
-          )
-        }) # end tryCatch
-      }) # end withProgress
-    }) # End GDD observeEvent
-
-    # Chilling Hours Observers (Add similar observeEvents for input$ch_w, input$ch_utah, input$ch_nc)
-    observeEvent(c(input$ch_w, input$ch_utah, input$ch_nc), {
-      # Check if any CH switch is ON
-      req(isTRUE(input$ch_w) || isTRUE(input$ch_utah) || isTRUE(input$ch_nc))
-      # Check if scale is hourly (should be enforced by other observers, but double-check)
-      req(input$scale == "hourly")
-
-      climate_data <- resclimate()
-      if (is.null(climate_data) || nrow(climate_data) == 0) {
-        # Avoid alert if data just hasn't been fetched yet
-        # sendSweetAlert(session = session, title = "No Data", text = "Fetch hourly data first.", type = "warning")
-        return()
-      }
-      # Ensure scale is actually hourly in the data
-      if (!any(c("HR", "HOUR") %in% names(climate_data))) {
-        sendSweetAlert(session = session, title = "Incorrect Data Scale", text = "Chilling hours require hourly data.", type = "error")
-        return()
-      }
-      # Ensure T2M is present
-      if (!"T2M" %in% names(climate_data)) {
-        sendSweetAlert(session = session, title = "Missing Parameter", text = "Chilling hours require the T2M parameter.", type = "error")
-        return()
-      }
-
-      withProgress(message = "Calculating Chilling Hours...", value = 0, {
-        tryCatch({
-          data_for_ch <- climate_data
-          new_ch_cols <- character(0) # Track newly added columns
-
-          # Ensure DATE and YYYYMMDD exist
-          if (!"DATE" %in% names(data_for_ch) && "YYYYMMDD" %in% names(data_for_ch)) {
-            data_for_ch$DATE <- as.Date(as.character(data_for_ch$YYYYMMDD), format = "%Y%m%d")
-          } else if (!"DATE" %in% names(data_for_ch)) {
-            stop("DATE column missing for CH calculation.")
-          }
-          if (!"YYYYMMDD" %in% names(data_for_ch)) {
-            data_for_ch$YYYYMMDD <- format(data_for_ch$DATE, "%Y%m%d")
-          }
-          # Ensure HR exists (prefer HR over HOUR)
-          if (!"HR" %in% names(data_for_ch) && "HOUR" %in% names(data_for_ch)) {
-            data_for_ch$HR <- data_for_ch$HOUR
-          }
-          if (!"HR" %in% names(data_for_ch)) {
-            stop("HR (hour) column missing for CH calculation.")
-          }
-
-
-          incProgress(0.3, detail = "Processing models...")
-          # Apply selected models
-          if (isTRUE(input$ch_w)) {
-            # Ensure calculate_weinberger_ch is available
-            data_for_ch <- calculate_weinberger_ch(data_for_ch)
-            new_ch_cols <- c(new_ch_cols, grep("^ch_w", names(data_for_ch), value = TRUE))
-          }
-          if (isTRUE(input$ch_utah)) {
-            # Ensure calculate_utah_ch is available
-            data_for_ch <- calculate_utah_ch(data_for_ch)
-            new_ch_cols <- c(new_ch_cols, grep("^CH_Utah", names(data_for_ch), value = TRUE))
-          }
-          if (isTRUE(input$ch_nc)) {
-            # Ensure calculate_nc_ch is available
-            data_for_ch <- calculate_nc_ch(data_for_ch)
-            new_ch_cols <- c(new_ch_cols, grep("^CH_NC", names(data_for_ch), value = TRUE))
-          }
-
-          incProgress(0.8, detail = "Updating results...")
-          # Update reactives - overwrite existing data with the CH columns added
-          resclimate(data_for_ch)
-          dfs[["weather"]] <- create_reactval("weather", data_for_ch)
-
-          incProgress(1.0, detail = "Complete!")
-          sendSweetAlert(
-            session = session,
-            title = "Chilling Hours Calculated",
-            text = paste("Chilling hours calculated for selected models:",
-                         paste(c(if(isTRUE(input$ch_w)) "Weinberger",
-                                 if(isTRUE(input$ch_utah)) "Utah",
-                                 if(isTRUE(input$ch_nc)) "North Carolina"), collapse=", ")),
-            type = "success"
-          )
-
-        }, error = function(e) {
-          sendSweetAlert(
-            session = session,
-            title = "Chilling Hours Error",
-            text = paste("An error occurred during CH calculation:", e$message),
-            type = "error"
-          )
-        }) # end tryCatch
-      }) # end withProgress
-    }, ignoreInit = TRUE) # ignoreInit prevents running on app start
-
+      sendSweetAlert(
+        session = session,
+        title = "GDD Calculation Complete",
+        text = paste("Growing Degree Days calculated successfully using the Ometto method with:",
+                     paste("Base temp:", input$basemin, "°C"),
+                     paste("Ceiling temp:", input$baseupp, "°C"),
+                     paste("Optimal range:", input$optimallower, "-", input$optimalupper, "°C"),
+                     sep = "\n"),
+        type = "success"
+      )
+    })
 
   }) # End moduleServer
 }
+
+
