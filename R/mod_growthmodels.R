@@ -519,10 +519,10 @@ mod_growthmodels_server <- function(id, dfs){
                         Tceil = input$baseupp) |>
         tidyr::unite("date", c("YEAR", "MO", "DY"), sep = "-") |>
         dplyr::mutate(date = lubridate::ymd(date))
+
       dfactive$df <- dfactive$df |> dplyr::mutate(date = lubridate::ymd(date))
       dfactive$df <- dplyr::left_join(dfactive$df, dfclimate, by = dplyr::join_by(date))
       dfs[[paste0(file_name(input$dftoedit), "_updated")]] <- create_reactval(paste0(input$dftoedit, "_updated"), dfactive$df)
-
     })
 
 
