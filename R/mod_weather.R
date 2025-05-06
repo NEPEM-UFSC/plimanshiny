@@ -725,7 +725,6 @@ FetchWeatherCommand <- R6::R6Class("FetchWeatherCommand",
                                        all_weather_data <- NULL
 
                                        # Use withProgress for feedback during fetch
-                                       withProgress(message = 'Fetching climate data...', value = 0, {
                                          tryCatch({
                                            # Call the service function (get_climate)
                                            all_weather_data <- private$.service_fun(
@@ -784,7 +783,6 @@ FetchWeatherCommand <- R6::R6Class("FetchWeatherCommand",
                                              type = "error"
                                            )
                                          }) # end tryCatch
-                                       }) # end withProgress
                                      }
                                    ) # end public list
 ) # end R6 class
