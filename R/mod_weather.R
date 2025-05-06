@@ -724,6 +724,8 @@ FetchWeatherCommand <- R6::R6Class("FetchWeatherCommand",
       private$.rv$processing_error <- NULL
       all_weather_data <- NULL
 
+      # Use withProgress for feedback during fetch
+      withProgress(message = 'Fetching climate data...', value = 0, {
         tryCatch({
           # Call the service function (get_climate)
           all_weather_data <- private$.service_fun(
@@ -743,201 +745,25 @@ FetchWeatherCommand <- R6::R6Class("FetchWeatherCommand",
             stop("No weather data retrieved from the API.")
           }
 
-          # --- Data Inspection and Cleaning (Added) ---
+          # --- REMOVED GDD/CH Post-processing Block ---
+          # The logic previously here (Data Inspection, GDD Calc, CH Calc, Combine Results) is removed.
+          # get_climate now returns data with basic processing done inside fetch_data_point.
 
-          # Clean temperature columns before GDD/CH calculations
-          temp_cols_to_clean <- intersect(c("T2M", "T2M_MIN", "T2M_MAX"), names(all_weather_data))
-          if (length(temp_cols_to_clean) > 0) {
-            for (col in temp_cols_to_clean) {
-              if (!is.numeric(all_weather_data[[col]])) {
-                 # Use suppressWarnings to avoid flooding console if conversion creates NAs
-                 all_weather_data[[col]] <- suppressWarnings(as.numeric(all_weather_data[[col]]))
-              }
-            }
-          }
-          # --- End Inspection and Cleaning ---
-
-          # 5. Post-processing (GDD, Chilling Hours)
-          if (req_params$compute_gdd || req_params$compute_ch$w || req_params$compute_ch$utah || req_params$compute_ch$nc) {
-
-            # --- Ensure Date/Time columns are present ---
-            if (!"YYYYMMDD" %in% names(all_weather_data)) {
-               if ("DATE" %in% names(all_weather_data)) {
-                  all_weather_data$YYYYMMDD <- format(as.Date(all_weather_data$DATE), "%Y%m%d")
-               } else if (all(c("YEAR", "MO", "DY") %in% names(all_weather_data))) {
-                  all_weather_data$YYYYMMDD <- paste0(
-                     all_weather_data$YEAR,
-                     formatC(all_weather_data$MO, width = 2, flag = "0"),
-                     formatC(all_weather_data$DY, width = 2, flag = "0")
-                  )
-               } else {
-                  stop("Cannot proceed: Missing required date columns (YYYYMMDD or DATE or YEAR/MO/DY).")
-               }
-            }
-            if (!"DATE" %in% names(all_weather_data)) {
-                all_weather_data$DATE <- as.Date(all_weather_data$YYYYMMDD, format = "%Y%m%d")
-            }
-            if (!"DOY" %in% names(all_weather_data)) {
-               all_weather_data$DOY <- as.numeric(format(all_weather_data$DATE, "%j"))
-            }
-            # Ensure HR exists if scale is hourly (needed for CH accumulation order)
-            if (req_params$scale == "hourly" && !"HR" %in% names(all_weather_data) && "HOUR" %in% names(all_weather_data)) {
-                all_weather_data$HR <- all_weather_data$HOUR
-            }
-             if (req_params$scale == "hourly" && !"HR" %in% names(all_weather_data)) {
-                 # Attempt to infer HR if missing, maybe from row number within a day? Risky.
-                 warning("Hourly scale selected but HR column missing. CH accumulation might be incorrect if data isn't ordered chronologically.")
-                 # Add a dummy HR if absolutely necessary, but this is not ideal
-                 # all_weather_data <- all_weather_data |> dplyr::group_by(ENV, YYYYMMDD) |> dplyr::mutate(HR = dplyr::row_number() - 1) |> dplyr::ungroup()
-             }
-            # --- End Date/Time columns ---
-
-            # Initialize placeholders for results
-            ch_results_hourly <- NULL # Will hold HOURLY CH results
-            gdd_results_daily <- NULL # Will hold DAILY GDD results
-
-            # --- Chilling Hours Calculation (Operates on HOURLY data) ---
-            if (req_params$scale == "hourly" && (req_params$compute_ch$w || req_params$compute_ch$utah || req_params$compute_ch$nc)) {
-              # Assume calculate_*_ch functions return hourly data with cumulative columns
-              # e.g., columns: ENV, YYYYMMDD, HR, DATE, T2M, ch_w, ch_w_accum, CH_Utah, CH_Utah_accum, CH_NC, CH_NC_accum
-              all_weather_data_for_ch <- all_weather_data # Work on a copy
-
-              if (req_params$compute_ch$w) {
-                all_weather_data_for_ch <- calculate_weinberger_ch(all_weather_data_for_ch) # Assumes this adds ch_w and ch_w_accum
-              }
-              if (req_params$compute_ch$utah) {
-                all_weather_data_for_ch <- calculate_utah_ch(all_weather_data_for_ch) # Assumes this adds CH_Utah and CH_Utah_accum
-              }
-              if (req_params$compute_ch$nc) {
-                all_weather_data_for_ch <- calculate_nc_ch(all_weather_data_for_ch) # Assumes this adds CH_NC and CH_NC_accum
-              }
-              # Keep only the necessary ID columns and the new CH columns
-              ch_cols_to_keep <- c("ENV", "YYYYMMDD", "HR", "DATE", # ID columns
-                                   grep("^ch_w", names(all_weather_data_for_ch), value = TRUE), # Weinberger cols
-                                   grep("^CH_Utah", names(all_weather_data_for_ch), value = TRUE), # Utah cols
-                                   grep("^CH_NC", names(all_weather_data_for_ch), value = TRUE)) # NC cols
-              ch_results_hourly <- all_weather_data_for_ch[, intersect(ch_cols_to_keep, names(all_weather_data_for_ch)), drop = FALSE]
-
-            } else if (req_params$compute_ch$w || req_params$compute_ch$utah || req_params$compute_ch$nc) {
-                 warning("Chilling hours requested but scale is not hourly. Calculation skipped.", call. = FALSE)
-            }
-
-            # --- GDD Calculation (Requires DAILY data) ---
-            if (req_params$compute_gdd) {
-                daily_data_for_gdd <- NULL
-                if (req_params$scale == "hourly") {
-                    # Aggregate hourly to daily to get Tmin/Tmax
-                    daily_aggregated_data <- aggregate_hourly_data(all_weather_data)
-                    # Ensure required columns exist
-                    if(all(c("T2M_MIN", "T2M_MAX") %in% names(daily_aggregated_data))) {
-                        daily_data_for_gdd <- daily_aggregated_data
-                    } else {
-                         warning("Could not aggregate T2M_MIN/T2M_MAX from hourly data. Skipping GDD.", call. = FALSE)
-                    }
-                } else {
-                    # Use the data directly if already daily/monthly
-                    daily_data_for_gdd <- all_weather_data
-                    # Ensure Tmin/Tmax exist
-                    if(!all(c("T2M_MIN", "T2M_MAX") %in% names(daily_data_for_gdd))){
-                         warning("GDD requested for daily/monthly scale, but T2M_MIN/T2M_MAX are missing. Skipping GDD.", call. = FALSE)
-                         daily_data_for_gdd <- NULL # Prevent calculation
-                    }
-                }
-
-                # Calculate GDD if we have valid daily data
-                if (!is.null(daily_data_for_gdd)) {
-                    # Ensure DATE column exists for gdd_ometto_frue if it needs it
-                     if (!"DATE" %in% names(daily_data_for_gdd) && "YYYYMMDD" %in% names(daily_data_for_gdd)) {
-                        daily_data_for_gdd$DATE <- as.Date(daily_data_for_gdd$YYYYMMDD, format = "%Y%m%d")
-                     }
-
-                    gdd_results_daily_temp <- gdd_ometto_frue(
-                        df = daily_data_for_gdd,
-                        Tbase = req_params$gdd_params$basemin,
-                        Tceil = req_params$gdd_params$baseupp,
-                        Topt1 = req_params$gdd_params$optimallower,
-                        Topt2 = req_params$gdd_params$optimalupper
-                    )
-                    # Select only relevant GDD columns to avoid duplication
-                    gdd_cols_to_keep <- intersect(names(gdd_results_daily_temp), c("ENV", "YYYYMMDD", "DATE", "GDD", "FRUE", "GDD_CUMSUM", "RTA_CUMSUM")) # Add DATE if present
-                    gdd_results_daily <- gdd_results_daily_temp[, gdd_cols_to_keep, drop = FALSE]
-                }
-            }
-
-
-            # --- Combine Results ---
-            combined_data <- all_weather_data # Start with the original fetched data (hourly or daily)
-
-            # Join GDD results (Daily values broadcasted to hourly rows if scale is hourly)
-            if (!is.null(gdd_results_daily)) {
-                # Join by ENV and YYYYMMDD. DATE might also be useful if present in both.
-                join_by_gdd <- c("ENV", "YYYYMMDD")
-                if("DATE" %in% names(combined_data) && "DATE" %in% names(gdd_results_daily)) {
-                    join_by_gdd <- c(join_by_gdd, "DATE")
-                }
-                # Select GDD columns to join, excluding the join keys themselves to avoid suffixing
-                gdd_cols_to_join <- setdiff(names(gdd_results_daily), join_by_gdd)
-                # Ensure no columns to join already exist in combined_data to avoid suffixes
-                gdd_cols_to_join <- gdd_cols_to_join[!gdd_cols_to_join %in% names(combined_data)]
-
-                if(length(gdd_cols_to_join) > 0) {
-                  combined_data <- dplyr::left_join(combined_data,
-                                                    gdd_results_daily[, c(join_by_gdd, gdd_cols_to_join), drop = FALSE],
-                                                    by = join_by_gdd)
-                } else {
-                   warning("No new GDD columns to join or columns already exist.", call. = FALSE)
-                }
-            }
-
-            # Join CH results (Hourly values joined to hourly rows) - Only if scale was hourly
-            if (req_params$scale == "hourly" && !is.null(ch_results_hourly)) {
-                # Join by ENV, YYYYMMDD, HR. DATE might also be useful.
-                join_by_ch <- c("ENV", "YYYYMMDD", "HR")
-                 if("DATE" %in% names(combined_data) && "DATE" %in% names(ch_results_hourly)) {
-                    join_by_ch <- c(join_by_ch, "DATE")
-                }
-                # Select CH columns to join, excluding the join keys
-                ch_cols_to_join <- setdiff(names(ch_results_hourly), join_by_ch)
-                # Ensure no columns to join already exist in combined_data to avoid suffixes
-                ch_cols_to_join <- ch_cols_to_join[!ch_cols_to_join %in% names(combined_data)]
-
-                if(length(ch_cols_to_join) > 0) {
-                  combined_data <- dplyr::left_join(combined_data,
-                                                    ch_results_hourly[, c(join_by_ch, ch_cols_to_join), drop = FALSE],
-                                                    by = join_by_ch)
-                } else {
-                   warning("No new CH columns to join or columns already exist.", call. = FALSE)
-                }
-            }
-
-            # Assign the final combined data back
-            all_weather_data <- combined_data
-            # print(str(all_weather_data)) # Debug final combined data
-
-          } else {
-             # This 'else' corresponds to the main 'if' checking if GDD or CH calculation is needed.
-             # No post-processing needed if neither GDD nor CH was requested.
-             # all_weather_data remains as fetched.
-          }
-
-          # 6. Save to Cache using CacheService
+          # 5. Save to Cache using CacheService (using data directly from get_climate)
           message(paste("Attempting to save data with cache key:", cache_key)) # DEBUG
-          if (is.null(all_weather_data) || nrow(all_weather_data) == 0) {
-          } else {
+          if (!is.null(all_weather_data) && nrow(all_weather_data) > 0) {
              private$.cache_service$save(cache_key, all_weather_data)
-             # Check memory cache status immediately after saving
-             mem_status_after_save <- private$.cache_service$getMemoryCacheStatus()
           }
 
 
-          # 7. Update Reactives - Remains the same
+          # 6. Update Reactives (using data directly from get_climate)
           private$.resclimate(all_weather_data)
           private$.dfs[["weather"]] <- create_reactval("weather", all_weather_data)
 
           private$.rv$api_in_progress <- FALSE
           private$.rv$processing_error <- NULL
 
-          # 8. Notify Success - Remains the same
+          # 7. Notify Success (remains the same)
           sendSweetAlert(
             session = private$.session,
             title = "Data successfully retrieved!",
@@ -946,7 +772,7 @@ FetchWeatherCommand <- R6::R6Class("FetchWeatherCommand",
           )
 
         }, error = function(e) {
-          # Error Handling - Remains the same
+          # Error Handling (remains the same)
           private$.rv$api_in_progress <- FALSE
           private$.rv$processing_error <- e$message
           private$.resclimate(NULL)
@@ -956,10 +782,12 @@ FetchWeatherCommand <- R6::R6Class("FetchWeatherCommand",
             title = "Error during processing",
             text = paste("An error occurred:", e$message),
             type = "error"
-        )
-      }) # end tryCatch
-    }) # end withProgress
+          )
+        }) # end tryCatch
+      }) # end withProgress
+    }
   ) # end public list
+) # end R6 class
 
 
 #' weather Server Functions (Refactored)
@@ -1135,16 +963,16 @@ mod_weather_server <- function(id, dfs) {
             return(NULL)
           }
 
-          # --- Additional Processing (Robustly) ---
+          # --- Additional Processing (Reverted to Legacy Logic) ---
           # Rename PRECTOTCORR if present
           if("PRECTOTCORR" %in% names(dfnasa)) names(dfnasa)[names(dfnasa) == "PRECTOTCORR"] <- "PRECTOT"
 
-          # Calculate P_ETP if possible
+          # Calculate P_ETP if possible (No check for existence)
           if ("PRECTOT" %in% names(dfnasa) && "EVPTRNS" %in% names(dfnasa)) {
             dfnasa$P_ETP <- dfnasa$PRECTOT - dfnasa$EVPTRNS
           }
 
-          # Calculate VPD, ES, EA if possible
+          # Calculate VPD, ES, EA if possible (No check for existence)
           temp_col <- if("T2M" %in% names(dfnasa)) "T2M" else if("T2M_MAX" %in% names(dfnasa)) "T2M_MAX" else NULL
           rh_col <- if("RH2M" %in% names(dfnasa)) "RH2M" else NULL
 
@@ -1155,33 +983,56 @@ mod_weather_server <- function(id, dfs) {
              dfnasa$VPD <- vpd_results$VPD
           }
 
-          # Calculate Ra and N if possible (for daily/monthly)
+          # Calculate Ra and N if possible (for daily/monthly) (No check for existence)
+          # Ensure DOY exists first
+          if (!"DOY" %in% names(dfnasa) && "DATE" %in% names(dfnasa)) {
+             dfnasa$DOY <- as.numeric(format(dfnasa$DATE, "%j"))
+          }
           if (scale %in% c("daily", "monthly") && all(c("DOY", "LAT") %in% names(dfnasa))) {
              ra_n_results <- Ra_fun(dfnasa$DOY, dfnasa$LAT)
              dfnasa$RA <- ra_n_results$Ra
              dfnasa$N <- ra_n_results$N
           }
 
-          # Calculate RTA if possible
+          # Calculate RTA if possible (No check for existence)
           if ("ALLSKY_SFC_SW_DWN" %in% names(dfnasa) && "RA" %in% names(dfnasa)) {
-             dfnasa$RTA <- dfnasa$ALLSKY_SFC_SW_DWN / dfnasa$RA
+             # Ensure RA is not zero or NA before division
+             dfnasa$RTA <- ifelse(is.na(dfnasa$RA) | dfnasa$RA == 0, NA, dfnasa$ALLSKY_SFC_SW_DWN / dfnasa$RA)
           }
 
-          # Calculate accumulated precipitation if possible
+          # Calculate accumulated precipitation if possible (No check for existence)
           if("PRECTOT" %in% names(dfnasa)){
+             # Grouping by ENV ensures accumulation resets for each location if multiple are fetched together
              dfnasa <- dfnasa |>
-               dplyr::mutate(PRECTOT_ACC = cumsum(ifelse(is.na(PRECTOT), 0, PRECTOT)))
+               dplyr::group_by(ENV) |>
+               dplyr::mutate(PRECTOT_ACC = cumsum(ifelse(is.na(PRECTOT), 0, PRECTOT))) |>
+               dplyr::ungroup()
           }
 
           # Replace NASA's -999 fill value with NA
           dfnasa[dfnasa == -999] <- NA
           dfnasa[dfnasa == -99] <- NA # Just in case
-          dfnasa <-
-            dfnasa |>
-            dplyr::relocate(DATE, .after = LON) |>
-            dplyr::select(-YEAR) |>
-            tidyr::separate_wider_delim(DATE, names = c("YEAR", "MO", "DY"), delim = "-", cols_remove = FALSE) |>
-            dplyr::mutate(DFS = 1:nrow(dfnasa), .after = DOY)
+
+          # Relocate DATE (Optional, but was in previous version)
+          if("DATE" %in% names(dfnasa)) {
+             dfnasa <- dfnasa |> dplyr::relocate(DATE, .after = LON)
+          }
+
+          # Separate DATE into YEAR, MO, DY (Optional, but was in previous version)
+          # Consider potential name conflicts if API returns these
+          if ("DATE" %in% names(dfnasa) && !all(c("YEAR", "MO", "DY") %in% names(dfnasa))) {
+              dfnasa <- dfnasa |>
+                tidyr::separate_wider_delim(DATE, names = c("YEAR", "MO", "DY"), delim = "-", cols_remove = FALSE)
+          }
+
+          # Add DFS (Optional, but was in previous version)
+          if (!"DFS" %in% names(dfnasa)) {
+              dfnasa <- dfnasa |>
+                dplyr::group_by(ENV) |>
+                dplyr::mutate(DFS = dplyr::row_number(), .after = if("DOY" %in% names(.)) "DOY" else if("DATE" %in% names(.)) "DATE" else dplyr::last_col()) |>
+                dplyr::ungroup()
+          }
+          # --- End Additional Processing ---
 
           return(dfnasa)
 
@@ -1527,7 +1378,7 @@ mod_weather_server <- function(id, dfs) {
       }
     })
 
-    # --- Trigger API Fetch (Updated) ---
+    # --- Trigger API Fetch (Remains the same, but now fetches data with legacy processing) ---
     observeEvent(input$get_weather, {
       current_coords <- coords()
       req(current_coords, nrow(current_coords) > 0)
@@ -1931,113 +1782,232 @@ mod_weather_server <- function(id, dfs) {
       }
     })
 
-    # GDD Calculator Observer
-    observeEvent(input$calculate_gdd, {
-      # Check if we have data to perform the calculation
-      climate_data <- resclimate()
-      if (is.null(climate_data) || nrow(climate_data) == 0) {
-        sendSweetAlert(
-          session = session,
-          title = "No Data Available",
-          text = "Please fetch climate data first before calculating GDD.",
-          type = "warning"
-        )
-        return()
-      }
+    # --- ADD BACK GDD/CH Calculation Triggers ---
 
-      # Verify required parameters are present
-      required_cols <- NULL
-      if ("T2M_MIN" %in% names(climate_data) && "T2M_MAX" %in% names(climate_data)) {
-        required_cols <- c("T2M_MIN", "T2M_MAX")
-      } else if ("T2M" %in% names(climate_data)) {
-        required_cols <- "T2M"
-      }
+    # GDD Calculator Observer (Copied from legacy)
+    observeEvent(input$computegdd, {
+       # Only trigger calculation if the switch is turned ON
+       req(isTRUE(input$computegdd))
 
-      if (is.null(required_cols)) {
-        sendSweetAlert(
-          session = session,
-          title = "Missing Required Parameters",
-          text = paste("GDD calculation requires either T2M_MIN & T2M_MAX for daily data or T2M for hourly data.",
-                       "Please ensure these parameters are included in your query."),
-          type = "error"
-        )
-        return()
-      }
+       # Check if we have data to perform the calculation
+       climate_data <- resclimate()
+       if (is.null(climate_data) || nrow(climate_data) == 0) {
+         sendSweetAlert(
+           session = session,
+           title = "No Data Available",
+           text = "Please fetch climate data first before calculating GDD.",
+           type = "warning"
+         )
+         return()
+       }
 
-      # Prepare dataset for GDD calculation
-      withProgress(message = "Calculating GDD...", {
-        # Step 1: Create daily data if we're working with hourly data
-        daily_data <- climate_data
-        if ("HR" %in% names(climate_data) || "HOUR" %in% names(climate_data)) {
-          incProgress(0.2, detail = "Aggregating hourly data to daily...")
-          daily_data <- aggregate_hourly_data(climate_data)
+       # Verify required parameters are present
+       required_cols <- NULL
+       # Prefer Tmin/Tmax for daily/monthly, T2M for hourly
+       if (all(c("T2M_MIN", "T2M_MAX") %in% names(climate_data))) {
+         required_cols <- c("T2M_MIN", "T2M_MAX")
+       } else if ("T2M" %in% names(climate_data)) {
+         required_cols <- "T2M" # Will be aggregated if hourly
+       }
 
-          # Ensure Date column
-          if (!"DATE" %in% names(daily_data)) {
-            daily_data$DATE <- as.Date(as.character(daily_data$YYYYMMDD), format = "%Y%m%d")
-          }
-        } else {
-          # Ensure DATE exists for daily data
-          if (!"DATE" %in% names(daily_data) && "YYYYMMDD" %in% names(daily_data)) {
-            daily_data$DATE <- as.Date(as.character(daily_data$YYYYMMDD), format = "%Y%m%d")
-          }
+       if (is.null(required_cols)) {
+         sendSweetAlert(
+           session = session,
+           title = "Missing Required Parameters",
+           text = paste("GDD calculation requires either T2M_MIN & T2M_MAX (preferred) or T2M.",
+                        "Please ensure these parameters are included in your query."),
+           type = "error"
+         )
+         return()
+       }
+
+       # Prepare dataset for GDD calculation
+       withProgress(message = "Calculating GDD...", value = 0, {
+         tryCatch({
+           # Step 1: Create daily data if we're working with hourly data
+           daily_data <- climate_data
+           is_hourly <- any(c("HR", "HOUR") %in% names(climate_data))
+
+           if (is_hourly) {
+             incProgress(0.2, detail = "Aggregating hourly data to daily...")
+             # Ensure aggregate_hourly_data function is available/defined
+             daily_data <- aggregate_hourly_data(climate_data)
+
+             # Ensure Date column exists after aggregation
+             if (!"DATE" %in% names(daily_data) && "YYYYMMDD" %in% names(daily_data)) {
+               daily_data$DATE <- as.Date(as.character(daily_data$YYYYMMDD), format = "%Y%m%d")
+             }
+           } else {
+             # Ensure DATE exists for daily/monthly data
+             if (!"DATE" %in% names(daily_data) && "YYYYMMDD" %in% names(daily_data)) {
+               daily_data$DATE <- as.Date(as.character(daily_data$YYYYMMDD), format = "%Y%m%d")
+             }
+           }
+
+           # Check if DATE column is valid before proceeding
+           if (!"DATE" %in% names(daily_data) || any(is.na(daily_data$DATE))) {
+              stop("Could not obtain valid DATE column for GDD calculation.")
+           }
+           # Check if required temp columns exist in daily_data
+           if (!all(c("T2M_MIN", "T2M_MAX") %in% names(daily_data))) {
+              stop("Required columns T2M_MIN and T2M_MAX not found after potential aggregation.")
+           }
+
+
+           # Step 2: Calculate GDD using the Ometto method
+           incProgress(0.5, detail = "Computing growing degree days...")
+           # Ensure gdd_ometto_frue function is available/defined
+           gdd_result <- gdd_ometto_frue(
+             df = daily_data,
+             Tbase = input$basemin,
+             Tceil = input$baseupp,
+             Topt1 = input$optimallower,
+             Topt2 = input$optimalupper
+           )
+
+           # Step 3: Merge results back into main dataset
+           incProgress(0.8, detail = "Updating results...")
+
+           # Select GDD columns to join, avoid re-joining common keys like ENV, DATE, YYYYMMDD
+           gdd_cols_to_add <- intersect(c("GDD", "FRUE", "GDD_CUMSUM", "RTA_CUMSUM"), names(gdd_result)) # RTA_CUMSUM might be calculated here too
+           gdd_cols_to_add <- gdd_cols_to_add[!gdd_cols_to_add %in% names(climate_data)] # Only add truly new columns
+
+           join_keys <- intersect(c("ENV", "DATE", "YYYYMMDD"), names(climate_data), names(gdd_result))
+           if(length(join_keys) == 0) stop("Cannot find common keys (ENV, DATE, YYYYMMDD) to join GDD results.")
+
+           if(length(gdd_cols_to_add) > 0) {
+               # Join GDD results back to the original climate_data (hourly or daily)
+               merged_data <- dplyr::left_join(
+                 climate_data,
+                 gdd_result[, c(join_keys, gdd_cols_to_add), drop = FALSE],
+                 by = join_keys
+               )
+           } else {
+               # If no new columns (e.g., already calculated), just use original data
+               merged_data <- climate_data
+               warning("GDD columns already seem to exist. No new columns added.", call. = FALSE)
+           }
+
+
+           # Step 4: Update the reactive values with new data
+           resclimate(merged_data)
+           dfs[["weather"]] <- create_reactval("weather", merged_data)
+
+           # Step 5: Notify user
+           incProgress(1.0, detail = "Complete!")
+
+           sendSweetAlert(
+             session = session,
+             title = "GDD Calculation Complete",
+             text = paste("Growing Degree Days calculated and added/updated.",
+                          # Optionally add parameters used
+                          sep = "\\n"),
+             type = "success"
+           )
+
+         }, error = function(e) {
+            sendSweetAlert(
+               session = session,
+               title = "GDD Calculation Error",
+               text = paste("An error occurred during GDD calculation:", e$message),
+               type = "error"
+            )
+         }) # end tryCatch
+       }) # end withProgress
+    }) # End GDD observeEvent
+
+    # Chilling Hours Observers (Add similar observeEvents for input$ch_w, input$ch_utah, input$ch_nc)
+    observeEvent(c(input$ch_w, input$ch_utah, input$ch_nc), {
+        # Check if any CH switch is ON
+        req(isTRUE(input$ch_w) || isTRUE(input$ch_utah) || isTRUE(input$ch_nc))
+        # Check if scale is hourly (should be enforced by other observers, but double-check)
+        req(input$scale == "hourly")
+
+        climate_data <- resclimate()
+        if (is.null(climate_data) || nrow(climate_data) == 0) {
+          # Avoid alert if data just hasn't been fetched yet
+          # sendSweetAlert(session = session, title = "No Data", text = "Fetch hourly data first.", type = "warning")
+          return()
+        }
+        # Ensure scale is actually hourly in the data
+        if (!any(c("HR", "HOUR") %in% names(climate_data))) {
+           sendSweetAlert(session = session, title = "Incorrect Data Scale", text = "Chilling hours require hourly data.", type = "error")
+           return()
+        }
+        # Ensure T2M is present
+        if (!"T2M" %in% names(climate_data)) {
+           sendSweetAlert(session = session, title = "Missing Parameter", text = "Chilling hours require the T2M parameter.", type = "error")
+           return()
         }
 
-        # Step 2: Calculate GDD using the Ometto method
-        incProgress(0.5, detail = "Computing growing degree days...")
-        gdd_result <- gdd_ometto_frue(
-          df = daily_data,
-          Tbase = input$basemin,
-          Tceil = input$baseupp,
-          Topt1 = input$optimallower,
-          Topt2 = input$optimalupper
-        )
+        withProgress(message = "Calculating Chilling Hours...", value = 0, {
+           tryCatch({
+              data_for_ch <- climate_data
+              new_ch_cols <- character(0) # Track newly added columns
 
-        # Step 3: Merge results back into main dataset
-        incProgress(0.8, detail = "Updating results...")
+              # Ensure DATE and YYYYMMDD exist
+              if (!"DATE" %in% names(data_for_ch) && "YYYYMMDD" %in% names(data_for_ch)) {
+                 data_for_ch$DATE <- as.Date(as.character(data_for_ch$YYYYMMDD), format = "%Y%m%d")
+              } else if (!"DATE" %in% names(data_for_ch)) {
+                 stop("DATE column missing for CH calculation.")
+              }
+              if (!"YYYYMMDD" %in% names(data_for_ch)) {
+                 data_for_ch$YYYYMMDD <- format(data_for_ch$DATE, "%Y%m%d")
+              }
+              # Ensure HR exists (prefer HR over HOUR)
+              if (!"HR" %in% names(data_for_ch) && "HOUR" %in% names(data_for_ch)) {
+                 data_for_ch$HR <- data_for_ch$HOUR
+              }
+              if (!"HR" %in% names(data_for_ch)) {
+                 stop("HR (hour) column missing for CH calculation.")
+              }
 
-        # Keep only original columns plus GDD columns to avoid duplicating common columns
-        original_cols <- setdiff(names(climate_data), c("GDD", "FRUE", "GDD_CUMSUM"))
-        gdd_cols <- c("GDD", "FRUE", "GDD_CUMSUM")
 
-        # For hourly data, we need to join back to original hourly data
-        if ("HR" %in% names(climate_data) || "HOUR" %in% names(climate_data)) {
-          # Merge GDD data back with original hourly data
-          # First prepare join columns - ensure YYYYMMDD exists in both
-          if (!"YYYYMMDD" %in% names(climate_data)) {
-            climate_data$YYYYMMDD <- format(climate_data$DATE, "%Y%m%d")
-          }
+              incProgress(0.3, detail = "Processing models...")
+              # Apply selected models
+              if (isTRUE(input$ch_w)) {
+                 # Ensure calculate_weinberger_ch is available
+                 data_for_ch <- calculate_weinberger_ch(data_for_ch)
+                 new_ch_cols <- c(new_ch_cols, grep("^ch_w", names(data_for_ch), value = TRUE))
+              }
+              if (isTRUE(input$ch_utah)) {
+                 # Ensure calculate_utah_ch is available
+                 data_for_ch <- calculate_utah_ch(data_for_ch)
+                 new_ch_cols <- c(new_ch_cols, grep("^CH_Utah", names(data_for_ch), value = TRUE))
+              }
+              if (isTRUE(input$ch_nc)) {
+                 # Ensure calculate_nc_ch is available
+                 data_for_ch <- calculate_nc_ch(data_for_ch)
+                 new_ch_cols <- c(new_ch_cols, grep("^CH_NC", names(data_for_ch), value = TRUE))
+              }
 
-          # Join by ENV and YYYYMMDD (date)
-          merged_data <- dplyr::left_join(
-            climate_data,
-            gdd_result[, c("ENV", "YYYYMMDD", gdd_cols)],
-            by = c("ENV", "YYYYMMDD")
-          )
-        } else {
-          # For daily data, just update with GDD columns
-          merged_data <- gdd_result
-        }
+              incProgress(0.8, detail = "Updating results...")
+              # Update reactives - overwrite existing data with the CH columns added
+              resclimate(data_for_ch)
+              dfs[["weather"]] <- create_reactval("weather", data_for_ch)
 
-        # Step 4: Update the reactive values with new data
-        resclimate(merged_data)
-        dfs[["weather"]] <- create_reactval("weather", merged_data)
+              incProgress(1.0, detail = "Complete!")
+              sendSweetAlert(
+                 session = session,
+                 title = "Chilling Hours Calculated",
+                 text = paste("Chilling hours calculated for selected models:",
+                              paste(c(if(isTRUE(input$ch_w)) "Weinberger",
+                                        if(isTRUE(input$ch_utah)) "Utah",
+                                        if(isTRUE(input$ch_nc)) "North Carolina"), collapse=", ")),
+                 type = "success"
+              )
 
-        # Step 5: Notify user
-        incProgress(1.0, detail = "Complete!")
-      })
+           }, error = function(e) {
+              sendSweetAlert(
+                 session = session,
+                 title = "Chilling Hours Error",
+                 text = paste("An error occurred during CH calculation:", e$message),
+                 type = "error"
+              )
+           }) # end tryCatch
+        }) # end withProgress
+    }, ignoreInit = TRUE) # ignoreInit prevents running on app start
 
-      sendSweetAlert(
-        session = session,
-        title = "GDD Calculation Complete",
-        text = paste("Growing Degree Days calculated successfully using the Ometto method with:",
-                     paste("Base temp:", input$basemin, "°C"),
-                     paste("Ceiling temp:", input$baseupp, "°C"),
-                     paste("Optimal range:", input$optimallower, "-", input$optimalupper, "°C"),
-                     sep = "\n"),
-        type = "success"
-      )
-    })
 
   }) # End moduleServer
 }

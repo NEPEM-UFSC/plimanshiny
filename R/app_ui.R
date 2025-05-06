@@ -273,7 +273,7 @@ app_ui <- function(request) {
               icon = shiny::icon("map-location-dot", verify_fa = FALSE)
             ),
             bs4SidebarMenuSubItem(
-              text = "Comparision Slider",
+              text = "Comparison Slider",
               tabName = "compslider",
               icon = shiny::icon("sliders", verify_fa = FALSE)
             ),
