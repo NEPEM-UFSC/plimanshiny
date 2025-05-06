@@ -1585,7 +1585,7 @@ get_climate <- function(env = NULL,
                         tbase_upper = 45,
                         toptm_lower = 26,
                         toptm_upper = 32,
-                        environment = c("r", "shiny")) {
+                        environment = c("shiny", "r")) {
   # Initial validations
   stopifnot(length(lat) == length(lon))
   if (is.null(env)) {
