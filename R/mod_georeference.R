@@ -620,7 +620,7 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs, zlim){
       })
       #
       output$show_panel3 <- reactive({
-        length(points$data) > 0
+        any(control_points()$edited)
       })
       #
       outputOptions(output, "show_panel3", suspendWhenHidden = FALSE)
@@ -687,12 +687,12 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs, zlim){
         row_id(as.numeric(strsplit(btn_info$id, "_")[[1]][3]))
         points$data[[row_id()]]["edited"] <- TRUE
         editedpoint <- points$data[[row_id()]]
-        output$show_panel <- reactive({
+        output$show_panel3 <- reactive({
           TRUE
         })
 
         # Ensure the reactive output is available to the UI
-        outputOptions(output, "show_panel", suspendWhenHidden = FALSE)
+        outputOptions(output, "show_panel3", suspendWhenHidden = FALSE)
 
         x <- editedpoint[[1]]
         y <- editedpoint[[2]]

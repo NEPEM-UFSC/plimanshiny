@@ -884,9 +884,10 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
           ),
           color = "#228B227F"
         )
+        shpcrp <- shapefile[[input$activeshape]]$data |> terra::vect() |> terra::buffer(5) |> terra::ext()
         basemap$map <-
           mosaic_view(
-            mosaic_data$mosaic$data,
+            mosaic_data$mosaic$data |> terra::crop(shpcrp),
             r = suppressWarnings(as.numeric(r$r)),
             g = suppressWarnings(as.numeric(g$g)),
             b = suppressWarnings(as.numeric(b$b)),
