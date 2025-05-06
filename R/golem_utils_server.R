@@ -1797,11 +1797,13 @@ get_climate <- function(env = NULL,
         dfnasa <- dfnasa |> dplyr::relocate(DATE, .after = LON)
       }
 
-      dfnasa <-
-        dfnasa |>
-        dplyr::select(-YEAR) |>
-        tidyr::separate_wider_delim(DATE, names = c("YEAR", "MO", "DY"), delim = "-",
-                                    cols_remove = FALSE)
+      if(scale == "daily"){
+        dfnasa <-
+          dfnasa |>
+          dplyr::select(-YEAR) |>
+          tidyr::separate_wider_delim(DATE, names = c("YEAR", "MO", "DY"), delim = "-",
+                                      cols_remove = FALSE)
+      }
 
       # Add DFS (Optional, but was in previous version)
       if (!"DFS" %in% names(dfnasa)) {
