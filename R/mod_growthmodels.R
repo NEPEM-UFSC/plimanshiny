@@ -506,19 +506,20 @@ mod_growthmodels_server <- function(id, dfs){
       req(dfactive$df)
       climateinfo <- get_weather_info(dfactive$df)
 
-      dfclimate <-
-        get_climate(lat = climateinfo$lat,
-                    lon = climateinfo$lon,
-                    env = "Timeseries",
-                    start = climateinfo$start,
-                    end = climateinfo$end,
-                    scale = "daily",
-                    params = c("T2M", "T2M_MIN", "T2M_MAX"),
-                    environment = "shiny") |>
+      dfclimate <- get_climate(lat = climateinfo$lat,
+                               lon = climateinfo$lon,
+                               env = "Timeseries",
+                               start = climateinfo$start,
+                               end = climateinfo$end,
+                               scale = "daily",
+                               params = c("T2M", "T2M_MIN", "T2M_MAX"),
+                               environment = "shiny",
+                               progress = TRUE) |>
         gdd_ometto_frue(Tbase = input$basemin,
                         Tceil = input$baseupp) |>
         tidyr::unite("date", c("YEAR", "MO", "DY"), sep = "-") |>
         dplyr::mutate(date = lubridate::ymd(date))
+      dfactive$df <- dfactive$df |> dplyr::mutate(date = lubridate::ymd(date))
       dfactive$df <- dplyr::left_join(dfactive$df, dfclimate, by = dplyr::join_by(date))
       dfs[[paste0(file_name(input$dftoedit), "_updated")]] <- create_reactval(paste0(input$dftoedit, "_updated"), dfactive$df)
 
