@@ -469,6 +469,107 @@ mod_growthmodels_server <- function(id, dfs){
       )
     })
 
+    observeEvent(input$getweather, {
+      req(dfactive$df)
+      climateinfo <- get_weather_info(dfactive$df)
+      # Mostrar notificação de processo em andamento
+      show_notification <- function(msg, id = "fetch_climate", type = "message") {
+        showNotification(
+          msg,
+          type = type,
+          duration = NULL,
+          id = id
+        )
+      }
+      
+      show_notification("Buscando dados climáticos, por favor aguarde...")
+      
+      # Ajustar chamada para compatibilidade com a nova função get_climate
+      tryCatch({
+        dfclimate <- get_climate(
+          lat = climateinfo$lat,
+          lon = climateinfo$lon,
+          env = "Timeseries",
+          start = climateinfo$start,
+          end = climateinfo$end,
+          scale = "daily",
+          params = c("T2M", "T2M_MIN", "T2M_MAX"),
+          environment = "shiny",
+          progress = TRUE
+        )
+        
+        # Verificar se há dados retornados e colunas esperadas
+        if (is.null(dfclimate) || nrow(dfclimate) == 0) {
+          stop("Não foi possível obter dados climáticos da API.")
+        }
+        
+        # Criar coluna de data adequada para junção
+        if (!"DATE" %in% names(dfclimate)) {
+          if ("YYYYMMDD" %in% names(dfclimate)) {
+            dfclimate$DATE <- as.Date(as.character(dfclimate$YYYYMMDD), format = "%Y%m%d")
+          } else if (all(c("YEAR", "MO", "DY") %in% names(dfclimate))) {
+            dfclimate <- dfclimate %>% 
+              dplyr::mutate(DATE = as.Date(paste(YEAR, 
+                                                formatC(as.numeric(MO), width = 2, flag = "0"), 
+                                                formatC(as.numeric(DY), width = 2, flag = "0"), 
+                                                sep = "-")))
+          } else {
+            stop("Formato de data não reconhecido nos dados climáticos.")
+          }
+        }
+        
+        # Garantir que todos os dados de temperatura sejam numéricos antes de calcular GDD
+        if (any(c("T2M", "T2M_MIN", "T2M_MAX") %in% names(dfclimate))) {
+          dfclimate <- dfclimate %>%
+            dplyr::mutate(dplyr::across(
+              .cols = dplyr::any_of(c("T2M", "T2M_MIN", "T2M_MAX")),
+              .fns = ~suppressWarnings(as.numeric(.x))
+            ))
+        }
+        
+        # Calcular GDD com a função do utils
+        tryCatch({
+          dfclimate <- gdd_ometto_frue(
+            df = dfclimate,
+            Tbase = input$basemin,
+            Tceil = input$baseupp
+          )
+        }, error = function(e) {
+          warning(paste("Erro no cálculo de GDD:", e$message, 
+                        "- O conjunto de dados será retornado sem GDD calculado."))
+        })
+        
+        # Garantir que o dataframe atual tenha coluna de data como Date
+        dfactive$df <- dfactive$df %>% dplyr::mutate(date = lubridate::ymd(date))
+        
+        # Juntar os dados
+        dfactive$df <- dplyr::left_join(dfactive$df, dfclimate, by = c("date" = "DATE"))
+        
+        # Atualizar dataframe no ambiente global
+        dfs[[paste0(file_name(input$dftoedit), "_updated")]] <- create_reactval(paste0(input$dftoedit, "_updated"), dfactive$df)
+        
+        # Notificar sucesso
+        removeNotification("fetch_climate")
+        showNotification(
+          paste("Dados climáticos obtidos com sucesso! GDD calculado com temperatura base de", input$basemin, "°C"),
+          type = "message",
+          duration = 5
+        )
+        
+      }, error = function(e) {
+        # Remover notificação de processo e mostrar erro
+        removeNotification("fetch_climate")
+        showNotification(
+          paste("Erro ao obter dados climáticos:", e$message),
+          type = "error",
+          duration = 10
+        )
+        # Log mais detalhado no console para depuração
+        message("Erro ao obter dados climáticos:")
+        message("Mensagem de erro:", e$message)
+        message("Stack trace:", paste(capture.output(traceback()), collapse="\n"))
+      })
+    })
 
     # The example dataset is a sample of 4 plots obtained after time series processing using the
     # bisonfly DSM dataset, by Filipe Matias https://github.com/filipematias23/Bison-Fly
@@ -499,30 +600,6 @@ mod_growthmodels_server <- function(id, dfs){
           dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
           convert_numeric_cols()
       }
-    })
-
-
-    observeEvent(input$getweather, {
-      req(dfactive$df)
-      climateinfo <- get_weather_info(dfactive$df)
-
-      dfclimate <- get_climate(lat = climateinfo$lat,
-                               lon = climateinfo$lon,
-                               env = "Timeseries",
-                               start = climateinfo$start,
-                               end = climateinfo$end,
-                               scale = "daily",
-                               params = c("T2M", "T2M_MIN", "T2M_MAX"),
-                               environment = "shiny",
-                               progress = TRUE) |>
-        gdd_ometto_frue(Tbase = input$basemin,
-                        Tceil = input$baseupp) |>
-        tidyr::unite("date", c("YEAR", "MO", "DY"), sep = "-") |>
-        dplyr::mutate(date = lubridate::ymd(date))
-
-      dfactive$df <- dfactive$df |> dplyr::mutate(date = lubridate::ymd(date))
-      dfactive$df <- dplyr::left_join(dfactive$df, dfclimate, by = dplyr::join_by(date))
-      dfs[[paste0(file_name(input$dftoedit), "_updated")]] <- create_reactval(paste0(input$dftoedit, "_updated"), dfactive$df)
     })
 
 
