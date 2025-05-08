@@ -1826,15 +1826,23 @@ get_climate <- function(env = NULL, lat, lon, start, end,
       if (!is.null(cache_service) && !is.null(final_df) && nrow(final_df) > 0) {
         cache_service$save(cache_key, final_df)
       }
-      final_df <-
-        final_df |>
-        dplyr::relocate(ENV, LAT, LON, DATE, .before = 1)
       if(scale == "daily"){
         final_df <-
           final_df |>
+          dplyr::relocate(ENV, LAT, LON, DATE, .before = 1) |>
           dplyr::select(-any_of(c("YEAR", "MO", "DY"))) |>
           tidyr::separate_wider_delim(DATE, names = c("YEAR", "MO", "DY"), delim = "-") |>
           dplyr::mutate(DFS = 1:nrow(final_df), .after = DOY)
+      }
+      if(scale == "hourly"){
+        final_df <-
+          final_df |>
+          dplyr::relocate(ENV, LAT, LON, DATE, .before = 1)
+      }
+      if(scale %in% c("monthly", "climatology")){
+        final_df <-
+          final_df |>
+          dplyr::relocate(ENV, LAT, LON, .before = 1)
       }
       return(final_df)
     }
