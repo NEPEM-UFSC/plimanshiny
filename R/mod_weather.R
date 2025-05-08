@@ -980,12 +980,7 @@ mod_weather_server <- function(id, dfs) {
       processing_error = NULL
     )
 
-<<<<<<< HEAD
-=======
-    # --- Service Layer Function (get_climate) ---
-    # MOVED TO UTILS.
-    
->>>>>>> ec1acf3ec99ad7af9632b1785a61f847fc2e59ee
+
     # --- UI Logic and Observers ---
     coords <- reactive({
       if (length(points$data) == 0) return(NULL)
