@@ -1197,7 +1197,8 @@ gdd_ometto_frue <- function(df,
 
       } else if ("DATE" %in% names(df_out)) {
          # Global cumulative sum if no ENV but DATE exists
-         df_out <- df_out |>
+         df_out <-
+           df_out |>
            dplyr::arrange(DATE) |> # Ensure order
            dplyr::mutate(GDD_CUMSUM = cumsum(ifelse(is.na(GDD), 0, GDD)))
          if ("RTA" %in% names(df_out)) {
@@ -1832,7 +1833,10 @@ get_climate <- function(env = NULL, lat, lon, start, end,
           dplyr::relocate(ENV, LAT, LON, DATE, .before = 1) |>
           dplyr::select(-any_of(c("YEAR", "MO", "DY"))) |>
           tidyr::separate_wider_delim(DATE, names = c("YEAR", "MO", "DY"), delim = "-") |>
-          dplyr::mutate(DFS = 1:nrow(final_df), .after = DOY)
+          dplyr::group_by(ENV) |>
+          dplyr::mutate(DFS = dplyr::row_number(), .after = DOY) |>
+          dplyr::ungroup() |>
+          tidyr::unite("DATE", YEAR, MO, DY, sep = "-", remove = FALSE)
       }
       if(scale == "hourly"){
         final_df <-
