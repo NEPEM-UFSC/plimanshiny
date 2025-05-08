@@ -470,10 +470,10 @@ mod_growthmodels_server <- function(id, dfs){
     observeEvent(input$getweather, {
       # Ensure the active dataframe is available before proceeding
       req(dfactive$df)
-      
+
       # Fetch weather information (e.g., latitude, longitude, start and end dates)
       climateinfo <- get_weather_info(dfactive$df)
-      
+
       # Define a helper function to display notifications in the Shiny app
       show_notification <- function(msg, id = "fetch_climate", type = "message") {
         showNotification(
@@ -483,9 +483,9 @@ mod_growthmodels_server <- function(id, dfs){
           id = id
         )
       }
-      
+
       show_notification("Buscando dados climáticos, por favor aguarde...")
-      
+
       # Ajustar chamada para compatibilidade com a nova função get_climate
       tryCatch({
         dfclimate <- get_climate(
@@ -499,36 +499,36 @@ mod_growthmodels_server <- function(id, dfs){
           environment = "shiny",
           progress = TRUE
         )
-        
+
         # Verificar se há dados retornados e colunas esperadas
         if (is.null(dfclimate) || nrow(dfclimate) == 0) {
           stop("Não foi possível obter dados climáticos da API.")
         }
-        
+
         # Criar coluna de data adequada para junção
         if (!"DATE" %in% names(dfclimate)) {
           if ("YYYYMMDD" %in% names(dfclimate)) {
             dfclimate$DATE <- as.Date(as.character(dfclimate$YYYYMMDD), format = "%Y%m%d")
           } else if (all(c("YEAR", "MO", "DY") %in% names(dfclimate))) {
-            dfclimate <- dfclimate %>% 
-              dplyr::mutate(DATE = as.Date(paste(YEAR, 
-                                                formatC(as.numeric(MO), width = 2, flag = "0"), 
-                                                formatC(as.numeric(DY), width = 2, flag = "0"), 
+            dfclimate <- dfclimate |>
+              dplyr::mutate(DATE = as.Date(paste(YEAR,
+                                                formatC(as.numeric(MO), width = 2, flag = "0"),
+                                                formatC(as.numeric(DY), width = 2, flag = "0"),
                                                 sep = "-")))
           } else {
             stop("Formato de data não reconhecido nos dados climáticos.")
           }
         }
-        
+
         # Garantir que todos os dados de temperatura sejam numéricos antes de calcular GDD
         if (any(c("T2M", "T2M_MIN", "T2M_MAX") %in% names(dfclimate))) {
-          dfclimate <- dfclimate %>%
+          dfclimate <- dfclimate |>
             dplyr::mutate(dplyr::across(
               .cols = dplyr::any_of(c("T2M", "T2M_MIN", "T2M_MAX")),
               .fns = ~suppressWarnings(as.numeric(.x))
             ))
         }
-        
+
         # Calcular GDD com a função do utils
         tryCatch({
           dfclimate <- gdd_ometto_frue(
@@ -537,19 +537,20 @@ mod_growthmodels_server <- function(id, dfs){
             Tceil = input$baseupp
           )
         }, error = function(e) {
-          warning(paste("Erro no cálculo de GDD:", e$message, 
+          warning(paste("Erro no cálculo de GDD:", e$message,
                         "- O conjunto de dados será retornado sem GDD calculado."))
         })
-        
+
         # Garantir que o dataframe atual tenha coluna de data como Date
-        dfactive$df <- dfactive$df %>% dplyr::mutate(date = lubridate::ymd(date))
-        
+        dfactive$df <- dfactive$df |> dplyr::mutate(date = lubridate::ymd(date))
+        dfclimate <- dfclimate |> dplyr::mutate(DATE = lubridate::ymd(DATE))
+
         # Juntar os dados
         dfactive$df <- dplyr::left_join(dfactive$df, dfclimate, by = c("date" = "DATE"))
-        
+
         # Atualizar dataframe no ambiente global
         dfs[[paste0(file_name(input$dftoedit), "_updated")]] <- create_reactval(paste0(input$dftoedit, "_updated"), dfactive$df)
-        
+
         # Notificar sucesso
         removeNotification("fetch_climate")
         showNotification(
@@ -557,7 +558,7 @@ mod_growthmodels_server <- function(id, dfs){
           type = "message",
           duration = 5
         )
-        
+
       }, error = function(e) {
         # Remover notificação de processo e mostrar erro
         removeNotification("fetch_climate")
