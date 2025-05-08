@@ -470,9 +470,13 @@ mod_growthmodels_server <- function(id, dfs){
     })
 
     observeEvent(input$getweather, {
+      # Ensure the active dataframe is available before proceeding
       req(dfactive$df)
+      
+      # Fetch weather information (e.g., latitude, longitude, start and end dates)
       climateinfo <- get_weather_info(dfactive$df)
-      # Mostrar notificação de processo em andamento
+      
+      # Define a helper function to display notifications in the Shiny app
       show_notification <- function(msg, id = "fetch_climate", type = "message") {
         showNotification(
           msg,
