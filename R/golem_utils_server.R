@@ -1752,7 +1752,7 @@ get_climate <- function(env = NULL, lat, lon, start,
           progressr::withProgressShiny({
             p <- progressr::progressor(steps = length(lat))
             result_list <- furrr::future_map(seq_along(lat), function(i) {
-              p(message = sprintf("Fetching %s (%d/%d)", env[i], i, length(lat)))
+              p(message = sprintf("%s (%d/%d)", env[i], i, length(lat)))
               fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
             }, .options = furrr::furrr_options(seed = TRUE))
           }, message = "Fetching climate data")
@@ -1794,6 +1794,15 @@ get_climate <- function(env = NULL, lat, lon, start,
       if (!is.null(cache_service) && !is.null(final_df) && nrow(final_df) > 0) {
         cache_service$save(cache_key, final_df)
       }
-
+      final_df <-
+        final_df |>
+        dplyr::relocate(ENV, LAT, LON, DATE, .before = 1)
+      if(scale == "daily"){
+        final_df <-
+          final_df |>
+          dplyr::select(-any_of(c("YEAR", "MO", "DY"))) |>
+          tidyr::separate_wider_delim(DATE, names = c("YEAR", "MO", "DY"), delim = "-") |>
+          dplyr::mutate(DFS = 1:nrow(final_df), .after = DOY)
+      }
       return(final_df)
     }
