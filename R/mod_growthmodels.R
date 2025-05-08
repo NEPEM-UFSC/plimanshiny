@@ -30,14 +30,12 @@ mod_growthmodels_ui <- function(id) {
             choices = NULL
           ),
           hl(),
-          prettyCheckbox(
+          prettySwitch(
             inputId = ns("useclimate"),
             label = "Fetch weather data",
             value = FALSE,
-            shape = "curve",
             status = "success",
-            icon = icon("check"),
-            animation = "rotate"
+            fill = TRUE
           ),
           conditionalPanel(
             condition = "input.useclimate == true", ns = ns,
