@@ -1570,317 +1570,259 @@ get_weather_info <- function(df){
   )
 }
 
-
-get_climate <- function(env = NULL,
-                        lat,
-                        lon,
-                        start,
-                        end,
-                        params = c("T2M", "T2M_MIN", "T2M_MAX", "PRECTOT", "RH2M", "WS2M"),
-                        scale = c("hourly", "daily", "monthly", "climatology"),
-                        parallel = FALSE,
-                        workers = 2,
-                        progress = TRUE,
-                        tbase_lower = 9,
-                        tbase_upper = 45,
-                        toptm_lower = 26,
-                        toptm_upper = 32,
-                        environment = c("shiny", "r")) {
-  # Initial validations
-  stopifnot(length(lat) == length(lon))
-  if (is.null(env)) {
-    env <- paste0("ENV", seq_along(lat))
-  }
-  stopifnot(length(env) == length(lat))
-
-  scale <- match.arg(scale)
-  environment <- match.arg(environment)
-  params_str <- paste(params, collapse = ",")
-
-  # Read allowed parameters
-  nasaparams_path <- system.file("app/www/nasaparams.csv", package = "plimanshiny", mustWork = FALSE)
-  if (nasaparams_path == "") stop("Could not find nasaparams.csv")
-  nasaparams <- read.csv(nasaparams_path)
-
-
-  # Helper functions (kept from original)
-  deg2rad <- function(deg) (deg * pi) / 180
-  Ra_fun <- function(J, lat) {
-    rlat <- deg2rad(lat)
-    fi <- 0.409 * sin((2 * pi / 365) * J - 1.39)
-    dr <- 1 + 0.033 * cos((2 * pi / 365) * J)
-    ws <- acos(-tan(rlat) * tan(fi))
-    Ra <- (1440 / pi) * 0.082 * dr * (ws * sin(rlat) * sin(fi) + cos(rlat) * cos(fi) * sin(ws))
-    P <- asin(0.39795 * cos(0.2163108 + 2 * atan(0.9671396 * tan(0.0086 * (J - 186)))))
-    # Ensure P calculation is safe
-    P_arg <- (sin(0.8333 * pi / 180) + sin(lat * pi / 180) * sin(P)) /
-      (cos(lat * pi / 180) * cos(P))
-    P_arg <- pmin(pmax(P_arg, -1), 1) # Clamp value to [-1, 1] to avoid acos domain error
-    DL <- 24 - (24 / pi) * acos(P_arg)
-    data.frame(Ra = Ra, N = DL)
-  }
-
-  vpd <- function(temp, rh) {
-    es <- 0.61078 * exp((17.27 * temp) / (temp + 237.3))
-    ea <- es * (rh / 100)
-    vpd <- es - ea
-    return(data.frame(ES = es, EA = ea, VPD = vpd))
-  }
-
-  get_cleandata <- function(arquivo) {
-    linhas <- readLines(arquivo)
-    linha_inicio_dados <- which(grepl("-END HEADER-", linhas)) + 1
-    if(length(linha_inicio_dados) == 0) {
-      warning("Could not find '-END HEADER-' in CSV file.")
-      # Try reading from the start if header marker is missing
-      dados <- tryCatch(read.csv(arquivo, check.names = FALSE), error = function(e) NULL)
-      if(is.null(dados)) stop("Failed to read CSV data.")
-    } else {
-      dados <- read.csv(arquivo, skip = linha_inicio_dados - 1, check.names = FALSE)
-    }
-
-    # Attempt to create DATE column robustly
-    if ("YEAR" %in% names(dados) && "DOY" %in% names(dados)) {
-      dados$DATE <- tryCatch(as.Date(paste0(dados$YEAR, "-", dados$DOY), format = "%Y-%j"), error = function(e) NA)
-    } else if ("YYYYMMDD" %in% names(dados)) {
-      dados$DATE <- tryCatch(as.Date(as.character(dados$YYYYMMDD), format = "%Y%m%d"), error = function(e) NA)
-    } else if (all(c("YEAR", "MO", "DY") %in% names(dados))) {
-      date_str <- paste(dados$YEAR,
-                        formatC(as.numeric(dados$MO), width = 2, flag = "0"),
-                        formatC(as.numeric(dados$DY), width = 2, flag = "0"), sep = "-")
-      dados$DATE <- tryCatch(as.Date(date_str), error = function(e) NA)
-    }
-    return(dados)
-  }
-
-  # Internal function to fetch data for one point
-  fetch_data_point <- function(lat_i, lon_i, env_i, start_i, end_i) {
-    tryCatch({
-      scale_lowercase <- tolower(scale)
-      api_scale <- scale_lowercase
-      if(scale_lowercase == "climatology") api_scale <- "climatology" # API uses 'climatology'
-
-      # Check parameters against allowed list for the scale
-      suitableparams <- nasaparams[nasaparams$level == scale_lowercase, ]$abbreviation
-      invalid_params <- params[!params %in% suitableparams]
-      if (length(invalid_params) > 0) {
-        warning("Invalid parameters requested for scale '", scale_lowercase, "': ",
-                paste(invalid_params, collapse = ", "), ". These will be ignored.", call. = FALSE)
-        params_valid <- params[params %in% suitableparams]
-        if(length(params_valid) == 0) {
-          warning("No valid parameters left for scale '", scale_lowercase, "' for point (", lat_i, ", ", lon_i, "). Skipping.", call. = FALSE)
+get_climate <- function(env = NULL, lat, lon, start, end, params = c("T2M", "T2M_MIN", "T2M_MAX", "PRECTOT", "RH2M", "WS2M"), scale = c("hourly", "daily", "monthly", "climatology"), cache_service = NULL, progress = TRUE, parallel = FALSE, workers = 2, environment = c("r", "shiny")) {
+      # Initial validations
+      stopifnot(length(lat) == length(lon))
+      if (is.null(env)) {
+        env <- paste0("ENV", seq_along(lat))
+      }
+      stopifnot(length(env) == length(lat))
+      scale <- match.arg(scale)
+      environment <- match.arg(environment)
+      
+      # Validate parameters for selected scale
+      nasaparams_path <- system.file("app/www/nasaparams.csv", package = "plimanshiny", mustWork = FALSE)
+      if (nasaparams_path == "") stop("nasaparams.csv file not found")
+      nasaparams <- read.csv(nasaparams_path)
+      
+      # Internal function to fetch data for a single point
+      fetch_data_point <- function(lat_i, lon_i, env_i, start_i, end_i) {
+        tryCatch({
+          # Prepare scale and parameters
+          scale_lowercase <- tolower(scale)
+          api_scale <- scale_lowercase
+          if(scale_lowercase == "climatology") api_scale = "climatology"
+          
+          # Check for future dates and adjust if needed
+          current_date <- Sys.Date()
+          start_date <- as.Date(start_i)
+          end_date <- as.Date(end_i)
+          
+          if (start_date > current_date || end_date > current_date) {
+            warning(paste("Future dates detected for point", lat_i, lon_i, 
+                         "- NASA POWER only provides historical data."))
+            
+            # For non-climatology requests, adjust dates to recent historical period
+            if (api_scale != "climatology") {
+              # Adjust to recent past (last 30 days up to yesterday)
+              new_end_date <- current_date - 1
+              new_start_date <- new_end_date - 30
+              
+              warning(paste("Adjusting request dates to recent historical period:", 
+                           format(new_start_date, "%Y-%m-%d"), "to", 
+                           format(new_end_date, "%Y-%m-%d")))
+              
+              start_date <- new_start_date
+              end_date <- new_end_date
+            }
+          }
+          
+          # Validate parameters for the selected scale
+          suitableparams <- nasaparams[nasaparams$level == scale_lowercase, ]$abbreviation
+          valid_params <- intersect(params, suitableparams)
+          if(length(valid_params) == 0) {
+            warning(paste("No valid parameters for scale", scale_lowercase, "at point", lat_i, lon_i))
+            return(NULL)
+          }
+          params_str_i <- paste(valid_params, collapse = ",")
+          
+            # Build API URL
+            base_url <- "https://power.larc.nasa.gov/api/temporal"
+            if (api_scale == "monthly") {
+            # For monthly, use only the YYYY format (year only)
+            start_fmt <- format(start_date, "%Y")
+            end_fmt <- format(end_date, "%Y")
+            
+            # Ensure it does not exceed the current year for future data
+            current_year <- as.numeric(format(current_date, "%Y"))
+            if (as.numeric(end_fmt) > current_year) {
+              end_fmt <- format(current_date, "%Y")
+              warning(paste("End date adjusted to current year:", end_fmt))
+            }
+            
+            url <- glue::glue("{base_url}/{api_scale}/point?parameters={params_str_i}&community=AG&longitude={lon_i}&latitude={lat_i}&start={start_fmt}&end={end_fmt}&format=CSV")
+            } else if (api_scale %in% c("hourly", "daily")) {
+            start_fmt <- format(start_date, "%Y%m%d")
+            end_fmt <- format(end_date, "%Y%m%d")
+            url <- glue::glue("{base_url}/{api_scale}/point?parameters={params_str_i}&community=AG&longitude={lon_i}&latitude={lat_i}&start={start_fmt}&end={end_fmt}&format=CSV")
+            } else {
+            url <- glue::glue("{base_url}/climatology/point?parameters={params_str_i}&community=AG&longitude={lon_i}&latitude={lat_i}&format=CSV")
+            }
+          
+          # Make HTTP request
+          if (progress && environment == "shiny") {
+            message(paste("Requesting data for:", lat_i, lon_i, "via", url))
+          }
+          req <- httr2::request(url) |> httr2::req_options(timeout = 60, ssl_verifypeer = 0)
+          resp <- tryCatch(httr2::req_perform(req), error = function(e) {
+            warning(paste("HTTP request error for point", lat_i, lon_i, ":", e$message))
+            return(NULL)
+          })
+          
+          if (is.null(resp)) {
+            warning(paste("HTTP request failed for point", lat_i, lon_i))
+            return(NULL)
+          }
+          
+          if (httr2::resp_status(resp) >= 400) {
+            warning(paste("Invalid API response for point", lat_i, lon_i, "status:", 
+                         httr2::resp_status(resp), 
+                         "- Reason:", httr2::resp_status_desc(resp)))
+                         
+            # Try to extract more error details from response body if possible
+            error_body <- tryCatch(httr2::resp_body_string(resp), error = function(e) NULL)
+            if (!is.null(error_body) && nchar(error_body) > 0) {
+              warning(paste("NASA POWER API error details:", substr(error_body, 1, 200), "..."))
+            }
+            
+            return(NULL)
+          }
+          
+          # Process response
+          file <- tempfile(fileext = ".csv")
+          on.exit(unlink(file), add = TRUE)
+          content <- httr2::resp_body_string(resp)
+          
+          # Check if data exists
+          if (grepl("No data was found that matched your query", content, ignore.case = TRUE)) {
+            warning(paste("No data found for point", lat_i, lon_i))
+            return(NULL)
+          }
+          
+          writeLines(content, file)
+          
+          # Read CSV skipping NASA header
+          linhas <- readLines(file)
+          linha_inicio_dados <- which(grepl("-END HEADER-", linhas)) + 1
+          
+          if(length(linha_inicio_dados) == 0) {
+            # Try reading without skipping header if marker not found
+            dados <- tryCatch(read.csv(file, check.names = FALSE), error = function(e) {
+              warning(paste("Error reading CSV for point", lat_i, lon_i, ":", e$message))
+              return(NULL)
+            })
+          } else {
+            dados <- tryCatch(read.csv(file, skip = linha_inicio_dados - 1, check.names = FALSE), 
+                             error = function(e) {
+                               warning(paste("Error reading CSV with skip for point", lat_i, lon_i, ":", e$message))
+                               return(NULL)
+                             })
+          }
+          
+          if (is.null(dados) || nrow(dados) == 0) {
+            warning(paste("Empty data for point", lat_i, lon_i))
+            return(NULL)
+          }
+          
+          # Add metadata
+          dados$ENV <- env_i
+          dados$LAT <- lat_i
+          dados$LON <- lon_i
+          
+          # Convert NASA fill values to NA
+          dados[dados == -999] <- NA
+          dados[dados == -99] <- NA
+          
+          # Create DATE column if possible
+          if ("YEAR" %in% names(dados) && "DOY" %in% names(dados)) {
+            dados$DATE <- tryCatch(as.Date(paste0(dados$YEAR, "-", dados$DOY), format = "%Y-%j"), 
+                                  error = function(e) NA)
+          } else if ("YYYYMMDD" %in% names(dados)) {
+            dados$DATE <- tryCatch(as.Date(as.character(dados$YYYYMMDD), format = "%Y%m%d"), 
+                                  error = function(e) NA)
+          } else if (all(c("YEAR", "MO", "DY") %in% names(dados))) {
+            date_str <- paste(dados$YEAR,
+                             formatC(as.numeric(dados$MO), width = 2, flag = "0"),
+                             formatC(as.numeric(dados$DY), width = 2, flag = "0"), sep = "-")
+            dados$DATE <- tryCatch(as.Date(date_str), error = function(e) NA)
+          }
+          
+          # Standardize common column names
+          if("PRECTOTCORR" %in% names(dados)) 
+            names(dados)[names(dados) == "PRECTOTCORR"] <- "PRECTOT"
+            
+          return(dados)
+        }, error = function(e) {
+          warning(paste("General error processing point", lat_i, lon_i, ":", e$message))
+          return(NULL)
+        })
+      }
+      
+      # Check cache first, if provided
+      if (!is.null(cache_service)) {
+        # The cache_service should implement getOrFetch()
+        request_params <- list(
+          coordinates = data.frame(env = env, lat = lat, lon = lon, start = start, end = end),
+          params = params,
+          scale = scale
+        )
+        
+        # Use cache service
+        cache_result <- cache_service$getOrFetch(request_params)
+        
+        # If no fetch needed, return cache data
+        if (!cache_result$needs_fetch) {
+          return(cache_result$data)
+        }
+        
+        # If fetch needed, store cache key for later use
+        cache_key <- cache_result$cache_key
+      }
+      
+      # Configure parallelism
+      if (parallel) {
+        future::plan(future::multisession, workers = workers)
+      } else {
+        future::plan(future::sequential)
+      }
+      on.exit(future::plan(future::sequential), add = TRUE)
+      
+      # Fetch data with progress (if needed)
+      if (progress && environment == "shiny") {
+        progressr::withProgressShiny({
+          p <- progressr::progressor(steps = length(lat))
+          result_list <- furrr::future_map(seq_along(lat), function(i) {
+            p(message = sprintf("Fetching %s (%d/%d)", env[i], i, length(lat)))
+            fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
+          }, .options = furrr::furrr_options(seed = TRUE))
+        }, message = "Fetching climate data...")
+      } else if (progress && environment == "r") {
+        progressr::handlers(global = TRUE)
+        progressr::with_progress({
+          p <- progressr::progressor(steps = length(lat))
+          result_list <- furrr::future_map(seq_along(lat), function(i) {
+            p(message = sprintf("Fetching %s (%d/%d)", env[i], i, length(lat)))
+            fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
+          }, .options = furrr::furrr_options(seed = TRUE))
+        })
+      } else {
+        # No progress bar
+        result_list <- furrr::future_map(seq_along(lat), function(i) {
+          fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
+        }, .options = furrr::furrr_options(seed = TRUE))
+      }
+      
+      # Remove null results
+      result_list <- result_list[!sapply(result_list, is.null)]
+      
+      if (length(result_list) == 0) {
+        warning("No data was obtained for the requested points")
+        return(NULL)
+      }
+      
+      # Combine results
+      final_df <- tryCatch(
+        dplyr::bind_rows(result_list), 
+        error = function(e) {
+          warning(paste("Error combining results:", e$message))
           return(NULL)
         }
-        params_str_i <- paste(params_valid, collapse = ",")
-      } else {
-        params_str_i <- params_str # Use the original if all are valid
-      }
-
-      # Build URL based on scale
-      base_url <- "https://power.larc.nasa.gov/api/temporal"
-      if (api_scale %in% c("hourly", "daily", "monthly")) {
-        # Format dates
-        start_fmt <- tryCatch(format(as.Date(start_i), "%Y%m%d"), error = function(e) stop("Invalid start date format"))
-        end_fmt <- tryCatch(format(as.Date(end_i), "%Y%m%d"), error = function(e) stop("Invalid end date format"))
-        if (api_scale == "monthly") {
-          # Monthly API uses YYYYMM format, but seems to accept YYYYMMDD too. Let's use YYYYMMDD for consistency.
-        }
-        url <- glue::glue("{base_url}/{api_scale}/point?parameters={params_str_i}&community=AG&longitude={lon_i}&latitude={lat_i}&start={start_fmt}&end={end_fmt}&format=CSV")
-      } else { # Climatology
-        url <- glue::glue("{base_url}/climatology/point?parameters={params_str_i}&community=AG&longitude={lon_i}&latitude={lat_i}&format=CSV")
-      }
-
-      # Perform request
-      req <- httr2::request(url) |> httr2::req_options(timeout = 60, ssl_verifypeer = 0) # Increased timeout
-
-      resp <- tryCatch(
-        httr2::req_perform(req),
-        error = function(e) {
-          warning("API request failed for point (", lat_i, ", ", lon_i, "): ", e$message, call. = FALSE)
-          return(NULL) # Return NULL on HTTP error
-        }
       )
-
-      if (is.null(resp) || httr2::resp_status(resp) >= 400) {
-        if(!is.null(resp)) warning("API request returned status ", httr2::resp_status(resp), " for point (", lat_i, ", ", lon_i, ")", call. = FALSE)
-        return(NULL)
+      
+      # Save to cache if provided
+      if (!is.null(cache_service) && !is.null(final_df) && nrow(final_df) > 0) {
+        cache_service$save(cache_key, final_df)
       }
-
-      file <- tempfile(fileext = ".csv")
-      on.exit(unlink(file), add = TRUE) # Ensure temp file cleanup
-      content <- httr2::resp_body_string(resp)
-
-      # Check for "No data" message from NASA POWER
-      if (grepl("No data was found that matched your query", content, ignore.case = TRUE)) {
-        warning("No data available from NASA POWER for point (", lat_i, ", ", lon_i, ") for the specified period/parameters.", call. = FALSE)
-        return(NULL)
-      }
-      # Check for other potential error messages in content
-      if (nchar(content) < 100 && grepl("error|fail|invalid", content, ignore.case = TRUE)) {
-        warning("API response suggests an error for point (", lat_i, ", ", lon_i, "): ", substr(content, 1, 100), call. = FALSE)
-        return(NULL)
-      }
-
-
-      writeLines(content, file)
-
-      # Read and process data
-      dfnasa <- tryCatch({
-        results <- get_cleandata(file)
-        if(is.null(results) || nrow(results) == 0) return(NULL)
-        results |> dplyr::mutate(ENV = env_i, LAT = lat_i, LON = lon_i, .before = 1)
-      }, error = function(e) {
-        warning("Error processing CSV data for point (", lat_i, ", ", lon_i, "): ", e$message, call. = FALSE)
-        return(NULL)
-      })
-
-      if (is.null(dfnasa) || nrow(dfnasa) == 0) {
-        # warning("No valid data obtained after processing for point (", lat_i, ", ", lon_i, ")", call. = FALSE)
-        return(NULL)
-      }
-
-      # --- Additional Processing (Reverted to Legacy Logic) ---
-      # Rename PRECTOTCORR if present
-      if("PRECTOTCORR" %in% names(dfnasa)){
-        names(dfnasa)[names(dfnasa) == "PRECTOTCORR"] <- "PRECTOT"
-      }
-
-      # Calculate P_ETP if possible (No check for existence)
-      if ("PRECTOT" %in% names(dfnasa) && "EVPTRNS" %in% names(dfnasa)) {
-        dfnasa$P_ETP <- dfnasa$PRECTOT - dfnasa$EVPTRNS
-      }
-
-      # Calculate VPD, ES, EA if possible (No check for existence)
-      temp_col <- if("T2M" %in% names(dfnasa)) "T2M" else if("T2M_MAX" %in% names(dfnasa)) "T2M_MAX" else NULL
-      rh_col <- if("RH2M" %in% names(dfnasa)) "RH2M" else NULL
-
-      if (!is.null(temp_col) && !is.null(rh_col)) {
-        vpd_results <- vpd(dfnasa[[temp_col]], dfnasa[[rh_col]])
-        dfnasa$ES <- vpd_results$ES
-        dfnasa$EA <- vpd_results$EA
-        dfnasa$VPD <- vpd_results$VPD
-      }
-
-      # Calculate Ra and N if possible (for daily/monthly) (No check for existence)
-      # Ensure DOY exists first
-      if (!"DOY" %in% names(dfnasa) && "DATE" %in% names(dfnasa)) {
-        dfnasa$DOY <- as.numeric(format(dfnasa$DATE, "%j"))
-      }
-      if (scale %in% c("daily", "monthly") && all(c("DOY", "LAT") %in% names(dfnasa))) {
-        ra_n_results <- Ra_fun(dfnasa$DOY, dfnasa$LAT)
-        dfnasa$RA <- ra_n_results$Ra
-        dfnasa$N <- ra_n_results$N
-      }
-
-      # Calculate RTA if possible (No check for existence)
-      if ("ALLSKY_SFC_SW_DWN" %in% names(dfnasa) && "RA" %in% names(dfnasa)) {
-        # Ensure RA is not zero or NA before division
-        dfnasa$RTA <- ifelse(is.na(dfnasa$RA) | dfnasa$RA == 0, NA, dfnasa$ALLSKY_SFC_SW_DWN / dfnasa$RA)
-      }
-
-      # Calculate accumulated precipitation if possible (No check for existence)
-      if("PRECTOT" %in% names(dfnasa)){
-        # Grouping by ENV ensures accumulation resets for each location if multiple are fetched together
-        dfnasa <-
-          dfnasa |>
-          dplyr::group_by(ENV) |>
-          dplyr::mutate(PRECTOT_ACC = cumsum(ifelse(is.na(PRECTOT), 0, PRECTOT))) |>
-          dplyr::ungroup()
-      }
-
-      # Replace NASA's -999 fill value with NA
-      dfnasa[dfnasa == -999] <- NA
-      dfnasa[dfnasa == -99] <- NA # Just in case
-
-      # Relocate DATE (Optional, but was in previous version)
-      if("DATE" %in% names(dfnasa)) {
-        dfnasa <- dfnasa |> dplyr::relocate(DATE, .after = LON)
-      }
-
-      if(scale == "daily"){
-        dfnasa <-
-          dfnasa |>
-          dplyr::select(-YEAR) |>
-          tidyr::separate_wider_delim(DATE, names = c("YEAR", "MO", "DY"), delim = "-",
-                                      cols_remove = FALSE)
-      }
-
-      # Add DFS (Optional, but was in previous version)
-      if (!"DFS" %in% names(dfnasa)) {
-        dfnasa <-
-          dfnasa |>
-          dplyr::group_by(ENV) |>
-          dplyr::mutate(DFS = dplyr::row_number(), .after = DOY) |>
-          dplyr::ungroup()
-      }
-
-      return(dfnasa)
-
-    }, error = function(e) {
-      # General error catch for the point
-      warning("General error processing point (", lat_i, ", ", lon_i, "): ", e$message, call. = FALSE)
-      return(NULL)
-    })
-  }
-
-  # --- Execution Plan (Parallel/Sequential) ---
-  if (parallel) {
-    future::plan(future::multisession, workers = workers)
-  } else {
-    future::plan(future::sequential)
-  }
-  on.exit(future::plan(future::sequential), add = TRUE) # Ensure sequential plan is restored
-
-  # --- Map over points ---
-  # result_list <- NULL
-  if(progress){
-    if(environment[[1]] == "shiny"){
-      progressr::withProgressShiny({
-        p <- progressr::progressor(steps = length(lat))
-        result_list <- furrr::future_map(seq_along(lat), function(i) {
-          if(parallel){
-            p(message = glue::glue("{env[i]}"))
-          } else{
-            p(message = glue::glue("{env[i]} ({i} of {length(lat)})"))
-          }
-          fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
-        },
-        .options = furrr::furrr_options(seed = TRUE)
-        )
-      },
-      message = "Fetching data for",
-      detail = "...")
-    } else{
-      progressr::handlers("cli")
-      progressr::with_progress({
-        p <- progressr::progressor(steps = length(lat))
-        result_list <- furrr::future_map(seq_along(lat), function(i) {
-          if(parallel){
-            p(message = glue::glue("{env[i]}"))
-          } else{
-            p(message = glue::glue("{env[i]} ({i} of {length(lat)})"))
-          }
-          fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
-        },
-        .options = furrr::furrr_options(seed = TRUE)
-        )
-      })
+      
+      return(final_df)
     }
-  } else{
-    result_list <-
-      furrr::future_map(seq_along(lat), function(i) {
-        if(parallel){
-          p(message = glue::glue("{env[i]}"))
-        } else{
-          p(message = glue::glue("{env[i]} ({i} of {length(lat)})"))
-        }
-        fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
-      },
-      .options = furrr::furrr_options(seed = TRUE)
-      )
-  }
-
-  return(dplyr::bind_rows(result_list))
-
-  # return(final_df)
-}
