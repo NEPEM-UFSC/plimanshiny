@@ -368,9 +368,16 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
         showTab(inputId = "tabsshape", target = "Control Points")
       }
     })
-
-
-
+    # force a false color
+    if(is.na(r$r)){
+      r$r <- 1
+    }
+    if(is.na(g$g)){
+      g$g <- 2
+    }
+    if(is.na(b$b)){
+      b$b <- 3
+    }
     observe({
       if (input$shapetype == "Build") {
         observe({
