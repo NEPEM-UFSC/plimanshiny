@@ -102,6 +102,14 @@ mod_phanalyze_ui <- function(id){
             )
           ),
           prettyCheckbox(
+            inputId = ns("croptoext"),
+            label = "Crop to the shapefile extend?",
+            value = FALSE,
+            icon = icon("check"),
+            status = "success",
+            animation = "rotate"
+          ),
+          prettyCheckbox(
             ns("plotquality"),
             label = "Plot quality",
             value = FALSE
@@ -176,7 +184,7 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
             title = "Overview",
             fluidRow(
               valueBoxOutput(ns("vbnplots"), width = 2),
-              valueBoxOutput(ns("vbnmeanq90"), width = 2),
+              valueBoxOutput(ns("vbnmeanq95"), width = 2),
               valueBoxOutput(ns("vbnmeanvol"), width = 2),
               valueBoxOutput(ns("vbntotvol"), width = 2),
               valueBoxOutput(ns("vbncovermed"), width = 2),
@@ -279,7 +287,7 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
             title = "Overview",
             fluidRow(
               valueBoxOutput(ns("vbnplots"), width = 2),
-              valueBoxOutput(ns("vbnmeanq90"), width = 2),
+              valueBoxOutput(ns("vbnmeanq95"), width = 2),
               valueBoxOutput(ns("vbnmeanvol"), width = 2),
               valueBoxOutput(ns("vbntotvol"), width = 2),
               valueBoxOutput(ns("vbncovermed"), width = 2),
@@ -402,7 +410,7 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
             title = "Overview",
             fluidRow(
               valueBoxOutput(ns("vbnplots"), width = 2),
-              valueBoxOutput(ns("vbnmeanq90"), width = 2),
+              valueBoxOutput(ns("vbnmeanq95"), width = 2),
               valueBoxOutput(ns("vbnmeanvol"), width = 2),
               valueBoxOutput(ns("vbntotvol"), width = 2),
               valueBoxOutput(ns("vbncovermed"), width = 2),
@@ -543,6 +551,11 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
         dtm <- mosaic_data[[input$dtm]]$data
         ch1 <- !inherits(dsm,"SpatRaster") || !terra::nlyr(dsm) == 1 || terra::is.bool(dsm) || is.list(dsm)
         ch2 <- !inherits(dtm,"SpatRaster") || !terra::nlyr(dtm) == 1 || terra::is.bool(dtm) || is.list(dtm)
+        if(input$croptoext){
+          req(shapefile[[input$shapefile]]$data)
+          dsm <- terra::crop(dsm, shapefile[[input$shapefile]]$data |> terra::vect() |> terra::buffer(5))
+          dtm <- terra::crop(dtm, shapefile[[input$shapefile]]$data |> terra::vect() |> terra::buffer(5))
+        }
 
         if (ch1 | ch2) {
           sendSweetAlert(
@@ -588,6 +601,7 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
           )
           return()
         } else{
+          dsm <- terra::crop(dsm, shapefile[[input$shapefile]]$data |> terra::vect() |> terra::buffer(5))
           mapsampl <- mosaic_view(dsm,
                                   alpha = 1,
                                   show = "index")
@@ -622,9 +636,6 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
               chmreact$rast <- chmres$chm
             })
           })
-
-          # mosaic_data[["dtm"]] <- create_reactval("dtm", chmres$chm[[1]])
-          # mosaic_data[["chm"]] <- create_reactval("chm", chmres$chm[[2]])
         }
       }
 
@@ -648,7 +659,7 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
             ),
             color = "#228B227F"
           )
-
+          dsm <- terra::crop(dsm, shapefile[[input$shapefile]]$data |> terra::vect() |> terra::buffer(5))
           if(input$masktype == "none" | input$masktype == "threshold"){
             chmres <- mosaic_chm(dsm,
                                  window_size = input$windowsize |> chrv2numv(),
@@ -771,10 +782,10 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
         icon = icon("table-cells")
       )
     })
-    output$vbnmeanq90 <- renderValueBox({
+    output$vbnmeanq95 <- renderValueBox({
       req(dfres$df)
       valueBox(
-        value = tags$p(round(mean(dfres$df$q90, na.rm = TRUE), 2), style = "font-size: 300%;"),
+        value = tags$p(round(mean(dfres$df$q95, na.rm = TRUE), 2), style = "font-size: 300%;"),
         subtitle = "Mean height q90 ",
         color = "success",
         icon = icon("ruler-vertical")
