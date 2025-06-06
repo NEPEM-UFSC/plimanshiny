@@ -11,7 +11,7 @@ mod_georeference_ui <- function(id) {
   ns <- NS(id)
   tagList(
     fluidRow(
-      col_3(
+      col_4(
         bs4TabCard(
           id = "tabsgeoref",
           width = 12,
@@ -94,146 +94,8 @@ mod_georeference_ui <- function(id) {
           )
         )
       ),
-      col_9(
+      col_8(
         plimanshiny_canvas_output(prefix = "geor", ns = ns)
-        # bs4Dash::bs4TabCard(
-        #   id = "tabs",
-        #   status = "success",
-        #   width = 12,
-        #   height = "720px",
-        #   title = "",
-        #   selected = "Pliman viewer",
-        #   solidHeader = FALSE,
-        #   type = "tabs",
-        #   tabPanel(
-        #     title = "Pliman viewer",
-        #       tagList(
-        #         tags$head(
-        #           tags$style(HTML("
-        #   #rastercanvas_geor {
-        #     margin-top: 20px;
-        #     border: 1px solid #ddd;
-        #     box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.3);
-        #   }
-        # ")),
-        #           tags$script(HTML(sprintf("
-        #   let canvas_geor, ctx_geor, drawing_geor = false;
-        #   let rectStartX_geor, rectStartY_geor, rectEndX_geor, rectEndY_geor;
-        #   let selectedPoints_geor = [];
-        #   let rasterImage_geor = null;
-        #   let canvas_georWidth = 1280;
-        #   let canvas_georHeight = 720;
-        #
-        #   function initcanvas_geor() {
-        #     canvas_geor = document.getElementById('%s');
-        #     ctx_geor = canvas_geor.getContext('2d');
-        #     canvas_geor.width = canvas_georWidth;
-        #     canvas_geor.height = canvas_georHeight;
-        #
-        #     canvas_geor.addEventListener('mousedown', handleMouseDown_geor);
-        #     canvas_geor.addEventListener('mousemove', handleMouseMove_geor);
-        #     canvas_geor.addEventListener('mouseup', handleMouseUp_geor);
-        #     canvas_geor.addEventListener('dblclick', handleDoubleClick_geor);
-        #   }
-        #
-        #   function adjustcanvas_georSize(width, height) {
-        #     canvas_georWidth = width;
-        #     canvas_georHeight = height;
-        #     canvas_geor.width = canvas_georWidth;
-        #     canvas_geor.height = canvas_georHeight;
-        #     Shiny.setInputValue('%s', { width: canvas_georWidth, height: canvas_georHeight }, { priority: 'event' });
-        #     drawcanvas_geor();
-        #   }
-        #
-        #   function handleMouseDown_geor(e) {
-        #     const rect = canvas_geor.getBoundingClientRect();
-        #     rectStartX_geor = e.clientX - rect.left;
-        #     rectStartY_geor = e.clientY - rect.top;
-        #     timeoutID = setTimeout(() => {
-        #       drawPoint_geor(rectStartX_geor, rectStartY_geor);
-        #       selectedPoints_geor.push({ x: rectStartX_geor, y: rectStartY_geor });
-        #       Shiny.setInputValue('%s', [rectStartX_geor, rectStartY_geor]);
-        #     }, 1000);
-        #     drawing_geor = true;
-        #   }
-        #
-        #   function handleMouseMove_geor(e) {
-        #     if (!drawing_geor) return;
-        #     clearTimeout(timeoutID);
-        #     const rect = canvas_geor.getBoundingClientRect();
-        #     rectEndX_geor = e.clientX - rect.left;
-        #     rectEndY_geor = e.clientY - rect.top;
-        #     drawcanvas_geor();
-        #     drawRectangle_geor(rectStartX_geor, rectStartY_geor, rectEndX_geor, rectEndY_geor);
-        #   }
-        #
-        #   function handleMouseUp_geor() {
-        #     clearTimeout(timeoutID);
-        #     drawing_geor = false;
-        #     Shiny.setInputValue('%s', {
-        #       startX: Math.min(rectStartX_geor, rectEndX_geor),
-        #       startY: Math.min(rectStartY_geor, rectEndY_geor),
-        #       endX: rectEndX_geor,
-        #       endY: rectEndY_geor,
-        #       width: Math.abs(rectEndX_geor - rectStartX_geor),
-        #       height: Math.abs(rectEndY_geor - rectStartY_geor)
-        #     });
-        #     rectStartX_geor = rectStartY_geor = rectEndX_geor = rectEndY_geor = 0;
-        #   }
-        #
-        #   function drawPoint_geor(x, y) {
-        #     if (!ctx_geor) return;
-        #     ctx_geor.strokeStyle = 'red';
-        #     ctx_geor.lineWidth = 2;
-        #     ctx_geor.beginPath();
-        #     ctx_geor.arc(x, y, 10, 0, 2 * Math.PI);
-        #     ctx_geor.stroke();
-        #     ctx_geor.beginPath();
-        #     ctx_geor.moveTo(x - 10, y);
-        #     ctx_geor.lineTo(x + 10, y);
-        #     ctx_geor.moveTo(x, y - 10);
-        #     ctx_geor.lineTo(x, y + 10);
-        #     ctx_geor.stroke();
-        #   }
-        #
-        #   function drawRectangle_geor(x1, y1, x2, y2) {
-        #     ctx_geor.strokeStyle = 'red';
-        #     ctx_geor.lineWidth = 2;
-        #     ctx_geor.strokeRect(x1, y1, x2 - x1, y2 - y1);
-        #   }
-        #
-        #   function drawcanvas_geor() {
-        #     ctx_geor.clearRect(0, 0, canvas_geor.width, canvas_geor.height);
-        #     drawRaster_geor();
-        #   }
-        #
-        #   function drawRaster_geor() {
-        #     if (rasterImage_geor) {
-        #       ctx_geor.drawImage(rasterImage_geor, 0, 0, canvas_geor.width, canvas_geor.height);
-        #     }
-        #   }
-        #
-        #   Shiny.addCustomMessageHandler('updateTiles_geor', function(data) {
-        #     rasterImage_geor = new Image();
-        #     rasterImage_geor.src = 'data:image/png;base64,' + data.img;
-        #     rasterImage_geor.onload = drawcanvas_geor;
-        #   });
-        #
-        #   Shiny.addCustomMessageHandler('adjustcanvas_georSize', function(data) {
-        #     adjustcanvas_georSize(data.width, data.height);
-        #   });
-        #
-        #   function handleDoubleClick_geor() {
-        #     Shiny.setInputValue('%s', new Date().getTime());
-        #   }
-        #
-        #   window.addEventListener('load', initcanvas_geor);
-        # ", ns("rastercanvas_geor"), ns("canvas_size_geor"), ns("picked_point_geor"), ns("drawn_rectangle_geor"), ns("reset_view_geor"))))
-        #         ),
-        #         tags$canvas(id = ns("rastercanvas_geor"))
-        #       )
-        #   )
-        # )
       )
     )
   )
@@ -416,12 +278,12 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs, zlim){
                    y = control_points()[, 2],
                    cex = 4,
                    pch = 13,
-                   col = "black")
+                   col = "salmon")
             text(
               x = control_points()[, 1],
               y = control_points()[, 2],  # You can adjust the offset if needed
               labels = 1:nrow(control_points()),
-              col = "black",
+              col = "salmon",
               cex = 2,
               pos = 3
             )
@@ -561,12 +423,12 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs, zlim){
                      y = control_points()[, 2],
                      cex = 4,
                      pch = 13,
-                     col = "black")
+                     col = "salmon")
               text(
                 x = control_points()[, 1],
                 y = control_points()[, 2],  # You can adjust the offset if needed
                 labels = 1:nrow(control_points()),
-                col = "black",
+                col = "salmon",
                 cex = 2,
                 pos = 3
               )
@@ -716,7 +578,7 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs, zlim){
             x = x,
             y = y,  # Apply dynamic offset if needed
             labels = row_id(),
-            col = "black",
+            col = "salmon",
             cex = 2,
             pos = 3
           )
@@ -725,12 +587,12 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs, zlim){
                    y = control_points()[, 2],
                    cex = 4,
                    pch = 13,
-                   col = "black")
+                   col = "salmon")
             text(
               x = control_points()[, 1],
               y = control_points()[, 2],  # You can adjust the offset if needed
               labels = 1:nrow(control_points()),
-              col = "black",
+              col = "salmon",
               cex = 2,
               pos = 3
             )
@@ -806,7 +668,7 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs, zlim){
               x = points_df[, 1],
               y = points_df[, 2],  # Apply dynamic offset if necessary
               labels = 1:nrow(points_df),
-              col = "black",
+              col = "salmon",
               cex = 2,
               pos = 3
             )
@@ -815,12 +677,12 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs, zlim){
                      y = control_points()[, 2],
                      cex = 4,
                      pch = 13,
-                     col = "black")
+                     col = "salmon")
               text(
                 x = control_points()[, 1],
                 y = control_points()[, 2],  # You can adjust the offset if needed
                 labels = 1:nrow(control_points()),
-                col = "black",
+                col = "salmon",
                 cex = 2,
                 pos = 3
               )

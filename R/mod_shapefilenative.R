@@ -41,7 +41,8 @@ mod_shapefilenative_ui <- function(id) {
                     icon = icon("check"),
                     bigger = TRUE,
                     status = "info",
-                    animation = "jelly"
+                    animation = "jelly",
+                    shape = "round"
                   )
                 ),
                 col_6(
@@ -258,11 +259,10 @@ mod_shapefilenative_ui <- function(id) {
                   inputId = ns("shapedone"),
                   label = "Shapefile finished",
                   value = FALSE,
+                  icon = icon("check"),
+                  bigger = TRUE,
                   status = "info",
-                  icon = icon("thumbs-up"),
-                  plain = TRUE,
-                  outline = TRUE,
-                  animation = "rotate"
+                  animation = "jelly"
                 )
               ),
               conditionalPanel(
@@ -883,11 +883,13 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
             output$nblocksdone <- renderText({
               glue::glue("Built blocks: {nblock()}")
             })
+            points$data <- list()
+            polygeom(NULL)
 
             sendSweetAlert(
               session = session,
               title = "Block built",
-              text = "The shapes in the current block have been built. Go to 'Control points' tab, clear the points and draw the controlpoints for another block, if needed.",
+              text = "Shapes in the current block are complete and control points have been cleaned. Add more control points as needed.",
               type = "info"
             )
           }
