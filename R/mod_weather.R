@@ -921,7 +921,6 @@ FetchWeatherCommand <- R6::R6Class("FetchWeatherCommand",
           }
 
           # 6. Save to Cache using CacheService
-          message(paste("Attempting to save data with cache key:", cache_key)) # DEBUG
           if (is.null(all_weather_data) || nrow(all_weather_data) == 0) {
           } else {
              private$.cache_service$save(cache_key, all_weather_data)
@@ -982,7 +981,7 @@ mod_weather_server <- function(id, dfs) {
 
     # --- Service Layer Function (get_climate) ---
     # MOVED TO UTILS.
-    
+
     # --- UI Logic and Observers ---
     coords <- reactive({
       if (length(points$data) == 0) return(NULL)
