@@ -894,7 +894,7 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
         if(is.na(b$b)){
           b <- reactiveValues(b = 3)
         }
-        print(as.numeric(b$b))
+        
         basemap$map <-
           mosaic_view(
             mosaic_data$mosaic$data |> terra::crop(shpcrp),
