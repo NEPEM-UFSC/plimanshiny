@@ -1571,7 +1571,8 @@ get_weather_info <- function(df){
   )
 }
 
-get_climate <- function(env = NULL, lat, lon, start, end,
+
+get_climate <- function(env = NULL, lat, lon, start, end,9
                         params = c("T2M", "T2M_MIN", "T2M_MAX", "PRECTOT", "RH2M", "WS2M"),
                         scale = c("hourly", "daily", "monthly", "climatology"),
                         cache_service = NULL,
@@ -1783,13 +1784,23 @@ get_climate <- function(env = NULL, lat, lon, start, end,
 
       # Fetch data with progress (if needed)
       if (progress && environment == "shiny") {
-        progressr::withProgressShiny({
-          p <- progressr::progressor(steps = length(lat))
-          result_list <- furrr::future_map(seq_along(lat), function(i) {
-            p(message = sprintf("%s (%d/%d)", env[i], i, length(lat)))
-            fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
-          }, .options = furrr::furrr_options(seed = TRUE))
-        }, message = "Fetching climate data...")
+        if(parallel){
+          progressr::withProgressShiny({
+            p <- progressr::progressor(steps = length(lat))
+            result_list <- furrr::future_map(seq_along(lat), function(i) {
+              p(message = sprintf("%s", env[i]))
+              fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
+            }, .options = furrr::furrr_options(seed = TRUE))
+          }, message = "Fetching climate data for")
+        } else{
+          progressr::withProgressShiny({
+            p <- progressr::progressor(steps = length(lat))
+            result_list <- furrr::future_map(seq_along(lat), function(i) {
+              p(message = sprintf("Fetching %s (%d/%d)", env[i], i, length(lat)))
+              fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
+            }, .options = furrr::furrr_options(seed = TRUE))
+          }, message = "Fetching climate data")
+        }
       } else if (progress && environment == "r") {
         progressr::handlers(global = TRUE)
         progressr::with_progress({

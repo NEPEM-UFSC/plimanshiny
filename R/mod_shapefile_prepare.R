@@ -252,12 +252,12 @@ mod_shapefile_prepare_ui <- function(id){
                 prettyCheckbox(
                   inputId = ns("shapedone"),
                   label = "Shapefile finished",
+                  shape = "round",
                   value = FALSE,
+                  icon = icon("check"),
+                  bigger = TRUE,
                   status = "info",
-                  icon = icon("thumbs-up"),
-                  plain = TRUE,
-                  outline = TRUE,
-                  animation = "rotate"
+                  animation = "jelly"
                 )
               ),
               conditionalPanel(
