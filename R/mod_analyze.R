@@ -885,6 +885,16 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
           color = "#228B227F"
         )
         shpcrp <- shapefile[[input$activeshape]]$data |> terra::vect() |> terra::buffer(5) |> terra::ext()
+        if(is.na(r$r)){
+          r <- reactiveValues(r = 1)
+        }
+        if(is.na(g$g)){
+          g <- reactiveValues(g = 2)
+        }
+        if(is.na(b$b)){
+          b <- reactiveValues(b = 3)
+        }
+        
         basemap$map <-
           mosaic_view(
             mosaic_data$mosaic$data |> terra::crop(shpcrp),

@@ -1197,7 +1197,8 @@ gdd_ometto_frue <- function(df,
 
       } else if ("DATE" %in% names(df_out)) {
          # Global cumulative sum if no ENV but DATE exists
-         df_out <- df_out |>
+         df_out <-
+           df_out |>
            dplyr::arrange(DATE) |> # Ensure order
            dplyr::mutate(GDD_CUMSUM = cumsum(ifelse(is.na(GDD), 0, GDD)))
          if ("RTA" %in% names(df_out)) {
@@ -1570,8 +1571,8 @@ get_weather_info <- function(df){
   )
 }
 
-get_climate <- function(env = NULL, lat, lon, start,
-                        end,
+
+get_climate <- function(env = NULL, lat, lon, start, end,9
                         params = c("T2M", "T2M_MIN", "T2M_MAX", "PRECTOT", "RH2M", "WS2M"),
                         scale = c("hourly", "daily", "monthly", "climatology"),
                         cache_service = NULL,
@@ -1837,6 +1838,26 @@ get_climate <- function(env = NULL, lat, lon, start,
       if (!is.null(cache_service) && !is.null(final_df) && nrow(final_df) > 0) {
         cache_service$save(cache_key, final_df)
       }
-
+      if(scale == "daily"){
+        final_df <-
+          final_df |>
+          dplyr::relocate(ENV, LAT, LON, DATE, .before = 1) |>
+          dplyr::select(-any_of(c("YEAR", "MO", "DY"))) |>
+          tidyr::separate_wider_delim(DATE, names = c("YEAR", "MO", "DY"), delim = "-") |>
+          dplyr::group_by(ENV) |>
+          dplyr::mutate(DFS = dplyr::row_number(), .after = DOY) |>
+          dplyr::ungroup() |>
+          tidyr::unite("DATE", YEAR, MO, DY, sep = "-", remove = FALSE)
+      }
+      if(scale == "hourly"){
+        final_df <-
+          final_df |>
+          dplyr::relocate(ENV, LAT, LON, DATE, .before = 1)
+      }
+      if(scale %in% c("monthly", "climatology")){
+        final_df <-
+          final_df |>
+          dplyr::relocate(ENV, LAT, LON, .before = 1)
+      }
       return(final_df)
     }

@@ -368,9 +368,6 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
         showTab(inputId = "tabsshape", target = "Control Points")
       }
     })
-
-
-
     observe({
       if (input$shapetype == "Build") {
         observe({
@@ -412,7 +409,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           sizes <- adjust_canvas(mosaitoshape())
           png(original_image_path, width = sizes[[1]], height = sizes[[2]])
           tryCatch({
-            check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
+            check_and_plot(mosaitoshape(), r = ifelse(is.na(r$r), 1, r$r), ifelse(is.na(g$g), 2, g$g), ifelse(is.na(b$b), 3, b$b), zlim = zlim$zlim)
           }, error = function(e) {
             message("An error occurred during plotting6: ", e$message)
           }, finally = {
@@ -500,7 +497,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                 hei(sizes[[2]])
                 png(tfc, width = wid(), height = hei())
                 tryCatch({
-                  check_and_plot(cropped_ras, r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
+                  check_and_plot(cropped_ras, ifelse(is.na(r$r), 1, r$r), ifelse(is.na(g$g), 2, g$g), ifelse(is.na(b$b), 3, b$b), zlim = zlim$zlim)
                 }, error = function(e) {
                   message("Error in plotting: ", e$message)
                 }, finally = {
@@ -521,7 +518,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
               wid(sizes[[1]])
               hei(sizes[[2]])
               png(tfc, width = wid(), height = hei())
-              check_and_plot(cropped_ras, r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
+              check_and_plot(cropped_ras, ifelse(is.na(r$r), 1, r$r), ifelse(is.na(g$g), 2, g$g), ifelse(is.na(b$b), 3, b$b), zlim = zlim$zlim)
 
               if(length(points$data) > 0 | nchar(input$shapefiletoanalyze) > 0){
                 if (length(points$data) > 0) {
@@ -742,7 +739,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           png(cropped_image_path, width = wid(), height = hei())
 
           tryCatch({
-            check_and_plot(cropped_ras, r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
+            check_and_plot(cropped_ras, ifelse(is.na(r$r), 1, r$r), ifelse(is.na(g$g), 2, g$g), ifelse(is.na(b$b), 3, b$b), zlim = zlim$zlim)
 
             points(x = x, y = y, col = "red", cex = 5, pch = 13)
 
@@ -905,7 +902,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
           tryCatch({
             # Plot the base shape
-            check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
+            check_and_plot(mosaitoshape(), ifelse(is.na(r$r), 1, r$r), ifelse(is.na(g$g), 2, g$g), ifelse(is.na(b$b), 3, b$b), zlim = zlim$zlim)
 
             # Combine created shapes and temporary shape
             alreadybuilt <- dplyr::bind_rows(reactiveValuesToList(createdshape), .id = "block")
@@ -1007,7 +1004,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
             png(basepolygon, width = sizes[[1]], height = sizes[[2]])
 
             tryCatch({
-              check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
+              check_and_plot(mosaitoshape(), ifelse(is.na(r$r), 1, r$r), ifelse(is.na(g$g), 2, g$g), ifelse(is.na(b$b), 3, b$b), zlim = zlim$zlim)
 
               points_df <- do.call(rbind, points$data)
               points_df <- as.data.frame(points_df)
@@ -1167,7 +1164,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
           tryCatch({
             if (!is.null(mosaitoshape())) {
-              check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
+              check_and_plot(mosaitoshape(), ifelse(is.na(r$r), 1, r$r), ifelse(is.na(g$g), 2, g$g), ifelse(is.na(b$b), 3, b$b), zlim = zlim$zlim)
               centrs <- suppressMessages(
                 sf::st_centroid(shapefile[[input$shapefiletoanalyze]]$data) |> sf::st_coordinates()
               )
@@ -1336,7 +1333,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
           tryCatch({
             if (!is.null(mosaitoshape())) {
-              check_and_plot(mosaitoshape(), r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
+              check_and_plot(mosaitoshape(), ifelse(is.na(r$r), 1, r$r), ifelse(is.na(g$g), 2, g$g), ifelse(is.na(b$b), 3, b$b), zlim = zlim$zlim)
 
               if(input$fillid == "none"){
                 plot(
@@ -1429,7 +1426,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
             )
           if(!is.null(mos) & (nrow(mos) != 180) & (nrow(mos) != 360)){
             mcro <- terra::crop(mos, terra::vect(shpinfo) |> terra::buffer(buff))
-            check_and_plot(mcro, r = r$r, g = g$g, b = b$b, zlim = zlim$zlim)
+            check_and_plot(mcro, ifelse(is.na(r$r), 1, r$r), ifelse(is.na(g$g), 2, g$g), ifelse(is.na(b$b), 3, b$b), zlim = zlim$zlim)
             plot(shpinfo[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "salmon", lwd = input$lwdt, col = rgb(250/255, 128/255, 114/255, alpha = 0.5))
           } else{
             plot(shpinfo[ifelse(input$fillid == "none", "plot_id", input$fillid)], add = TRUE, border = "salmon", lwd = input$lwdt, col = rgb(250/255, 128/255, 114/255, alpha = 0.5))
