@@ -1572,7 +1572,7 @@ get_weather_info <- function(df){
 }
 
 
-get_climate <- function(env = NULL, lat, lon, start, end,9
+get_climate <- function(env = NULL, lat, lon, start, end,
                         params = c("T2M", "T2M_MIN", "T2M_MAX", "PRECTOT", "RH2M", "WS2M"),
                         scale = c("hourly", "daily", "monthly", "climatology"),
                         cache_service = NULL,
