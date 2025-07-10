@@ -1756,7 +1756,7 @@ get_climate <- function(env = NULL, lat, lon, start, end,
               p(message = sprintf("%s (%d/%d)", env[i], i, length(lat)))
               fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
             }, .options = furrr::furrr_options(seed = TRUE))
-          }, message = "Fetching climate data")
+          }, message = "Fetching climate data for")
         }
       } else if (progress && environment == "r") {
         progressr::handlers(global = TRUE)
