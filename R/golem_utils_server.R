@@ -1796,10 +1796,10 @@ get_climate <- function(env = NULL, lat, lon, start, end,
           progressr::withProgressShiny({
             p <- progressr::progressor(steps = length(lat))
             result_list <- furrr::future_map(seq_along(lat), function(i) {
-              p(message = sprintf("Fetching %s (%d/%d)", env[i], i, length(lat)))
+              p(message = sprintf("%s (%d/%d)", env[i], i, length(lat)))
               fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
             }, .options = furrr::furrr_options(seed = TRUE))
-          }, message = "Fetching climate data")
+          }, message = "Fetching climate data for")
         }
       } else if (progress && environment == "r") {
         progressr::handlers(global = TRUE)

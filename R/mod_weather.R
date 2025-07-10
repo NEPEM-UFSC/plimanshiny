@@ -86,6 +86,20 @@ mod_weather_ui <- function(id) {
                   status = "success"
                 ),
                 hl(),
+                fluidRow(
+                  col_7(
+
+                  ),
+                  col_5(
+                    actionButton(
+                      inputId = ns("nasadict"),
+                      label = tagList(
+                        icon = icon("spell-check", verify_fa = FALSE), "NASAPOWER | Dictionary"
+                      ),
+                      status = "info"
+                    )
+                  )
+                ),
                 prettySwitch(
                   inputId = ns("show_thermal_opts"),
                   label = "Show thermal parameters options",
@@ -116,25 +130,27 @@ mod_weather_ui <- function(id) {
                   conditionalPanel(
                     condition = "input.computegdd == true", ns = ns,
                     fluidRow(
-                      col_3(
+                      col_6(
                         numericInput(ns("basemin"),
                                      label = "Base temp (°C)",
                                      value = 10,
                                      step = 0.1)
                       ),
-                      col_3(
+                      col_6(
                         numericInput(ns("baseupp"),
                                      label = "Ceiling temp (°C)",
                                      value = 40,
                                      step = 0.1)
-                      ),
-                      col_3(
+                      )
+                    ),
+                    fluidRow(
+                      col_6(
                         numericInput(ns("optimallower"),
                                      label = "Optimal lower (°C)",
                                      value = 26,
                                      step = 0.1)
                       ),
-                      col_3(
+                      col_6(
                         numericInput(ns("optimalupper"),
                                      label = "Optimal upper (°C)",
                                      value = 32,
@@ -967,6 +983,36 @@ FetchWeatherCommand <- R6::R6Class("FetchWeatherCommand",
 mod_weather_server <- function(id, dfs) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
+
+    # index equation
+    observeEvent(input$nasadict, {
+
+      output$nasadictionary <- renderReactable({
+        nasaparams <-
+          system.file("app/www/nasaparams.csv", package = "plimanshiny", mustWork = FALSE) |>
+          read.csv()
+        nasaparams <- nasaparams[, c(2, 1, 4)]
+        render_reactable(nasaparams,
+                         defaultPageSize = 10,
+                         columns = list(
+                           abbreviation = colDef(maxWidth = 250),
+                           name = colDef(maxWidth = 650),
+                           level = colDef(maxWidth = 200)
+                         ))
+
+      })
+
+      showModal(
+        modalDialog(
+          title = "NASAPOWER dictionary",
+          reactable::reactableOutput(ns("nasadictionary")),
+          footer = NULL,
+          easyClose = TRUE,
+          size = "xl"
+        )
+      )
+    })
+
 
     # Instantiate Cache Service
     cache_service <- WeatherCacheService$new()

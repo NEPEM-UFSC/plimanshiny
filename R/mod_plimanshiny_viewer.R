@@ -134,6 +134,7 @@ plimanshiny_viewer_server <- function(id, mosaic,
                                       b = reactiveVal(3),
                                       usemargin = reactiveVal(TRUE),
                                       zlim = NULL) {
+
   if(is.na(r())){
     r <- reactiveVal(1)
   }
