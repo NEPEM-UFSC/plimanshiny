@@ -1249,7 +1249,7 @@ envirotype <- function(data,
     data |>
       dplyr::group_by(stage) |>
       dplyr::group_modify(~{
-        x <- dplyr::pull(dplyr::select(.x, !!var)) |> na.omit()
+        x <- dplyr::pull(dplyr::select(.x, dplyr::all_of(!!var))) |> na.omit()
         xcut <- cut(x, breaks = .breaks, labels = .labels, include.lowest = TRUE, right = FALSE)
         out <- data.frame(xcut = xcut)
         out |>
