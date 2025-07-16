@@ -425,14 +425,19 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
         mosaic_data[["example_raster"]] <- create_reactval("example_raster", mosaic_input(filepath, info = FALSE))
       }
     })
-    observe({
-      if(length(names(mosaic_data) > 0)){
-        mosaicnames <-  setdiff(names(mosaic_data), "mosaic")
-        updateSelectInput(session, "mosaictoanalyze",
-                          choices = mosaicnames,
-                          selected = mosaicnames[[1]])
-      }
-    })
+
+    observeEvent(names(mosaic_data), {
+      req(mosaic_data)
+      mosaicnames <- setdiff(names(mosaic_data), "mosaic")
+
+      current <- isolate(input$mosaictoanalyze)
+      new_sel <- if (current %in% mosaicnames) current else mosaicnames[[1]]
+
+      updateSelectInput(session, "mosaictoanalyze",
+                        choices  = mosaicnames,
+                        selected = new_sel)
+    }, ignoreInit = TRUE)
+
 
     observe({
       req(input$mosaictoanalyze)
