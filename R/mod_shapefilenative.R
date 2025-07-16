@@ -69,7 +69,7 @@ mod_shapefilenative_ui <- function(id) {
                               swatches = scales::viridis_pal()(10),
                               theme = "monolith",
                               useAsButton = TRUE,
-                              selected = "#FFFFFF2E",
+                              selected = "#F50000",
                               opacity = TRUE
                             )
                           )
@@ -247,7 +247,7 @@ mod_shapefilenative_ui <- function(id) {
                 prettyCheckbox(
                   inputId = ns("showplotid"),
                   label = "Show plot ID?",
-                  value = TRUE,
+                  value = FALSE,
                   status = "info",
                   icon = icon("thumbs-up"),
                   plain = TRUE,
@@ -549,7 +549,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                       add = TRUE,
                       border = input$colorstroke,
                       lwd = input$lwdt,
-                      col = input$colorfill
+                      col = NA
                     )
                   } else{
                     plot(
@@ -557,7 +557,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                       add = TRUE,
                       border = input$colorstroke,
                       lwd = input$lwdt,
-                      col = input$colorfill
+                      col = NA
                     )
                   }
 
@@ -591,7 +591,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                       add = TRUE,
                       border = input$colorstroke,
                       lwd = input$lwdt,
-                      col = input$colorfill
+                      col = NA
                     )
                   } else{
                     plot(
@@ -919,7 +919,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                 add = TRUE,
                 border = input$colorstroke,
                 lwd = input$lwdt,
-                col = input$colorfill
+                col = NA
               )
             } else{
               plot(
@@ -1033,7 +1033,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                     add = TRUE,
                     border = input$colorstroke,
                     lwd = input$lwdt,
-                    col = input$colorfill
+                    col = NA
                   )
                 } else{
                   plot(
@@ -1069,7 +1069,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                     add = TRUE,
                     border = input$colorstroke,
                     lwd = input$lwdt,
-                    col = input$colorfill
+                    col = NA
                   )
                 } else{
                   plot(
@@ -1096,7 +1096,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                     add = TRUE,
                     border = input$colorstroke,
                     lwd = input$lwdt,
-                    col = input$colorfill
+                    col = NA
                   )
                 } else{
                   plot(
@@ -1173,7 +1173,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                 add = TRUE,
                 border = "red",
                 lwd = input$lwdt,
-                col = input$colorfill
+                col = NA
               )
               text(
                 x = centrs[, 1],
@@ -1277,6 +1277,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
               updateSelectInput(session, "shapefiletoanalyze",
                                 choices = mosaicnames,
                                 selected = mosaicnames[[1]])
+              shapefile[["shapefileplot"]] <- shapefile[[input$shapefiletoanalyze]]$data
               removeNotification(id = "importshp")
 
             })
@@ -1340,7 +1341,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                   shapefile[[input$shapefiletoanalyze]]$data["plot_id"],
                   add = TRUE,
                   lwd = input$lwdt,
-                  col = input$colorfill
+                  col = NA
                 )
               } else{
                 plot(

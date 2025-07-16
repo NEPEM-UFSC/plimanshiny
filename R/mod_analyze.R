@@ -840,18 +840,25 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
       if(!input$byplot){
         if(is.null(maskval$mask)){
           req(index[[input$activeindex]]$data)
+          aggr <- find_aggrfact(index[[input$activeindex]]$data)
+          if(aggr > 0){
+            indtemp <- mosaic_aggregate(index[[input$activeindex]]$data, round(100 / aggr))
+          } else{
+            indtemp <- index[[input$activeindex]]$data
+          }
+
           layer <- ifelse(input$segmentindex != "", input$segmentindex, 1)
-          ots <- ifelse(input$threshold == "Otsu", otsu(na.omit(terra::values(index[[input$activeindex]]$data[[layer]]))), input$threshvalue)
+          ots <- ifelse(input$threshold == "Otsu", otsu(na.omit(terra::values(indtemp[[layer]]))), input$threshvalue)
           output$previoussegment <- renderPlot({
             if(input$invertindex){
-              maskplot <- index[[input$activeindex]]$data[[layer]] < ots
+              maskplot <- indtemp[[layer]] < ots
             } else{
-              maskplot <- index[[input$activeindex]]$data[[layer]] > ots
+              maskplot <- indtemp[[layer]] > ots
             }
             terra::plot(maskplot)
           })
-          terra::density(index[[input$activeindex]]$data[[layer]],
-                         main = paste0(names(index[[input$activeindex]]$data[[layer]]), " - Otsu: ", round(ots, 4)))
+          terra::density(indtemp[[layer]],
+                         main = paste0(names(indtemp[[layer]]), " - Otsu: ", round(ots, 4)))
           abline(v = ots,
                  col = "red",
                  lty = 2,
@@ -894,7 +901,7 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
         if(is.na(b$b)){
           b <- reactiveValues(b = 3)
         }
-        
+
         basemap$map <-
           mosaic_view(
             mosaic_data$mosaic$data |> terra::crop(shpcrp),
