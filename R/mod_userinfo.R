@@ -124,7 +124,6 @@ mod_userinfo_server <- function(id){
 
       saveRDS(info, user_info_file)
       user_info(info)
-      # print(get_webhook_url())
       try({
         httr2::request("https://script.google.com/macros/s/AKfycbxdVllpOEblNNsXbLEnVUhs7ZEEOZMIR3mg5xtKdyRuYgcVfdvcoQlc1wToi9-Ewqzi/exec") |>
           httr2::req_method("POST") |>
