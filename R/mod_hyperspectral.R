@@ -341,8 +341,6 @@ mod_hyperspectral_server <- function(id, mosaic_data, r, g, b, maxpixel,  basema
           terra::extractAlong(mosfile(), terra::vect(linecoord)) |>
           dplyr::mutate(dists = seq(0, dist, length.out = dplyr::n()))
 
-        assign("res", list(dist, dists, valsline), envir = .GlobalEnv)
-
         interpolated_data <-
           valsline |>
           tidyr::pivot_longer(2:(ncol(valsline)-1)) |>
