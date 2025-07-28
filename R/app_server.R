@@ -5,6 +5,15 @@
 #' @import shiny
 #' @noRd
 app_server <- function(input, output, session) {
+  # Seu webhook do App Script
+  # Executar o módulo
+  user_info <- mod_userinfo_server("userinfo_1")
+
+  output$user_header <- renderText({
+    req(user_info())
+    paste("Welcome,", user_info()$name)
+  })
+
   settings <- reactiveVal()
   mosaic_data <- reactiveValues()
   shapefile <- reactiveValues()

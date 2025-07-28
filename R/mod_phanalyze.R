@@ -183,14 +183,33 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
           tabPanel(
             title = "Overview",
             fluidRow(
-              valueBoxOutput(ns("vbnplots"), width = 2),
-              valueBoxOutput(ns("vbnmeanq95"), width = 2),
-              valueBoxOutput(ns("vbnmeanvol"), width = 2),
-              valueBoxOutput(ns("vbntotvol"), width = 2),
-              valueBoxOutput(ns("vbncovermed"), width = 2),
-              valueBoxOutput(ns("vbnentropy"), width = 2),
+              valueBoxOutput(ns("vbnplots"), width = 3),
+              valueBoxOutput(ns("vbnminabs"), width = 3),
+              valueBoxOutput(ns("vbnmaxabs"), width = 3),
+              valueBoxOutput(ns("vbnmeanq95"), width = 3),
+              valueBoxOutput(ns("vbnminvol"), width = 3),
+              valueBoxOutput(ns("vbnmeanvol"), width = 3),
+              valueBoxOutput(ns("vbnmaxvol"), width = 3),
+              valueBoxOutput(ns("vbntotvol"), width = 3),
+              valueBoxOutput(ns("vbncoveredmin"), width = 3),
+              valueBoxOutput(ns("vbncoveredmax"), width = 3),
+              valueBoxOutput(ns("vbncovermed"), width = 3),
+              valueBoxOutput(ns("vbnentropy"), width = 3),
             ),
-            plotlyOutput(ns("overview"), height = "520px")  |> add_spinner()
+
+            # Só mostra se plotquality == TRUE
+            conditionalPanel(
+              condition = "input.plotquality == true", ns = ns,
+              fluidRow(
+                valueBoxOutput(ns("vbnmingap"), width = 3),
+                valueBoxOutput(ns("vbnmaxgap"), width = 3),
+                valueBoxOutput(ns("vbntotalgap"), width = 3)
+              )
+            ),
+          ),
+          tabPanel(
+            title = "Trait distribution",
+            plotlyOutput(ns("overview"), height = "520px") |> add_spinner()
           ),
           tabPanel(
             title = "Explore the field",
@@ -286,14 +305,33 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
           tabPanel(
             title = "Overview",
             fluidRow(
-              valueBoxOutput(ns("vbnplots"), width = 2),
-              valueBoxOutput(ns("vbnmeanq95"), width = 2),
-              valueBoxOutput(ns("vbnmeanvol"), width = 2),
-              valueBoxOutput(ns("vbntotvol"), width = 2),
-              valueBoxOutput(ns("vbncovermed"), width = 2),
-              valueBoxOutput(ns("vbnentropy"), width = 2),
+              valueBoxOutput(ns("vbnplots"), width = 3),
+              valueBoxOutput(ns("vbnminabs"), width = 3),
+              valueBoxOutput(ns("vbnmaxabs"), width = 3),
+              valueBoxOutput(ns("vbnmeanq95"), width = 3),
+              valueBoxOutput(ns("vbnminvol"), width = 3),
+              valueBoxOutput(ns("vbnmeanvol"), width = 3),
+              valueBoxOutput(ns("vbnmaxvol"), width = 3),
+              valueBoxOutput(ns("vbntotvol"), width = 3),
+              valueBoxOutput(ns("vbncoveredmin"), width = 3),
+              valueBoxOutput(ns("vbncoveredmax"), width = 3),
+              valueBoxOutput(ns("vbncovermed"), width = 3),
+              valueBoxOutput(ns("vbnentropy"), width = 3),
             ),
-            plotlyOutput(ns("overview"), height = "520px")  |> add_spinner()
+
+            # Só mostra se plotquality == TRUE
+            conditionalPanel(
+              condition = "input.plotquality == true", ns = ns,
+              fluidRow(
+                valueBoxOutput(ns("vbnmingap"), width = 3),
+                valueBoxOutput(ns("vbnmaxgap"), width = 3),
+                valueBoxOutput(ns("vbntotalgap"), width = 3)
+              )
+            ),
+          ),
+          tabPanel(
+            title = "Trait distribution",
+            plotlyOutput(ns("overview"), height = "520px") |> add_spinner()
           ),
           tabPanel(
             title = "Explore the field",
@@ -409,14 +447,33 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
           tabPanel(
             title = "Overview",
             fluidRow(
-              valueBoxOutput(ns("vbnplots"), width = 2),
-              valueBoxOutput(ns("vbnmeanq95"), width = 2),
-              valueBoxOutput(ns("vbnmeanvol"), width = 2),
-              valueBoxOutput(ns("vbntotvol"), width = 2),
-              valueBoxOutput(ns("vbncovermed"), width = 2),
-              valueBoxOutput(ns("vbnentropy"), width = 2),
+              valueBoxOutput(ns("vbnplots"), width = 3),
+              valueBoxOutput(ns("vbnminabs"), width = 3),
+              valueBoxOutput(ns("vbnmaxabs"), width = 3),
+              valueBoxOutput(ns("vbnmeanq95"), width = 3),
+              valueBoxOutput(ns("vbnminvol"), width = 3),
+              valueBoxOutput(ns("vbnmeanvol"), width = 3),
+              valueBoxOutput(ns("vbnmaxvol"), width = 3),
+              valueBoxOutput(ns("vbntotvol"), width = 3),
+              valueBoxOutput(ns("vbncoveredmin"), width = 3),
+              valueBoxOutput(ns("vbncoveredmax"), width = 3),
+              valueBoxOutput(ns("vbncovermed"), width = 3),
+              valueBoxOutput(ns("vbnentropy"), width = 3),
             ),
-            plotlyOutput(ns("overview"), height = "520px")  |> add_spinner()
+
+            # Só mostra se plotquality == TRUE
+            conditionalPanel(
+              condition = "input.plotquality == true", ns = ns,
+              fluidRow(
+                valueBoxOutput(ns("vbnmingap"), width = 3),
+                valueBoxOutput(ns("vbnmaxgap"), width = 3),
+                valueBoxOutput(ns("vbntotalgap"), width = 3)
+              )
+            ),
+          ),
+          tabPanel(
+            title = "Trait distribution",
+            plotlyOutput(ns("overview"), height = "520px") |> add_spinner()
           ),
           tabPanel(
             title = "Explore the field",
@@ -687,24 +744,26 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
       if(input$masktype == "threshold"){
         dftmp <- mosaic_chm_extract(chmres, shapefile[[input$shapefile]]$data, chm_threshold = input$dsmthresh)
       } else{
-        dftmp <- mosaic_chm_extract(chmres, shapefile[[input$shapefile]]$data)
+        dftmp <- mosaic_chm_extract(chmres, shapefile[[input$shapefile]]$data, chm_threshold = 0.1)
       }
+      print
       if(input$plotquality){
         pq <- mosaic_chm_quality(chmres, shapefile[[input$shapefile]]$data,
-                                 chm_threshold = input$chm_threshold,
                                  chm_quantile = input$chm_quantile,
-                                 plot_quality = input$qualitytype)
+                                 plot_quality = input$qualitytype,
+                                 chmvals = dftmp)
         dftmp <-
-          dplyr::bind_cols(
-            dftmp |> dplyr::select(-dplyr::any_of("coverage")),
-            pq |> dplyr::select(cv:plot_quality) |> sf::st_drop_geometry()
+          dplyr::left_join(
+            dftmp,
+            pq |> dplyr::select(-c(cv, entropy, coverage)) |> sf::st_drop_geometry(),
+            by = dplyr::join_by(unique_id, block, plot_id, row, column)
           ) |>
           dplyr::mutate(covered_area = plot_area * coverage)
       }
       dfres$df <- dftmp
       updateSelectInput(session, "plotattribute",
                         choices = colnames(dftmp),
-                        selected = "q90")
+                        selected = "q95")
 
       # store the results in dataset module
       dfs[[input$savedfas]] <- create_reactval(input$savedfas, dftmp |> sf::st_drop_geometry())
@@ -772,8 +831,37 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
     })
 
 
+    output$vbnmingap <- renderValueBox({
+      req(input$plotquality)
+      req(dfres$df)
+      valueBox(
+        value = tags$p(nrow(dfres$df |> dplyr::filter(gaps > 0)), style = "font-size: 300%;"),
+        subtitle = "Number of plots with gaps",
+        color = "success",
+        icon = icon("arrows-left-right-to-line")
+      )
+    })
+    output$vbnmaxgap <- renderValueBox({
+      req(input$plotquality)
+      req(dfres$df)
+      valueBox(
+        value = tags$p(round(max(dfres$df$gaps, na.rm = TRUE), 2), style = "font-size: 300%;"),
+        subtitle = "Maximum number of gaps",
+        color = "success",
+        icon = icon("arrows-left-right-to-line")
+      )
+    })
+    output$vbntotalgap <- renderValueBox({
+      req(input$plotquality)
+      req(dfres$df)
+      valueBox(
+        value = tags$p(round(sum(dfres$df$gaps, na.rm = TRUE), 2), style = "font-size: 300%;"),
+        subtitle = "Total number of gaps",
+        color = "success",
+        icon = icon("arrows-left-right-to-line")
+      )
+    })
     output$vbnplots <- renderValueBox({
-
       req(dfres$df)
       valueBox(
         value = tags$p(nrow(dfres$df), style = "font-size: 300%;"),
@@ -782,13 +870,50 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
         icon = icon("table-cells")
       )
     })
+    output$vbnminabs <- renderValueBox({
+      req(dfres$df)
+      valueBox(
+        value = tags$p(round(min(dfres$df$q95, na.rm = TRUE), 2), style = "font-size: 300%;"),
+        subtitle = "Minimum height q95",
+        color = "success",
+        icon = icon("table-cells")
+      )
+    })
+    output$vbnmaxabs <- renderValueBox({
+      req(dfres$df)
+      valueBox(
+        value = tags$p(round(max(dfres$df$q95, na.rm = TRUE), 2), style = "font-size: 300%;"),
+        subtitle = "Maximum height q95",
+        color = "success",
+        icon = icon("table-cells")
+      )
+    })
     output$vbnmeanq95 <- renderValueBox({
       req(dfres$df)
       valueBox(
         value = tags$p(round(mean(dfres$df$q95, na.rm = TRUE), 2), style = "font-size: 300%;"),
-        subtitle = "Mean height q90 ",
+        subtitle = "Mean height q95",
         color = "success",
         icon = icon("ruler-vertical")
+      )
+    })
+
+    output$vbnminvol <- renderValueBox({
+      req(dfres$df)
+      valueBox(
+        value = tags$p(round(min(dfres$df$volume, na.rm = TRUE), 2), style = "font-size: 300%;"),
+        subtitle = "Minimum volume",
+        color = "success",
+        icon = icon("box-open")
+      )
+    })
+    output$vbnmaxvol <- renderValueBox({
+      req(dfres$df)
+      valueBox(
+        value = tags$p(round(max(dfres$df$volume, na.rm = TRUE), 2), style = "font-size: 300%;"),
+        subtitle = "Maximum volume",
+        color = "success",
+        icon = icon("box-open")
       )
     })
     output$vbnmeanvol <- renderValueBox({
@@ -805,6 +930,24 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
       valueBox(
         value = tags$p(round(sum(dfres$df$volume), 2), style = "font-size: 300%;"),
         subtitle = "Total volume",
+        color = "success",
+        icon = icon("box-open")
+      )
+    })
+    output$vbncoveredmin <- renderValueBox({
+      req(dfres$df)
+      valueBox(
+        value = tags$p(round(min(dfres$df$coverage), 2), style = "font-size: 300%;"),
+        subtitle = "Minimum coverage",
+        color = "success",
+        icon = icon("box-open")
+      )
+    })
+    output$vbncoveredmax <- renderValueBox({
+      req(dfres$df)
+      valueBox(
+        value = tags$p(round(max(dfres$df$coverage), 2), style = "font-size: 300%;"),
+        subtitle = "Maximum coverage",
         color = "success",
         icon = icon("box-open")
       )
@@ -835,7 +978,7 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
       dfhist <-
         dfres$df |>
         sf::st_drop_geometry() |>
-        dplyr::select(q90, volume, coverage, entropy) |>
+        dplyr::select(q95, volume, coverage, entropy) |>
         tidyr::pivot_longer(dplyr::everything())
       p <-
         ggplot(dfhist, aes(x = value)) +

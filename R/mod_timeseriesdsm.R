@@ -494,6 +494,12 @@ mod_timeseriesdsm_server <- function(id, shapefile, mosaiclist, basemap, dfs, se
         }
 
         if(input$strategy == "Build DTM using a moving window"){
+          if(length(chrv2numv(input$windowsize)) != 2){
+            show_alert("Ops, an error occurred.",
+                       text = "Window size must be a vector of two numbers (e.g., 5,5).",
+                       type = "error")
+            return()
+          }
           dsm <- mosaiclist$mosaics$data[[input$dsmfileswin[[i]]]]
           ch1 <- !inherits(dsm,"SpatRaster") || !terra::nlyr(dsm) == 1 || terra::is.bool(dsm) || is.list(dsm)
           if (ch1) {

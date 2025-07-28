@@ -943,7 +943,8 @@ get_number <- function(string){
 }
 # Function to interpolate values per group
 interpolate_group <- function(df) {
-  wavelength_seq <- seq(min(df$wavelength), max(df$wavelength), by = 1)
+  rangewl <- c(min(df$wavelength), max(df$wavelength))
+  wavelength_seq <- seq(rangewl[[1]], rangewl[[2]], by = diff(rangewl) / 30)
   df |>
     dplyr::arrange(wavelength) |>
     dplyr::distinct(wavelength, .keep_all = TRUE) |>
@@ -974,40 +975,8 @@ to_datetime <- function(date_vector) {
   suppressWarnings(as.POSIXlt(date_vector, tryFormats = formats))
 }
 
-
-# helper functions for plot quality
-
-
-line_on_halfplot <- function(shape) {
-  help_lines <- function(corners){
-    # Compute pairwise distances
-    d1 <- sqrt(sum((corners[1, ] - corners[2, ])^2))  # Edge 1-2
-    d2 <- sqrt(sum((corners[2, ] - corners[3, ])^2))  # Edge 2-3
-    d3 <- sqrt(sum((corners[3, ] - corners[4, ])^2))  # Edge 3-4
-    d4 <- sqrt(sum((corners[4, ] - corners[1, ])^2))  # Edge 4-1
-    if (d1 < d2) {
-      mid1 <- (corners[1, ] + corners[2, ]) / 2
-      mid2 <- (corners[3, ] + corners[4, ]) / 2
-    } else {
-      mid1 <- (corners[2, ] + corners[3, ]) / 2
-      mid2 <- (corners[4, ] + corners[1, ]) / 2
-    }
-    # Define the coordinates of the two points
-    coords <- matrix(c(mid1[1], mid1[2],  # First point (X, Y)
-                       mid2[1], mid2[2]), # Second point (X, Y)
-                     ncol = 2, byrow = TRUE)
-    terra::vect(list(coords), type = "lines")
-  }
-  lines <-
-    do.call(rbind,
-            lapply(1:nrow(shape), function(i){
-              sf::st_coordinates(shape[i, ]) |> help_lines()
-            }))
-  return(lines)
-}
-
 comput_gaps <- function(vals, chm_quantile = 0.25){
-  alturas <- smooth.spline(vals$height, spar = 0.6)$y
+  alturas <- smooth.spline(na.omit(vals$height), spar = 0.6)$y
   threshold <-  (max(alturas) + min(alturas)) / 2
   # threshold <-  quantile(alturas, chm_quantile, na.rm = TRUE)
   below_threshold <- alturas < threshold
@@ -1042,23 +1011,10 @@ comput_gaps <- function(vals, chm_quantile = 0.25){
 
 mosaic_chm_quality <- function(chm,
                                shapefile,
-                               chm_threshold = 0.1,
+                               chmvals,
                                chm_quantile = 0.3,
                                plot_quality = c("absolute", "relative")) {
   plot_quality <- match.arg(plot_quality)
-  custom_summary <- function(values, coverage_fractions, ...) {
-    valids <- na.omit(values)
-    data.frame(
-      cv = mean(valids) / sd(valids),
-      entropy = entropy(valids),
-      coverage = sum(valids > chm_threshold) / length(valids)
-    )
-  }
-  height <- exactextractr::exact_extract(chm$chm[[2]],
-                                         shapefile,
-                                         fun = custom_summary,
-                                         force_df = TRUE,
-                                         progress = FALSE)
   lines <- line_on_halfplot(shapefile)
   vals_gaps <-
     terra::extractAlong(chm$chm$height, lines) |>
@@ -1067,8 +1023,9 @@ mosaic_chm_quality <- function(chm,
 
   gaps <- purrr::map_dfr(vals_gaps$data, \(x){ comput_gaps(x, chm_quantile = chm_quantile)})
 
+  chmvals <- chmvals |>  sf::st_drop_geometry() |> dplyr::select(cv, entropy, coverage)
   dftmp <-
-    dplyr::bind_cols(height, gaps, shapefile) |>
+    dplyr::bind_cols(chmvals, gaps, shapefile) |>
     sf::st_as_sf() |>
     dplyr::relocate(unique_id, block, plot_id, row, column, .before = 1) |>
     dplyr::mutate(plot_quality = sqrt(cv^2  + gaps + (5 * (coverage - 1)^2)) / sqrt(7),

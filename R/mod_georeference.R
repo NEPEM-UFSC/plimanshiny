@@ -72,10 +72,22 @@ mod_georeference_ui <- function(id) {
                    )
           ),
           tabPanel("Output",
-                   shinyDirButton(
-                     id = ns("outfolder"),
-                     label = "Output folder",
-                     title = "Output folder"
+                   fluidRow(
+                     col_6(
+                       shinyDirButton(
+                         id = ns("outfolder"),
+                         label = "Output folder",
+                         title = "Output folder"
+                       )
+                     ),
+                     col_6(
+                       actionBttn(
+                         inputId = ns("filedir"),
+                         label = "To input directory",
+                         style = "pill",
+                         color = "primary"
+                       )
+                     )
                    ),
                    textInput(ns("outdir"),
                              label = "Output folder",
@@ -197,10 +209,13 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs, zlim){
       updateTextInput(session, "outdir", value = diroutput)
     })
 
+    observeEvent(input$filedir, {
+      req(mosaitoshape())
+      updateTextInput(session, "outdir", value = pliman::file_dir(terra::sources(mosaitoshape())))
+    })
+
+
     observe({
-
-
-
       output$points_table <- DT::renderDT({
         req(control_points())
         # Add Edit/Delete buttons
@@ -276,15 +291,15 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs, zlim){
           if(has_control_points()){
             points(x = control_points()[, 1],
                    y = control_points()[, 2],
-                   cex = 4,
+                   cex = 5,
                    pch = 13,
-                   col = "salmon")
+                   col = "white")
             text(
               x = control_points()[, 1],
               y = control_points()[, 2],  # You can adjust the offset if needed
               labels = 1:nrow(control_points()),
-              col = "salmon",
-              cex = 2,
+              col = "white",
+              cex = 3,
               pos = 3
             )
           }
@@ -421,15 +436,15 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs, zlim){
             if(has_control_points()){
               points(x = control_points()[, 1],
                      y = control_points()[, 2],
-                     cex = 4,
+                     cex = 5,
                      pch = 13,
-                     col = "salmon")
+                     col = "white")
               text(
                 x = control_points()[, 1],
                 y = control_points()[, 2],  # You can adjust the offset if needed
                 labels = 1:nrow(control_points()),
-                col = "salmon",
-                cex = 2,
+                col = "white",
+                cex = 3,
                 pos = 3
               )
             }
@@ -578,22 +593,22 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs, zlim){
             x = x,
             y = y,  # Apply dynamic offset if needed
             labels = row_id(),
-            col = "salmon",
+            col = "white",
             cex = 2,
             pos = 3
           )
           if(has_control_points()){
             points(x = control_points()[, 1],
                    y = control_points()[, 2],
-                   cex = 4,
+                   cex = 5,
                    pch = 13,
-                   col = "salmon")
+                   col = "white")
             text(
               x = control_points()[, 1],
               y = control_points()[, 2],  # You can adjust the offset if needed
               labels = 1:nrow(control_points()),
-              col = "salmon",
-              cex = 2,
+              col = "white",
+              cex = 3,
               pos = 3
             )
           }
@@ -668,21 +683,21 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs, zlim){
               x = points_df[, 1],
               y = points_df[, 2],  # Apply dynamic offset if necessary
               labels = 1:nrow(points_df),
-              col = "salmon",
-              cex = 2,
+              col = "white",
+              cex = 3,
               pos = 3
             )
             if(has_control_points()){
               points(x = control_points()[, 1],
                      y = control_points()[, 2],
-                     cex = 4,
+                     cex = 5,
                      pch = 13,
-                     col = "salmon")
+                     col = "white")
               text(
                 x = control_points()[, 1],
                 y = control_points()[, 2],  # You can adjust the offset if needed
                 labels = 1:nrow(control_points()),
-                col = "salmon",
+                col = "white",
                 cex = 2,
                 pos = 3
               )

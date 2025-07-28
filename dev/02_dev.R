@@ -75,6 +75,7 @@ golem::add_module(name = "compslider")
 golem::add_module(name = "hyperspectral")
 golem::add_module(name = "classify")
 golem::add_module(name = "wheater")
+golem::add_module(name = "userinfo")
 
 ## Add packages
 usethis::use_package("shiny")

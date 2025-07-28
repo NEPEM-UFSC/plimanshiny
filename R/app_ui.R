@@ -45,6 +45,15 @@ app_ui <- function(request) {
             time = "today",
             icon = shiny::icon("globe")
           )
+        ),
+        # New users icon with tooltip
+        tags$div(
+          style = "margin-right: 20px; font-size: 18px;",
+          shiny::icon("users", class = "fa-solid", title = "Users")
+        ),
+        tags$div(
+          style = "margin-right: 20px; font-weight: bold;",
+          textOutput("user_header")
         )
       ),
       sidebar = bs4DashSidebar(
@@ -525,3 +534,4 @@ golem_add_external_resources <- function() {
 
   return(head_content)
 }
+

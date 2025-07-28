@@ -298,20 +298,13 @@ mod_home_server <- function(id, settings){
       browseURL("https://nepemufsc.com/")
     })
 
-    observe({
-      inst_dir <- file.path(system.file(package = "plimanshiny"), "app/www")
-      licenseread <- file.path(inst_dir, "license.rds")
-      if (!file.exists(licenseread)) {
-        show_licence(ns)
-      }
-    })
     observeEvent(input$close_modal, {
       inst_dir <- file.path(system.file(package = "plimanshiny"), "app/www")
       licenseread <- file.path(inst_dir, "license.rds")
       saveRDS(list(licenseread = TRUE), licenseread)
       removeModal()
     })
-
+    #
     observeEvent(input$license, {
       show_licence(ns)
     })

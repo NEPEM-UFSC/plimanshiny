@@ -201,6 +201,7 @@ mod_hyperspectral_server <- function(id, mosaic_data, r, g, b, maxpixel,  basema
                           formula = y ~ x,
                           span = input$spam,
                           n = 500)} +
+            geom_rug(sides = "b", inherit.aes = FALSE) +
             theme_minimal() +
             theme(legend.position = "bottom") +
             labs(x = input$xlab,
@@ -314,8 +315,6 @@ mod_hyperspectral_server <- function(id, mosaic_data, r, g, b, maxpixel,  basema
 
     observeEvent(input$heatmapdoneline, {
       output$heatmapline <- renderPlotly({
-
-
         #filter only first LINESTRING
         linecoord <-
           sampledpoints() |>
@@ -341,6 +340,8 @@ mod_hyperspectral_server <- function(id, mosaic_data, r, g, b, maxpixel,  basema
         valsline <-
           terra::extractAlong(mosfile(), terra::vect(linecoord)) |>
           dplyr::mutate(dists = seq(0, dist, length.out = dplyr::n()))
+
+        assign("res", list(dist, dists, valsline), envir = .GlobalEnv)
 
         interpolated_data <-
           valsline |>
@@ -396,19 +397,6 @@ mod_hyperspectral_server <- function(id, mosaic_data, r, g, b, maxpixel,  basema
         }
       })
     })
-
-
-
-
-
-
-
-
-
-
-
-
-
 
   })
 }
