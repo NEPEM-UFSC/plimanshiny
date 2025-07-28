@@ -24,7 +24,6 @@ mod_userinfo_server <- function(id){
       dir.create(user_dir, recursive = TRUE)
     }
     user_info_file <- file.path(user_dir, "user_info.rds")
-    # file.remove(user_info_file)
     user_info <- reactiveVal()
 
     if (file.exists(user_info_file)) {
