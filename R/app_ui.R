@@ -48,11 +48,11 @@ app_ui <- function(request) {
         ),
         # New users icon with tooltip
         tags$div(
-          style = "margin-right: 20px; font-size: 18px;",
+          style = "margin-left: 20px; font-size: 18px;",
           shiny::icon("users", class = "fa-solid", title = "Users")
         ),
         tags$div(
-          style = "margin-right: 20px; font-weight: bold;",
+          style = "margin-left: 5px; font-weight: bold;",
           textOutput("user_header")
         )
       ),

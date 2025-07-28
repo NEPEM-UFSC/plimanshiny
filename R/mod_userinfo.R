@@ -24,6 +24,7 @@ mod_userinfo_server <- function(id){
       dir.create(user_dir, recursive = TRUE)
     }
     user_info_file <- file.path(user_dir, "user_info.rds")
+    # unlink(user_info_file)
     user_info <- reactiveVal()
 
     if (file.exists(user_info_file)) {
@@ -107,8 +108,6 @@ mod_userinfo_server <- function(id){
       )
     }
 
-    webhook_url <- "https://script.google.com/macros/s/AKfycby-pUjM15CK_RWX2Uw7-ZEFCIuquMgMdV-brF5OzMOUNl_zz-NSouYRLAcf4ZdY-BtG/exec"
-
     observe({
       shinyjs::toggleState(id = "save_user_info", condition = isTRUE(input$agree_terms))
     })
@@ -119,14 +118,15 @@ mod_userinfo_server <- function(id){
       info <- list(
         name = input$user_name,
         email = input$user_email,
-        institution = input$user_inst
+        institution = input$user_inst,
+        token = pliman::uuid(n = 1)
       )
 
       saveRDS(info, user_info_file)
       user_info(info)
-
+      # print(get_webhook_url())
       try({
-        httr2::request(webhook_url) |>
+        httr2::request("https://script.google.com/macros/s/AKfycbxdVllpOEblNNsXbLEnVUhs7ZEEOZMIR3mg5xtKdyRuYgcVfdvcoQlc1wToi9-Ewqzi/exec") |>
           httr2::req_method("POST") |>
           httr2::req_headers(`Content-Type` = "application/json") |>
           httr2::req_body_json(info) |>
