@@ -134,6 +134,15 @@ plimanshiny_viewer_server <- function(id, mosaic,
                                       b = reactiveVal(3),
                                       usemargin = reactiveVal(TRUE),
                                       zlim = NULL) {
+  if(is.na(r())){
+    r <- reactiveVal(1)
+  }
+  if(is.na(g())){
+    g <- reactiveVal(2)
+  }
+  if(is.na(b())){
+    b <- reactiveVal(3)
+  }
   if(usemargin()){
     marg <- reactiveVal(c(3.1, 3.1, 2.1, 7.1))
   } else{

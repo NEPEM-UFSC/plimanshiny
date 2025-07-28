@@ -496,9 +496,8 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
       if(input$useminmax){
         req(input$mosaictoanalyze)
         req(mosaic_data[[input$mosaictoanalyze]]$data)
-        vals <- terra::spatSample(mosaic_data[[input$mosaictoanalyze]]$data[[c(suppressWarnings(as.numeric(r$r)),
-                                                                               suppressWarnings(as.numeric(g$g)),
-                                                                               suppressWarnings(as.numeric(b$b)))]], 2000)
+        samplebands <- c(suppressWarnings(as.numeric(r$r)), suppressWarnings(as.numeric(g$g)), suppressWarnings(as.numeric(b$b)))
+        vals <- terra::spatSample(mosaic_data[[input$mosaictoanalyze]]$data[[samplebands]], 2000)
         slider_range <- mod_histo_slider_server("historaster", data_reactive = reactiveVal(as.numeric(as.matrix(vals))))
 
         observeEvent(input$donebands, {
