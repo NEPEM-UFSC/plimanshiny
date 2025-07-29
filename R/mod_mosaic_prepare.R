@@ -429,6 +429,10 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
     observeEvent(names(mosaic_data), {
       req(mosaic_data)
       mosaicnames <- setdiff(names(mosaic_data), "mosaic")
+<<<<<<< HEAD
+=======
+
+>>>>>>> origin/master
       current <- isolate(input$mosaictoanalyze)
       new_sel <- if (current %in% mosaicnames) current else mosaicnames[[1]]
 
