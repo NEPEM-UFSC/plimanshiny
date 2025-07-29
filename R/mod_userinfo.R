@@ -19,14 +19,18 @@ mod_userinfo_server <- function(id){
   moduleServer(id, function(input, output, session){
     ns <- session$ns
 
+    # Load country and region data
+    country_path <- system.file("app/www/country_data.rds", package = "plimanshiny", mustWork = FALSE)
+    mun_df <- readRDS(country_path)
+
     user_dir <- tools::R_user_dir("plimanshiny", which = "config")
     if (!dir.exists(user_dir)){
       dir.create(user_dir, recursive = TRUE)
     }
     user_info_file <- file.path(user_dir, "user_info.rds")
-    # unlink(user_info_file)
     user_info <- reactiveVal()
 
+    # Create modal UI with dynamic inputs
     if (file.exists(user_info_file)) {
       user_info(readRDS(user_info_file))
     } else {
@@ -43,6 +47,19 @@ mod_userinfo_server <- function(id){
             ),
             column(4,
                    textInput(ns("user_inst"), label = tagList(icon("university"), "Institution"))
+            )
+          ),
+          fluidRow(
+            column(6,
+                   pickerInput(ns("country"),
+                               label = tagList(icon("globe"), "Country"),
+                               choices = unique(mun_df$country_name),
+                               options = list(
+                                 `live-search` = TRUE
+                               ))
+            ),
+            column(6,
+                   uiOutput(ns("region_ui"))
             )
           ),
           br(), tags$hr(),
@@ -108,24 +125,40 @@ mod_userinfo_server <- function(id){
       )
     }
 
+    # Update region dropdown based on selected country
+    output$region_ui <- renderUI({
+      req(input$country)
+      choices <- mun_df$subdivision_name[mun_df$country_name == input$country]
+      pickerInput(ns("region"),
+                  label = tagList(icon("map"), "Region / State"),
+                  choices = choices,
+                  selected = NULL,
+                  options = list(
+                    `live-search` = TRUE
+                  ))
+    })
+
     observe({
       shinyjs::toggleState(id = "save_user_info", condition = isTRUE(input$agree_terms))
     })
 
     observeEvent(input$save_user_info, {
-      req(input$user_name, input$user_email, input$user_inst, input$agree_terms)
+      req(input$user_name, input$user_email, input$user_inst, input$country, input$region, input$agree_terms)
 
       info <- list(
         name = input$user_name,
         email = input$user_email,
         institution = input$user_inst,
-        token = pliman::uuid(n = 1)
+        country = input$country,
+        region = input$region,
+        token = pliman::uuid(1)
       )
 
       saveRDS(info, user_info_file)
       user_info(info)
+
       try({
-        httr2::request("https://script.google.com/macros/s/AKfycbxdVllpOEblNNsXbLEnVUhs7ZEEOZMIR3mg5xtKdyRuYgcVfdvcoQlc1wToi9-Ewqzi/exec") |>
+        httr2::request("https://script.google.com/macros/s/AKfycbwqb2zSC30lpMlBgVBtYLSoFt45bT5sp3G7DO8UgJ1Ihor69snDB4ekPXF0q7Og2G3x/exec") |>
           httr2::req_method("POST") |>
           httr2::req_headers(`Content-Type` = "application/json") |>
           httr2::req_body_json(info) |>
