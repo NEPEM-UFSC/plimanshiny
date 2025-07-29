@@ -86,6 +86,20 @@ mod_weather_ui <- function(id) {
                   status = "success"
                 ),
                 hl(),
+                fluidRow(
+                  col_7(
+
+                  ),
+                  col_5(
+                    actionButton(
+                      inputId = ns("nasadict"),
+                      label = tagList(
+                        icon = icon("spell-check", verify_fa = FALSE), "NASAPOWER | Dictionary"
+                      ),
+                      status = "info"
+                    )
+                  )
+                ),
                 prettySwitch(
                   inputId = ns("show_thermal_opts"),
                   label = "Show thermal parameters options",
@@ -116,25 +130,27 @@ mod_weather_ui <- function(id) {
                   conditionalPanel(
                     condition = "input.computegdd == true", ns = ns,
                     fluidRow(
-                      col_3(
+                      col_6(
                         numericInput(ns("basemin"),
                                      label = "Base temp (°C)",
                                      value = 10,
                                      step = 0.1)
                       ),
-                      col_3(
+                      col_6(
                         numericInput(ns("baseupp"),
                                      label = "Ceiling temp (°C)",
                                      value = 40,
                                      step = 0.1)
-                      ),
-                      col_3(
+                      )
+                    ),
+                    fluidRow(
+                      col_6(
                         numericInput(ns("optimallower"),
                                      label = "Optimal lower (°C)",
                                      value = 26,
                                      step = 0.1)
                       ),
-                      col_3(
+                      col_6(
                         numericInput(ns("optimalupper"),
                                      label = "Optimal upper (°C)",
                                      value = 32,
@@ -788,7 +804,7 @@ FetchWeatherCommand <- R6::R6Class("FetchWeatherCommand",
                  # Attempt to infer HR if missing, maybe from row number within a day? Risky.
                  warning("Hourly scale selected but HR column missing. CH accumulation might be incorrect if data isn't ordered chronologically.")
                  # Add a dummy HR if absolutely necessary, but this is not ideal
-                 # all_weather_data <- all_weather_data %>% dplyr::group_by(ENV, YYYYMMDD) %>% dplyr::mutate(HR = dplyr::row_number() - 1) %>% dplyr::ungroup()
+                 # all_weather_data <- all_weather_data |> dplyr::group_by(ENV, YYYYMMDD) |> dplyr::mutate(HR = dplyr::row_number() - 1) |> dplyr::ungroup()
              }
             # --- End Date/Time columns ---
 
@@ -968,6 +984,36 @@ mod_weather_server <- function(id, dfs) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
+    # index equation
+    observeEvent(input$nasadict, {
+
+      output$nasadictionary <- renderReactable({
+        nasaparams <-
+          system.file("app/www/nasaparams.csv", package = "plimanshiny", mustWork = FALSE) |>
+          read.csv()
+        nasaparams <- nasaparams[, c(2, 1, 4)]
+        render_reactable(nasaparams,
+                         defaultPageSize = 10,
+                         columns = list(
+                           abbreviation = colDef(maxWidth = 250),
+                           name = colDef(maxWidth = 650),
+                           level = colDef(maxWidth = 200)
+                         ))
+
+      })
+
+      showModal(
+        modalDialog(
+          title = "NASAPOWER dictionary",
+          reactable::reactableOutput(ns("nasadictionary")),
+          footer = NULL,
+          easyClose = TRUE,
+          size = "xl"
+        )
+      )
+    })
+
+
     # Instantiate Cache Service
     cache_service <- WeatherCacheService$new()
 
@@ -978,10 +1024,6 @@ mod_weather_server <- function(id, dfs) {
       api_in_progress = FALSE,
       processing_error = NULL
     )
-
-    # --- Service Layer Function (get_climate) ---
-    # MOVED TO UTILS.
-
     # --- UI Logic and Observers ---
     coords <- reactive({
       if (length(points$data) == 0) return(NULL)
@@ -1167,14 +1209,14 @@ mod_weather_server <- function(id, dfs) {
       req(df_coords, nrow(df_coords) > 0)
 
       # Add row IDs and delete buttons
-      display_df <- df_coords %>%
+      display_df <- df_coords |>
         dplyr::mutate(
           row_id = dplyr::row_number(), # Add a unique ID for each row
           delete = sprintf(
             '<button class="btn btn-danger btn-sm delete-point-btn" data-rowid="%s" type="button"><i class="fa fa-trash"></i></button>',
             row_id # Use the row ID
           )
-        ) %>%
+        ) |>
         dplyr::select(row_id, env, lat, lon, start, end, delete) # Keep row_id for internal use if needed, or remove
 
       DT::datatable(
@@ -1215,8 +1257,8 @@ mod_weather_server <- function(id, dfs) {
       # Use req() to proceed only if df_coords is valid (not NULL, not empty)
       req(df_coords, nrow(df_coords) > 0)
 
-      leafletProxy("map2", session) %>%
-        clearMarkers() %>%
+      leafletProxy("map2", session) |>
+        clearMarkers() |>
         addMarkers(
           data = df_coords,
           lng = ~lon,
@@ -1357,11 +1399,7 @@ mod_weather_server <- function(id, dfs) {
     observe({
       data_res <- resclimate()
       if (!is.null(data_res) && nrow(data_res) > 0) {
-         # Allow faceting by ENV or other categorical/discrete columns
-         potential_facets <- c("ENV") # Add others if relevant, e.g., YEAR, MO
-         valid_facets <- intersect(potential_facets, colnames(data_res))
-         choices <- c("none", valid_facets)
-
+         choices <- c("none", colnames(data_res))
          selected_facet <- isolate(input$facet)
          if(is.null(selected_facet) || !selected_facet %in% choices) {
              selected_facet <- "none"
@@ -1384,13 +1422,13 @@ mod_weather_server <- function(id, dfs) {
 
       # Basic validation
       if (!variable %in% colnames(plot_data)) {
-        return(plotly::plot_ly() %>% plotly::layout(title = paste("Variable", variable, "not found")))
+        return(plotly::plot_ly() |> plotly::layout(title = paste("Variable", variable, "not found")))
       }
       if (!is.numeric(plot_data[[variable]])) {
-         return(plotly::plot_ly() %>% plotly::layout(title = paste("Variable", variable, "is not numeric")))
+         return(plotly::plot_ly() |> plotly::layout(title = paste("Variable", variable, "is not numeric")))
       }
       if (all(is.na(plot_data[[variable]]))) {
-        return(plotly::plot_ly() %>% plotly::layout(title = paste("All values for", variable, "are NA")))
+        return(plotly::plot_ly() |> plotly::layout(title = paste("All values for", variable, "are NA")))
       }
 
       # Create ggplot object
@@ -1409,7 +1447,7 @@ mod_weather_server <- function(id, dfs) {
       }
 
       # Convert to plotly
-      plotly::ggplotly(p, tooltip = c("x")) %>%
+      plotly::ggplotly(p, tooltip = c("x")) |>
         plotly::config(displaylogo = FALSE, modeBarButtonsToRemove = list('sendDataToCloud', 'select2d', 'lasso2d'))
     })
     output$envirotypes <- renderPlotly({
@@ -1436,23 +1474,23 @@ mod_weather_server <- function(id, dfs) {
           if (!"DATE" %in% names(plot_data_orig)) stop("DATE column is required for envirotyping.") # Assuming envirotype needs DATE
 
           # Ensure DATE is Date class
-          plot_data <- plot_data_orig %>% dplyr::mutate(DATE = as.Date(DATE))
+          plot_data <- plot_data_orig |> dplyr::mutate(DATE = as.Date(DATE))
           if(any(is.na(plot_data$DATE))) stop("Could not parse DATE column.")
 
           # Assuming 'datas' in envirotype refers to DOY
           if (!"DOY" %in% names(plot_data)) {
-             plot_data <- plot_data %>% dplyr::mutate(DOY = as.numeric(format(DATE, "%j")))
+             plot_data <- plot_data |> dplyr::mutate(DOY = as.numeric(format(DATE, "%j")))
           }
           # Rename DOY to DFS if that's what envirotype expects
           if (!"DFS" %in% names(plot_data) && "DOY" %in% names(plot_data)) {
-             plot_data <- plot_data %>% dplyr::rename(DFS = DOY)
+             plot_data <- plot_data |> dplyr::rename(DFS = DOY)
           }
           if (!"DFS" %in% names(plot_data)) stop("Column 'DFS' (Day From Sowing/Start or DOY) is required.")
 
 
           # 2. Optimize dataset (optional, keep if needed)
           incProgress(0.2, detail = "Preparing data...")
-          plot_data <- plot_data %>% dplyr::filter(!is.na(!!sym(variable)), !is.na(DFS))
+          plot_data <- plot_data |> dplyr::filter(!is.na(!!sym(variable)), !is.na(DFS))
           if(nrow(plot_data) == 0) stop("No valid data remaining after filtering NAs.")
 
           # 3. Calculate Envirotypes
@@ -1472,10 +1510,10 @@ mod_weather_server <- function(id, dfs) {
           # 4. Update Envirotype Table
           incProgress(0.7, detail = "Updating table...")
           output$dataenviro <- reactable::renderReactable({
-            dfenviro %>%
-              dplyr::select(ENV, stage, xcut, Freq, fr) %>%
-              dplyr::rename(Environment = ENV, `Crop stage` = stage, Envirotype = xcut, Frequency = Freq, `Relative frequency` = fr) %>%
-              roundcols(digits = 3) %>% # Assuming roundcols exists
+            dfenviro |>
+              dplyr::select(ENV, stage, xcut, Freq, fr) |>
+              dplyr::rename(Environment = ENV, `Crop stage` = stage, Envirotype = xcut, Frequency = Freq, `Relative frequency` = fr) |>
+              roundcols(digits = 3) |> # Assuming roundcols exists
               render_reactable( # Assuming render_reactable exists
                 filterable = TRUE, searchable = TRUE, sortable = TRUE,
                 compact = TRUE, highlight = TRUE
@@ -1488,9 +1526,10 @@ mod_weather_server <- function(id, dfs) {
           num_colors <- length(unique(dfenviro$xcut))
           env_colors <- RColorBrewer::brewer.pal(max(3, min(9, num_colors)), "Blues") # Example palette
 
-          p <- ggplot(dfenviro, aes(x = fr, y = Environment, fill = Envirotype)) + # Use fr for relative frequency
+          p <-
+            ggplot(dfenviro, aes(x = fr, y = ENV, fill = xcut)) + # Use fr for relative frequency
             geom_col(position = "stack", width = 0.9, color = "white", linewidth = 0.2) + # Use geom_col for stacked bars
-            facet_wrap(~`Crop stage`, ncol = 1, scales = "free_y") + # Use renamed column
+            facet_wrap(~stage, ncol = 1, scales = "free_y") + # Use renamed column
             scale_fill_manual(values = env_colors) + # Use defined colors
             scale_x_continuous(labels = scales::percent_format(), expand = c(0, 0)) + # Percentage axis
             scale_y_discrete(expand = c(0, 0.5)) + # Add some padding for y-axis
@@ -1504,15 +1543,15 @@ mod_weather_server <- function(id, dfs) {
           incProgress(1.0, detail = "Completed!")
 
           # Convert to plotly
-          plotly::ggplotly(p, tooltip = c("y", "fill", "x")) %>%
-             plotly::config(displaylogo = FALSE, modeBarButtonsToRemove = list('sendDataToCloud')) %>%
+          plotly::ggplotly(p, tooltip = c("y", "fill", "x")) |>
+             plotly::config(displaylogo = FALSE, modeBarButtonsToRemove = list('sendDataToCloud')) |>
              plotly::layout(legend = list(orientation = "h", x = 0.5, xanchor = "center", y = -0.2)) # Adjust legend
 
 
         }, error = function(e) {
           # Handle errors during envirotyping
           output$dataenviro <- reactable::renderReactable(NULL) # Clear table on error
-          plotly::plot_ly() %>%
+          plotly::plot_ly() |>
             plotly::layout(title = paste("Error generating envirotypes:", e$message))
         })
       }) # End withProgress

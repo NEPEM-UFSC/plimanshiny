@@ -1,6 +1,7 @@
 # .rs.restartR()
 # usethis::use_version()
 # usethis::use_github_release()
+# pak::pkg_install("nepem-ufsc/plimanshiny")
 setwd("D:/Desktop/plimanshiny")
 # Set options here
 options(golem.app.prod = FALSE) # TRUE = production mode, FALSE = development mode

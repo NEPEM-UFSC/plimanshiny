@@ -1154,7 +1154,8 @@ gdd_ometto_frue <- function(df,
 
       } else if ("DATE" %in% names(df_out)) {
          # Global cumulative sum if no ENV but DATE exists
-         df_out <- df_out |>
+         df_out <-
+           df_out |>
            dplyr::arrange(DATE) |> # Ensure order
            dplyr::mutate(GDD_CUMSUM = cumsum(ifelse(is.na(GDD), 0, GDD)))
          if ("RTA" %in% names(df_out)) {
@@ -1205,7 +1206,7 @@ envirotype <- function(data,
     data |>
       dplyr::group_by(stage) |>
       dplyr::group_modify(~{
-        x <- dplyr::pull(dplyr::select(.x, !!var)) |> na.omit()
+        x <- dplyr::pull(dplyr::select(.x, dplyr::all_of(!!var))) |> na.omit()
         xcut <- cut(x, breaks = .breaks, labels = .labels, include.lowest = TRUE, right = FALSE)
         out <- data.frame(xcut = xcut)
         out |>
@@ -1527,8 +1528,8 @@ get_weather_info <- function(df){
   )
 }
 
-get_climate <- function(env = NULL, lat, lon, start,
-                        end,
+
+get_climate <- function(env = NULL, lat, lon, start, end,
                         params = c("T2M", "T2M_MIN", "T2M_MAX", "PRECTOT", "RH2M", "WS2M"),
                         scale = c("hourly", "daily", "monthly", "climatology"),
                         cache_service = NULL,
@@ -1752,10 +1753,10 @@ get_climate <- function(env = NULL, lat, lon, start,
           progressr::withProgressShiny({
             p <- progressr::progressor(steps = length(lat))
             result_list <- furrr::future_map(seq_along(lat), function(i) {
-              p(message = sprintf("Fetching %s (%d/%d)", env[i], i, length(lat)))
+              p(message = sprintf("%s (%d/%d)", env[i], i, length(lat)))
               fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
             }, .options = furrr::furrr_options(seed = TRUE))
-          }, message = "Fetching climate data")
+          }, message = "Fetching climate data for")
         }
       } else if (progress && environment == "r") {
         progressr::handlers(global = TRUE)
@@ -1794,6 +1795,26 @@ get_climate <- function(env = NULL, lat, lon, start,
       if (!is.null(cache_service) && !is.null(final_df) && nrow(final_df) > 0) {
         cache_service$save(cache_key, final_df)
       }
-
+      if(scale == "daily"){
+        final_df <-
+          final_df |>
+          dplyr::relocate(ENV, LAT, LON, DATE, .before = 1) |>
+          dplyr::select(-any_of(c("YEAR", "MO", "DY"))) |>
+          tidyr::separate_wider_delim(DATE, names = c("YEAR", "MO", "DY"), delim = "-") |>
+          dplyr::group_by(ENV) |>
+          dplyr::mutate(DFS = dplyr::row_number(), .after = DOY) |>
+          dplyr::ungroup() |>
+          tidyr::unite("DATE", YEAR, MO, DY, sep = "-", remove = FALSE)
+      }
+      if(scale == "hourly"){
+        final_df <-
+          final_df |>
+          dplyr::relocate(ENV, LAT, LON, DATE, .before = 1)
+      }
+      if(scale %in% c("monthly", "climatology")){
+        final_df <-
+          final_df |>
+          dplyr::relocate(ENV, LAT, LON, .before = 1)
+      }
       return(final_df)
     }
