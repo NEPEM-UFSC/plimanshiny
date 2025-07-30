@@ -88,7 +88,7 @@ mod_userinfo_server <- function(id){
           h4("Privacy and Data Protection"),
           "Your personal data (name, email, and institution) are collected solely for internal use to improve the application and track non-commercial usage. ",
           "These data will never be shared with third parties, sold, or used for any commercial or advertising purpose. ",
-          "All information is stored securely and treated with confidentiality.",
+          "All information is stored securely and treated with confidentiality.", br(),
           bs4TabCard(
             id = "tabs",
             status = "success",
