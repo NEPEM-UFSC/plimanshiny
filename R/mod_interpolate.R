@@ -95,9 +95,9 @@ mod_interpolate_server <- function(id, mosaic_data, r, g, b, basemap, settings){
         bmap <- basemap$map
       } else{
         bmap <- mosaic_view(mosaic_data[[input$mosaictointerpolate]]$data,
-                            r = suppressWarnings(as.numeric(r$r)),
-                            g = suppressWarnings(as.numeric(g$g)),
-                            b = suppressWarnings(as.numeric(b$b)),
+                            r = ifelse(is.na(r$r), 1, suppressWarnings(as.numeric(r$r))),
+                            g = ifelse(is.na(g$g), 2, suppressWarnings(as.numeric(g$g))),
+                            b = ifelse(is.na(b$b), 3, suppressWarnings(as.numeric(b$b))),
                             max_pixels = 500000)
       }
       req(bmap)

@@ -429,13 +429,8 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
     observeEvent(names(mosaic_data), {
       req(mosaic_data)
       mosaicnames <- setdiff(names(mosaic_data), "mosaic")
-<<<<<<< HEAD
-=======
-
->>>>>>> origin/master
       current <- isolate(input$mosaictoanalyze)
       new_sel <- if (current %in% mosaicnames) current else mosaicnames[[1]]
-
       updateSelectInput(session, "mosaictoanalyze",
                         choices  = mosaicnames,
                         selected = new_sel)
@@ -500,7 +495,7 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
       if(input$useminmax){
         req(input$mosaictoanalyze)
         req(mosaic_data[[input$mosaictoanalyze]]$data)
-        samplebands <- c(suppressWarnings(as.numeric(r$r)), suppressWarnings(as.numeric(g$g)), suppressWarnings(as.numeric(b$b)))
+        samplebands <- na.omit(c(suppressWarnings(as.numeric(r$r)), suppressWarnings(as.numeric(g$g)), suppressWarnings(as.numeric(b$b))))
         vals <- terra::spatSample(mosaic_data[[input$mosaictoanalyze]]$data[[samplebands]], 2000)
         slider_range <- mod_histo_slider_server("historaster", data_reactive = reactiveVal(as.numeric(as.matrix(vals))))
 
@@ -556,9 +551,9 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
           if(nlyr(mosaic_data[[input$mosaictoanalyze]]$data) >= 3){
             bmtmp <- mosaic_view(
               mosaic_data[[input$mosaictoanalyze]]$data,
-              r = suppressWarnings(as.numeric(r$r)),
-              g = suppressWarnings(as.numeric(g$g)),
-              b = suppressWarnings(as.numeric(b$b)),
+              r = ifelse(is.na(r$r), 1, suppressWarnings(as.numeric(r$r))),
+              g = ifelse(is.na(g$g), 2, suppressWarnings(as.numeric(g$g))),
+              b = ifelse(is.na(b$b), 3, suppressWarnings(as.numeric(b$b))),
               quantiles = quantiles$q,
               max_pixels = maxpixel$mp
             )

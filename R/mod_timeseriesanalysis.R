@@ -689,7 +689,10 @@ mod_timeseriesanalysis_server <- function(id, shapefile, mosaiclist, r, g, b, re
       }
 
       if(is.null(basemap$map)){
-        bm <- mosaic_view(mosaiclist$mosaics$data[[1]])
+        bm <- mosaic_view(mosaiclist$mosaics$data[[1]],
+                          r = ifelse(is.na(r$r), 1, suppressWarnings(as.numeric(r$r))),
+                          g = ifelse(is.na(g$g), 2, suppressWarnings(as.numeric(g$g))),
+                          b = ifelse(is.na(b$b), 3, suppressWarnings(as.numeric(b$b))))
       } else{
         bm <- basemap$map
       }
