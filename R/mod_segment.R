@@ -161,9 +161,9 @@ mod_segment_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, set
         basemap <-
           mosaic_view(
             mtemp,
-            r = suppressWarnings(as.numeric(r$r)),
-            g = suppressWarnings(as.numeric(g$g)),
-            b = suppressWarnings(as.numeric(b$b))
+            r = ifelse(is.na(r$r), 1, suppressWarnings(as.numeric(r$r))),
+            g = ifelse(is.na(g$g), 2, suppressWarnings(as.numeric(g$g))),
+            b = ifelse(is.na(b$b), 3, suppressWarnings(as.numeric(b$b)))
           )
       }
       req(mtemp)
