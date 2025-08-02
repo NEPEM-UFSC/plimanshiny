@@ -1326,6 +1326,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
         observe({
           req(input$shapefiletoanalyze)
           req(shapefile[[input$shapefiletoanalyze]]$data)
+          req(activemosaic$name)
           req(mosaic_data[[activemosaic$name]]$data)
           sizes <- adjust_canvas(mosaic_data[[activemosaic$name]]$data)
 
