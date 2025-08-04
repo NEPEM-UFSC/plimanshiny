@@ -114,7 +114,6 @@ mod_graphicalexploration_ui <- function(id) {
       }
     ")),
 
-    # Input Data Section
     fluidRow(
       col_5(
         bs4Card(
@@ -149,22 +148,40 @@ mod_graphicalexploration_ui <- function(id) {
               )
             )
           ),
-          # Available Variables Section
+
+          # Novo seletor de tipo de gráfico
+          bs4TabCard(
+            id = ns("plot_type"),
+            title = "Select plot type",
+            elevation = 2,
+            width = 12,
+            side = "left",
+            status = "info",
+            closable = FALSE,
+            collapsible = FALSE,
+            selected = "scatter",
+            tabPanel("scatter", icon = icon("dot-circle")),
+            tabPanel("boxplot", icon = icon("square")),
+            tabPanel("density", icon = icon("chart-area")),
+            tabPanel("bar", icon = icon("chart-bar"))
+          ),
+
+          # Variáveis disponíveis
           fluidRow(
             h4("Available variables:"),
             uiOutput(ns("variables_ui"))
           ),
-          # Drop Zones
+
+          # Zonas de drop
           fluidRow(
             div(class = "drag-container",
                 div(id = ns("var_dropzone"), class = "dropzone var-dropzone", "Variable (Y-Axis):", style = "text-align: left;"),
-                div(id = ns("group_dropzone"), class = "dropzone group-dropzone", "Grouping (X-Axis, optional):", style = "text-align: left;"),
+                div(id = ns("group_dropzone"), class = "dropzone group-dropzone", "X-Axis (Grouping or Numeric):", style = "text-align: left;"),
                 div(id = ns("color_dropzone"), class = "dropzone stats-dropzone", "Color (optional):", style = "text-align: left;")
             )
           )
         )
       ),
-      # Graph Display Section
       col_7(
         bs4Card(
           title = "Graphical Exploration",
@@ -174,7 +191,7 @@ mod_graphicalexploration_ui <- function(id) {
           plotOutput(ns("exploration_plot"), height = "750px") |> add_spinner()
         )
       ),
-      # JavaScript for Drag-and-Drop Animation and Interaction
+      # JavaScript para interação drag and drop
       tags$script(HTML(paste0("
       var dragged;
       document.addEventListener('dragstart', function(event) {
@@ -254,6 +271,7 @@ mod_graphicalexploration_ui <- function(id) {
   )
 }
 
+
 #' graphicalexploration Server Functions
 #'
 #' @noRd
@@ -268,29 +286,23 @@ mod_graphicalexploration_server <- function(id, dfs, shapefile) {
 
     observe({
       if (input$dforshape2 == "data.frame") {
-        updatePickerInput(session, "dftoexplore",
-                          choices = c("none", names(dfs)))
+        updatePickerInput(session, "dftoexplore", choices = c("none", names(dfs)))
       } else {
-        updatePickerInput(session, "dftoexplore",
-                          choices = c("none", setdiff(names(shapefile), c("shapefileplot"))))
+        updatePickerInput(session, "dftoexplore", choices = c("none", setdiff(names(shapefile), c("shapefileplot"))))
       }
     })
 
     dfactive <- reactiveValues()
     observeEvent(input$dftoexplore, {
-      vars(c())
-      group_vars(c())
-      color_vars(c())
+      vars(c()); group_vars(c()); color_vars(c())
 
       removeUI(selector = paste0("#", ns("var_dropzone"), " > .draggable"), immediate = TRUE)
       removeUI(selector = paste0("#", ns("group_dropzone"), " > .draggable"), immediate = TRUE)
       removeUI(selector = paste0("#", ns("color_dropzone"), " > .draggable"), immediate = TRUE)
 
       if (input$dftoexplore == "none") {
-        availablevars(c())
-        dfactive$df <- NULL
+        availablevars(c()); dfactive$df <- NULL
       } else {
-        req(input$dftoexplore)
         if (input$dforshape2 == "data.frame") {
           dfactive$df <- dfs[[input$dftoexplore]]$data |> convert_numeric_cols()
         } else {
@@ -321,7 +333,6 @@ mod_graphicalexploration_server <- function(id, dfs, shapefile) {
     observeEvent(input$dropped_item, {
       zone <- input$dropped_item$zone
       value <- input$dropped_item$value
-
       if (zone == ns("var_dropzone")) {
         vars(unique(c(vars(), value)))
       } else if (zone == ns("group_dropzone")) {
@@ -334,7 +345,6 @@ mod_graphicalexploration_server <- function(id, dfs, shapefile) {
     observeEvent(input$removed_item, {
       zone <- input$removed_item$zone
       value <- input$removed_item$value
-
       if (zone == ns("var_dropzone")) {
         vars(setdiff(vars(), value))
       } else if (zone == ns("group_dropzone")) {
@@ -346,30 +356,72 @@ mod_graphicalexploration_server <- function(id, dfs, shapefile) {
 
     exploration_plot <- reactive({
       req(vars())
-      p <- ggplot(dfactive$df, aes(x = .data[[vars()[1]]]))
+      req(input$plot_type)
 
-      if (length(group_vars()) > 0) {
-        p <- ggplot(dfactive$df, aes(y = .data[[vars()[1]]], x = .data[[group_vars()[1]]], group = .data[[group_vars()[1]]]))
-      }
-      if (length(color_vars()) > 0) {
-        p <- p + aes(color = .data[[color_vars()[1]]], group = .data[[color_vars()[1]]])
+      yvar <- vars()[1]
+      xvar <- if (length(group_vars()) > 0) group_vars()[1] else NULL
+      colorvar <- if (length(color_vars()) > 0) color_vars()[1] else NULL
+
+      df <- dfactive$df
+      plot_type <- input$plot_type
+
+      aes_args <- list()
+      if (!is.null(xvar)) aes_args$x <- as.name(xvar)
+      if (!is.null(yvar)) aes_args$y <- as.name(yvar)
+      if (!is.null(colorvar)) aes_args$color <- as.name(colorvar)
+
+      p <- ggplot(df)
+
+      if (plot_type == "scatter") {
+        req(xvar, yvar)
+        p <- p + do.call(aes, aes_args) +
+          geom_point(size = 2, alpha = 0.7)
+
+      } else if (plot_type == "boxplot") {
+        req(yvar)
+        if (!is.null(xvar)) {
+          # Caso tradicional: boxplot y ~ x
+          aes_args <- list(x = as.name(xvar), y = as.name(yvar))
+          if (!is.null(colorvar)) aes_args$fill <- as.name(colorvar)
+          p <- p + do.call(aes, aes_args) +
+            geom_boxplot()
+        } else {
+          # Caso apenas y: um único boxplot
+          df$dummy <- "All"
+          aes_args <- list(x = as.name("dummy"), y = as.name(yvar))
+          if (!is.null(colorvar)) aes_args$fill <- as.name(colorvar)
+          p <- p + do.call(aes, aes_args) +
+            geom_boxplot()
+        }
+
+      } else if (plot_type == "density") {
+        if (!is.null(xvar)) {
+          aes_args <- list(x = as.name(xvar))
+          if (!is.null(colorvar)) aes_args$color <- as.name(colorvar)
+        } else {
+          aes_args <- list(x = as.name(yvar))
+          if (!is.null(colorvar)) aes_args$color <- as.name(colorvar)
+        }
+        p <- p + do.call(aes, aes_args) +
+          geom_density()
+
+      } else if (plot_type == "bar") {
+        req(xvar)
+        aes_args <- list(x = as.name(xvar))
+        if (!is.null(colorvar)) aes_args$fill <- as.name(colorvar)
+        p <- p + do.call(aes, aes_args) +
+          geom_bar()
       }
 
-      if (length(group_vars()) > 0) {
-        p <- p + geom_boxplot()
-      } else {
-        p <- p + geom_density()
-      }
       p + theme_minimal(base_size = 24)
     })
 
     output$exploration_plot <- renderPlot({
       exploration_plot()
     })
-
-
   })
 }
+
 
 
 ## To be copied in the UI

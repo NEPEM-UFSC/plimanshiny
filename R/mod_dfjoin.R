@@ -141,6 +141,14 @@ mod_dfjoin_server <- function(id, dfs, shapefile, settings){
                         choices = commvar)
     })
     observe({
+      req(input$dftojoinshp)
+      req(input$shapetojoin2)
+      commvar <- intersect(colnames(shapefile[[input$shapetojoin2]]$data), colnames(dfs[[input$dftojoinshp]]$data))
+      updatePickerInput(session, "varstojoin",
+                        choices = commvar)
+    })
+
+    observe({
       if(input$dforshape == "data.frames"){
         req(input$dftojoin)
         dfstojoin$vals <- lapply(input$dftojoin, function(x){
@@ -150,30 +158,13 @@ mod_dfjoin_server <- function(id, dfs, shapefile, settings){
         # observeEvent(input$startjoining, {
         req(dfstojoin$vals)
         req(input$varstojoin)
+        join_expr <- dplyr::join_by(!!!rlang::syms(input$varstojoin))
         if(input$type == "left"){
-          result$res <-
-            Reduce(
-              function(x, y) {
-                dplyr::left_join(x, y, by = input$varstojoin)
-              },
-              dfstojoin$vals
-            )
+          result$res <- purrr::reduce(dfstojoin$vals, dplyr::left_join,  by = join_expr)
         } else if(input$type == "right"){
-          result$res <-
-            Reduce(
-              function(x, y) {
-                dplyr::right_join(x, y, by = input$varstojoin)
-              },
-              dfstojoin$vals
-            )
+          result$res <- purrr::reduce(dfstojoin$vals, dplyr::right_join,  by = join_expr)
         } else{
-          result$res <-
-            Reduce(
-              function(x, y) {
-                dplyr::full_join(x, y, by = input$varstojoin)
-              },
-              dfstojoin$vals
-            )
+          result$res <- purrr::reduce(dfstojoin$vals, dplyr::full_join,  by = join_expr)
         }
 
       } else if(input$dforshape == "shapefiles"){
@@ -186,27 +177,26 @@ mod_dfjoin_server <- function(id, dfs, shapefile, settings){
         })
         observe({
           req(input$shapetojoin)
-          result$res <-
-            Reduce(
-              function(x, y) {
-                sf::st_join(x, y)
-              },
-              shpstojoin$vals
-            )
+          result$res <- result$res <- purrr::reduce(shpstojoin$vals, sf::st_join)
         })
       } else{
         observe({
           req(input$dftojoinshp)
           req(input$shapetojoin2)
+          req(input$varstojoin)
+          join_expr <- dplyr::join_by(!!!rlang::syms(input$varstojoin))
           if(input$type == "left"){
             result$res <- dplyr::left_join(shapefile[[input$shapetojoin2]]$data |> convert_numeric_cols(),
-                                           dfs[[input$dftojoinshp]]$data |> convert_numeric_cols())
+                                           dfs[[input$dftojoinshp]]$data |> convert_numeric_cols(),
+                                           by = join_expr)
           } else if(input$type == "right"){
             result$res <- dplyr::right_join(shapefile[[input$shapetojoin2]]$data |> convert_numeric_cols(),
-                                            dfs[[input$dftojoinshp]]$data |> convert_numeric_cols())
+                                            dfs[[input$dftojoinshp]]$data |> convert_numeric_cols(),
+                                            by = join_expr)
           } else{
             result$res <- dplyr::full_join(shapefile[[input$shapetojoin2]]$data |> convert_numeric_cols(),
-                                           dfs[[input$dftojoinshp]]$data |> convert_numeric_cols())
+                                           dfs[[input$dftojoinshp]]$data |> convert_numeric_cols(),
+                                           by = join_expr)
           }
         })
       }
@@ -224,8 +214,14 @@ mod_dfjoin_server <- function(id, dfs, shapefile, settings){
           defaultPageSize = 13
         )
       })
+
       observeEvent(input$donejoining, {
-        shapefile[[input$newset]] <- create_reactval(input$newset, result$res)
+        if(input$dforshape %in% c("data.frames", "data.frames with a shapefile")){
+          dfs[[input$newset]] <- create_reactval(input$newset, result$res)
+        } else{
+          shapefile[[input$newset]] <- create_reactval(input$newset, result$res)
+        }
+
         sendSweetAlert(
           session = session,
           title = "Data merged!",
@@ -235,6 +231,9 @@ mod_dfjoin_server <- function(id, dfs, shapefile, settings){
       })
 
     })
+
+
+
   })
 }
 

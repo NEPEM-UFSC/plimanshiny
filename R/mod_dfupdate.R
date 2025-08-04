@@ -102,7 +102,7 @@ mod_dfupdate_server <- function(id, dfs, shapefile, settings){
     )
 
     observeEvent(input$doneupdating, {
-      newfile <- paste0(file_name(input$dftoupdate), input$suffix, ".", file_extension(input$dftoupdate))
+      newfile <- paste0(input$dftoupdate, input$suffix)
       if(input$dforshape == "data.frame"){
         dfs[[newfile]] <- create_reactval(newfile, res_update$res())
       } else{

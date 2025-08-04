@@ -265,49 +265,157 @@ sdfun_L4 <- function(x, a, b, xmid, scal) {
                                                                                                                                                             exp((xmid - x)/scal))))/((1 + exp((xmid - x)/scal))^2)^2)
 }
 
+# mod_L4 <- function(data,
+#                    flight_date = "date",
+#                    predictor = "median.NDVI",
+#                    sowing_date = NULL,
+#                    parallel = FALSE) {
+#   # Prepare data
+#   dftemp <- data |>
+#     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
+#     dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+#     dplyr::group_by(unique_plot) |>
+#     tidyr::nest()
+#
+#   # Parallel or Sequential Plan
+#   if (parallel) {
+#     future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
+#   } else {
+#     future::plan(future::sequential)
+#   }
+#   on.exit(future::plan(future::sequential))
+#
+#   `%dofut%` <- doFuture::`%dofuture%`
+#
+#   # Fit model for each group
+#   results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
+#     df <- as.data.frame(dftemp$data[[i]])
+#     tryCatch({
+#       # Compute flight days
+#       if (!is.null(sowing_date)) {
+#         flights <- as.numeric(round(difftime(to_datetime(df[[flight_date]]), to_datetime(sowing_date), units = "days")))
+#       } else {
+#         flights <- to_datetime(df[[flight_date]])$yday + 1
+#       }
+#
+#       fflight <- min(flights)
+#       lflight <- max(flights) + 20
+#       y <- df |> dplyr::pull(!!rlang::sym(predictor))
+#
+#       model <- try(
+#         nls( y ~ SSfpl(flights, A, B, xmid, scal),
+#              data = data.frame(flights, y),
+#              control = nls.control(maxiter = 1000)),
+#         silent = TRUE
+#       )
+#
+#       if (inherits(model, "try-error")) {
+#         model <- suppressWarnings(
+#           minpack.lm::nlsLM(y ~ SSfpl(flights, A, B, xmid, scal),
+#                             data = data.frame(flights, y))
+#         )
+#       }
+#
+#       coefslog <- coef(model)
+#       a <- coefslog[1]
+#       b <- coefslog[2]
+#       xmid <- coefslog[3]
+#       scal <- coefslog[4]
+#
+#       # Critical points
+#       cp1 <- optimise(sdfun_L4, interval = c(fflight, lflight), a = a, b = b, xmid = xmid, scal = scal, maximum = FALSE)
+#       cp2 <- optimise(sdfun_L4, interval = c(fflight, lflight), a = a, b = b, xmid = xmid, scal = scal, maximum = TRUE)
+#
+#       # Heading and maturity
+#       xfd <- seq(min(flights), ceiling(cp1$minimum), length.out = 500)
+#       yfd <- sdfun_L4(xfd, a, b, xmid, scal)
+#       dfreg <- data.frame(x = c(min(xfd), max(xfd)), y = c(max(yfd), min(yfd)))
+#       regmod <- lm(y ~ x, data = dfreg)
+#       predline <- predict(regmod, newdata = data.frame(x = xfd))
+#       head <- xfd[which.max(abs(yfd - predline))]
+#
+#       xfd2 <- seq(ceiling(xmid), lflight, length.out = 500)
+#       yfd2 <- fdfun_L4(xfd2, a, b, xmid, scal)
+#       dfreg2 <- data.frame(x = c(min(xfd2), max(xfd2)), y = c(min(yfd2), max(yfd2)))
+#       regmod2 <- lm(y ~ x, data = dfreg2)
+#       predline2 <- predict(regmod2, newdata = data.frame(x = xfd2))
+#       maturation <- xfd2[which.max(abs(yfd2 - predline2))]
+#
+#       # Area under curve
+#       int1 <- integrate(modfun_L4, lower = fflight, upper = lflight, a = a, b = b, xmid = xmid, scal = scal)
+#       int2 <- integrate(modfun_L4, lower = head, upper = maturation, a = a, b = b, xmid = xmid, scal = scal)
+#
+#       tibble::tibble(
+#         unique_plot = dftemp$unique_plot[i],
+#         a = a,
+#         b = b,
+#         inflection = xmid,
+#         scal = scal,
+#         heading = head,
+#         maturity = maturation,
+#         repr_period = maturation - head,
+#         auc = int1$value,
+#         auc_repr_period = int2$value,
+#         parms = list(
+#           model = modfun_L4,
+#           modeladj = model,
+#           fd = fdfun_L4,
+#           sd = sdfun_L4,
+#           coefs = list(a = a, b = b, xmid = xmid, scal = scal),
+#           xmin = fflight,
+#           xmax = lflight
+#         )
+#       )
+#     }, error = function(e) {
+#       # Return NA values if model fitting fails
+#       tibble::tibble(
+#         unique_plot = dftemp$unique_plot[i],
+#         a = NA_real_,
+#         b = NA_real_,
+#         inflection = NA_real_,
+#         scal = NA_real_,
+#         heading = NA_real_,
+#         maturity = NA_real_,
+#         repr_period = NA_real_,
+#         auc = NA_real_,
+#         auc_repr_period = NA_real_,
+#         parms = NA
+#       )
+#     })
+#   }
+#
+#   # Final results table
+#   results <-
+#     results_list |>
+#     tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+#     tidyr::nest(parms = parms)
+#
+#   return(results)
+# }
+
 mod_L4 <- function(data,
                    flight_date = "date",
-                   predictor = "median.NDVI",
-                   sowing_date = NULL,
-                   parallel = FALSE) {
-  # Prepare data
-  dftemp <- data |>
-    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
-    dplyr::group_by(unique_plot) |>
-    tidyr::nest()
-
-  # Parallel or Sequential Plan
-  if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
-  } else {
-    future::plan(future::sequential)
-  }
-  on.exit(future::plan(future::sequential))
-
-  `%dofut%` <- doFuture::`%dofuture%`
-
-  # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
+                   predictor = "median.NGRDI",
+                   sowing_date = "05-28-2024",
+                   parallel = TRUE,
+                   session = NULL) {
+  mod_L4_worker <- function(df, sowing_date, flight_date, predictor,
+                            modfun_L4, fdfun_L4, sdfun_L4, to_datetime) {
     tryCatch({
-      # Compute flight days
+      df <- as.data.frame(df)
       if (!is.null(sowing_date)) {
         flights <- as.numeric(round(difftime(to_datetime(df[[flight_date]]), to_datetime(sowing_date), units = "days")))
       } else {
         flights <- to_datetime(df[[flight_date]])$yday + 1
       }
-
       fflight <- min(flights)
       lflight <- max(flights) + 20
-      y <- df |> dplyr::pull(!!rlang::sym(predictor))
+      y <- df[[predictor]]
 
-      model <- try(
-        nls( y ~ SSfpl(flights, A, B, xmid, scal),
-             data = data.frame(flights, y),
-             control = nls.control(maxiter = 1000)),
-        silent = TRUE
-      )
+      model <- try(nls(y ~ SSfpl(flights, A, B, xmid, scal),
+                       data = data.frame(flights, y),
+                       control = nls.control(maxiter = 1000)),
+                   silent = TRUE)
 
       if (inherits(model, "try-error")) {
         model <- suppressWarnings(
@@ -317,36 +425,27 @@ mod_L4 <- function(data,
       }
 
       coefslog <- coef(model)
-      a <- coefslog[1]
-      b <- coefslog[2]
-      xmid <- coefslog[3]
-      scal <- coefslog[4]
+      a <- coefslog[1]; b <- coefslog[2]; xmid <- coefslog[3]; scal <- coefslog[4]
 
-      # Critical points
       cp1 <- optimise(sdfun_L4, interval = c(fflight, lflight), a = a, b = b, xmid = xmid, scal = scal, maximum = FALSE)
       cp2 <- optimise(sdfun_L4, interval = c(fflight, lflight), a = a, b = b, xmid = xmid, scal = scal, maximum = TRUE)
 
-      # Heading and maturity
       xfd <- seq(min(flights), ceiling(cp1$minimum), length.out = 500)
       yfd <- sdfun_L4(xfd, a, b, xmid, scal)
-      dfreg <- data.frame(x = c(min(xfd), max(xfd)), y = c(max(yfd), min(yfd)))
-      regmod <- lm(y ~ x, data = dfreg)
+      regmod <- lm(y ~ x, data = data.frame(x = xfd, y = yfd))
       predline <- predict(regmod, newdata = data.frame(x = xfd))
       head <- xfd[which.max(abs(yfd - predline))]
 
       xfd2 <- seq(ceiling(xmid), lflight, length.out = 500)
       yfd2 <- fdfun_L4(xfd2, a, b, xmid, scal)
-      dfreg2 <- data.frame(x = c(min(xfd2), max(xfd2)), y = c(min(yfd2), max(yfd2)))
-      regmod2 <- lm(y ~ x, data = dfreg2)
+      regmod2 <- lm(y ~ x, data = data.frame(x = xfd2, y = yfd2))
       predline2 <- predict(regmod2, newdata = data.frame(x = xfd2))
       maturation <- xfd2[which.max(abs(yfd2 - predline2))]
 
-      # Area under curve
       int1 <- integrate(modfun_L4, lower = fflight, upper = lflight, a = a, b = b, xmid = xmid, scal = scal)
       int2 <- integrate(modfun_L4, lower = head, upper = maturation, a = a, b = b, xmid = xmid, scal = scal)
 
       tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
         a = a,
         b = b,
         inflection = xmid,
@@ -365,11 +464,10 @@ mod_L4 <- function(data,
           xmin = fflight,
           xmax = lflight
         )
-      )
+      ) |> tidyr::nest(parms = parms)
+
     }, error = function(e) {
-      # Return NA values if model fitting fails
       tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
         a = NA_real_,
         b = NA_real_,
         inflection = NA_real_,
@@ -384,13 +482,85 @@ mod_L4 <- function(data,
     })
   }
 
-  # Final results table
-  results <- results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
-    tidyr::nest(parms = parms)
+  if (isTRUE(parallel)) {
+    ncores <- ceiling(parallel::detectCores() * .5)
+    dftemp <-
+      data |>
+      dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
+      dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+      dplyr::group_by(unique_plot) |>
+      tidyr::nest() |>
+      dplyr::ungroup() |>
+      dplyr::mutate(index = rep(seq(1, ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(index) |>
+      dplyr::group_split() |>
+      as.list()
+
+
+    mirai::daemons(n = min(length(dftemp), ncores))
+    on.exit(mirai::daemons(n = 0))
+
+    results_list <- mirai::mirai_map(
+      .x = dftemp,
+      .f = function(x, sowing_date, flight_date, predictor,
+                    modfun_L4, fdfun_L4, sdfun_L4, to_datetime) {
+        x |>
+          dplyr::mutate(mod = purrr::map(data,
+                                         mod_L4_worker,
+                                         sowing_date = sowing_date,
+                                         flight_date = flight_date,
+                                         predictor = predictor,
+                                         modfun_L4 = modfun_L4,
+                                         fdfun_L4 = fdfun_L4,
+                                         sdfun_L4 = sdfun_L4,
+                                         to_datetime = to_datetime)) |>
+          tidyr::unnest(cols = mod) |>
+          dplyr::select(-c(data, index))
+      },
+      .args = list(
+        sowing_date = sowing_date,
+        flight_date = flight_date,
+        predictor = predictor,
+        modfun_L4 = modfun_L4,
+        fdfun_L4 = fdfun_L4,
+        sdfun_L4 = sdfun_L4,
+        to_datetime = to_datetime
+      )
+    )[.progress]
+
+  } else {
+    dftemp <-
+      data |>
+      dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
+      dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+      dplyr::group_by(unique_plot) |>
+      tidyr::nest() |>
+      dplyr::ungroup()
+
+    results_list <- vector("list", nrow(dftemp))
+    for (i in seq_len(nrow(dftemp))) {
+      row <- dftemp[i, ]
+      res <- mod_L4_worker(row$data[[1]],
+                           sowing_date = sowing_date,
+                           flight_date = flight_date,
+                           predictor = predictor,
+                           modfun_L4 = modfun_L4,
+                           fdfun_L4 = fdfun_L4,
+                           sdfun_L4 = sdfun_L4,
+                           to_datetime = to_datetime)
+
+      results_list[[i]] <- dplyr::bind_cols(dplyr::select(row, unique_plot), res)
+    }
+  }
+
+  results <-
+    results_list |>
+    dplyr::bind_rows() |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE)
 
   return(results)
 }
+
 
 
 help_mod_L4_eq <- function() {
