@@ -423,7 +423,10 @@ mod_timeseriesanalysis_ui <- function(id){
                   inputId = ns("plottoshow"),
                   label = "'unique_id' to see the evolution across time:",
                   choices = NULL,
-                  multiple = FALSE
+                  multiple = FALSE,
+                  options = list(
+                    "live-search" = TRUE
+                  )
                 )
               ),
               col_4(
