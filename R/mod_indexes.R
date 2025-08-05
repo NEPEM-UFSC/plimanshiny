@@ -584,6 +584,9 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
     # Index profile
     observeEvent(input$startprofile, {
       req(index[[input$activeindex]]$data)
+      if(is.null(basemap$map)){
+        basemap$map <- mosaic_view(index[[input$activeindex]]$data)
+      }
       drawn <- reactiveValues()
       cpoints <- callModule(editMod, "indexprofile",
                             leafmap = basemap$map@map,
