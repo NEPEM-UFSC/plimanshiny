@@ -1561,6 +1561,9 @@ get_climate <- function(env = NULL, lat, lon, start, end,
     vpd <- es - ea
     return(data.frame(ES = es, EA = ea, VPD = vpd))
   }
+  slope_svp <- function(tmed) {
+    4098 * (0.6108 * exp((17.27 * tmed) / (tmed + 237.3))) / (tmed + 237.3)^2
+  }
 
 
   # Initial validations
@@ -1847,11 +1850,28 @@ get_climate <- function(env = NULL, lat, lon, start, end,
       final_df$EA <- vpd_results$EA
       final_df$VPD <- vpd_results$VPD
     }
+    if(!is.null(temp_col)){
+      final_df$SLOPE_SVP <- slope_svp(final_df[[temp_col]])
+    }
   }
   if(scale == "hourly"){
     final_df <-
       final_df |>
       dplyr::relocate(ENV, LAT, LON, DATE, .before = 1)
+
+    temp_col <- if("T2M" %in% names(final_df)) "T2M" else if("T2M_MAX" %in% names(final_df)) "T2M_MAX" else NULL
+    rh_col <- if("RH2M" %in% names(final_df)) "RH2M" else NULL
+
+    if (!is.null(temp_col) && !is.null(rh_col)) {
+      vpd_results <- vpd(final_df[[temp_col]], final_df[[rh_col]])
+      final_df$ES <- vpd_results$ES
+      final_df$EA <- vpd_results$EA
+      final_df$VPD <- vpd_results$VPD
+    }
+    if(!is.null(temp_col)){
+      final_df$SLOPE_SVP <- slope_svp(final_df[[temp_col]])
+    }
+
   }
   if(scale %in% c("monthly", "climatology")){
     final_df <-
