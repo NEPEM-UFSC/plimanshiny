@@ -1780,7 +1780,8 @@ get_climate <- function(env = NULL, lat, lon, start, end,
         p <- progressr::progressor(steps = length(lat))
         result_list <- furrr::future_map(seq_along(lat), function(i) {
           p(message = sprintf("%s (%d/%d)", env[i], i, length(lat)))
-          fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
+          fetch_data_point(lat[i], lon[i], env[i], start[i], end[i]
+          )
         }, .options = furrr::furrr_options(seed = TRUE))
       }, message = "Fetching climate data for")
     }
@@ -1860,3 +1861,27 @@ get_climate <- function(env = NULL, lat, lon, start, end,
   }
   return(final_df)
 }
+
+download_js_libs_unpkg <- function(libs, dest_dir = "inst/app/www") {
+  # libs: lista de libs, ex: list(list(name="lodash", version="4.17.21"), ...)
+  if (!dir.exists(dest_dir)) dir.create(dest_dir, recursive = TRUE)
+  for (lib in libs) {
+    lib_name <- lib$name
+    lib_version <- lib$version
+    dest_file <- file.path(dest_dir, sprintf("%s-%s.min.js", lib_name, lib_version))
+    if (file.exists(dest_file)) {
+      message(sprintf("Biblioteca já existe: %s", dest_file))
+      next
+    }
+    url <- sprintf("https://unpkg.com/%s@%s/dist/%s.min.js", lib_name, lib_version, lib_name)
+    tryCatch({
+      download.file(url, destfile = dest_file, mode = "wb")
+      message(sprintf("Baixado: %s", dest_file))
+    }, error = function(e) {
+      warning(sprintf("Erro ao baixar %s: %s", lib_name, e$message))
+    })
+  }
+}
+
+# Exemplo de uso:
+# download_js_libs_unpkg(list(list(name="lodash", version="4.17.21"), list(name="jquery", version="3.7.1")))

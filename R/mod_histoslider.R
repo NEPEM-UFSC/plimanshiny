@@ -1,5 +1,29 @@
-mod_histo_slider_ui <- function(id, data, width = "100%", height = "400px", n_bins = 100, digits = NULL) {
+ensure_js_css_libs <- function() {
+  libs <- list(
+    list(name = "d3", version = "7.8.5"), # d3.v7.min.js
+    list(name = "nouislider", version = "15.7.0") # nouislider.min.js/.css
+  )
+  dest_dir <- "inst/app/www/libs"
+  if (!dir.exists(dest_dir)) dir.create(dest_dir, recursive = TRUE)
+  # d3
+  d3_file <- file.path(dest_dir, "d3.v7.min.js")
+  if (!file.exists(d3_file)) {
+    download.file("https://unpkg.com/d3@7.8.5/dist/d3.min.js", d3_file, mode = "wb")
+  }
+  # nouislider js
+  noui_js <- file.path(dest_dir, "nouislider.min.js")
+  if (!file.exists(noui_js)) {
+    download.file("https://unpkg.com/nouislider@15.7.0/dist/nouislider.min.js", noui_js, mode = "wb")
+  }
+  # nouislider css
+  noui_css <- file.path(dest_dir, "nouislider.min.css")
+  if (!file.exists(noui_css)) {
+    download.file("https://unpkg.com/nouislider@15.7.0/dist/nouislider.min.css", noui_css, mode = "wb")
+  }
+}
 
+mod_histo_slider_ui <- function(id, data, width = "100%", height = "400px", n_bins = 100, digits = NULL) {
+  ensure_js_css_libs()
 
   # Helper function to get the number of significant digits for small values
   get_significant_digits <- function(x) {
@@ -75,108 +99,108 @@ mod_histo_slider_ui <- function(id, data, width = "100%", height = "400px", n_bi
         function createHistoSlider(containerId, data) {
           var histoDiv = document.getElementById(containerId + '_histogram');
           var sliderDiv = document.getElementById(containerId + '_slider');
-          if (!histoDiv || !sliderDiv) return;
-
-          var margin = {top: 20, right: 30, bottom: 30, left: 15};
-          var containerW = histoDiv.clientWidth || 600;
-          var width = containerW - margin.left - margin.right;
-
-          var containerH = histoDiv.clientHeight || 300;
-          var height = containerH - margin.top - margin.bottom;
-
-          histoDiv.innerHTML = '';
-
-          var svg = d3.select(histoDiv)
-                      .append('svg')
-                      .attr('width', width + margin.left + margin.right)
-                      .attr('height', height + margin.top + margin.bottom)
-                      .append('g')
-                      .attr('transform', 'translate(' + margin.left + ',' + margin.top + ')');
-
-          var xExtent = d3.extent(data);
-          var x = d3.scaleLinear().domain(xExtent).nice().range([0, width]);
-          var bins = d3.bin().domain(x.domain()).thresholds(x.ticks(%d))(data);
-
-          var y = d3.scaleLinear()
-                    .domain([0, d3.max(bins, function(d) { return d.length; })])
-                    .nice()
+                    .nice()!sliderDiv) return;
                     .range([height, 0]);
-
-          svg.append('g')
+          var margin = {top: 20, right: 30, bottom: 30, left: 15};
+          svg.append('g')= histoDiv.clientWidth || 600;
              .attr('transform', 'translate(0,' + height + ')')
              .call(d3.axisBottom(x).ticks(7));
-
-          var bar = svg.selectAll('.bar')
+          var containerH = histoDiv.clientHeight || 300;
+          var bar = svg.selectAll('.bar')n.top - margin.bottom;
                        .data(bins)
                        .enter().append('g')
                        .attr('class', 'bar')
                        .attr('transform', function(d) { return 'translate(' + x(d.x0) + ',' + y(d.length) + ')'; });
-
-          bar.append('rect')
-             .attr('x', 0)
+                      .append('svg')
+          bar.append('rect')'width', width + margin.left + margin.right)
+             .attr('x', 0)r('height', height + margin.top + margin.bottom)
              .attr('width', function(d) { return x(d.x1) - x(d.x0); })
-             .attr('height', function(d) { return height - y(d.length); })
+             .attr('height', function(d) { return height - y(d.length); })+ margin.top + ')');
              .attr('fill', 'blue');
-
-          if (sliderDiv.noUiSlider) { sliderDiv.noUiSlider.destroy(); }
-          noUiSlider.create(sliderDiv, {
+          var xExtent = d3.extent(data);
+          if (sliderDiv.noUiSlider) { sliderDiv.noUiSlider.destroy(); }th]);
+          noUiSlider.create(sliderDiv, {omain()).thresholds(x.ticks(%d))(data);
             start: [xExtent[0], xExtent[1]],
-            connect: true,
-            range: {
+            connect: true,Linear()
+            range: {.domain([0, d3.max(bins, function(d) { return d.length; })])
               'min': xExtent[0],
-              'max': xExtent[1]
+              'max': xExtent[1]ght, 0]);
             },
             tooltips: true,
-            format: {
+            format: {ransform', 'translate(0,' + height + ')')
               to: function (value) { return parseFloat(value.toFixed(%d)); },
               from: function (value) { return Number(value); }
-            }
-          });
-
+            } bar = svg.selectAll('.bar')
+          });          .data(bins)
+                       .enter().append('g')
           function updateHighlights(range) {
-            var minVal = parseFloat(range[0]),
+            var minVal = parseFloat(range[0]),tion(d) { return 'translate(' + x(d.x0) + ',' + y(d.length) + ')'; });
                 maxVal = parseFloat(range[1]);
             bar.select('rect')
               .attr('fill', function(d) {
-                var mid = (d.x0 + d.x1) / 2;
+                var mid = (d.x0 + d.x1) / 2;turn x(d.x1) - x(d.x0); })
                 return (mid >= minVal && mid <= maxVal) ? 'rgba(40, 167,69, 1)' : 'rgba(40, 167,69, 0.3)';
-              });
+              });r('fill', 'blue');
           }
-
-          updateHighlights(xExtent);
-
+          if (sliderDiv.noUiSlider) { sliderDiv.noUiSlider.destroy(); }
+          updateHighlights(xExtent);v, {
+            start: [xExtent[0], xExtent[1]],
           // Update highlights on every move...
           sliderDiv.noUiSlider.on('update', function (values) {
             updateHighlights(values);
-          });
-
+          }); 'max': xExtent[1]
+            },
           // Only send the values to Shiny when the slider is released.
           sliderDiv.noUiSlider.on('set', function (values) {
-            if (window.Shiny) {
+            if (window.Shiny) {ue) { return parseFloat(value.toFixed(%d)); },
               Shiny.setInputValue(containerId + '_range', {min: parseFloat(values[0]), max: parseFloat(values[1])}, {priority: 'event'});
             }
           });
         }
-
-        function init() {
-          createHistoSlider(containerId, %s);
-        }
-
+          function updateHighlights(range) {
+        function init() {parseFloat(range[0]),
+          createHistoSlider(containerId, %s);;
+        }   bar.select('rect')
+              .attr('fill', function(d) {
         if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', init);
-        } else {
+          document.addEventListener('DOMContentLoaded', init);a(40, 167,69, 1)' : 'rgba(40, 167,69, 0.3)';
+        } else {;
           init();
         }
-
+          updateHighlights(xExtent);
         var resizeTimer;
         window.addEventListener('resize', function() {
-          clearTimeout(resizeTimer);
+          clearTimeout(resizeTimer);pdate', function (values) {
           resizeTimer = setTimeout(function() {
             createHistoSlider(containerId, %s);
           }, 200);
-        });
-
+        });/ Only send the values to Shiny when the slider is released.
+          sliderDiv.noUiSlider.on('set', function (values) {
         Shiny.addCustomMessageHandler(containerId + '_updateHistoData', function(newData) {
+          createHistoSlider(containerId, newData);range', {min: parseFloat(values[0]), max: parseFloat(values[1])}, {priority: 'event'});
+        }); }
+      })(););
+    ", ns("histo_slider"), n_bins, digits, data_json, data_json)))
+  )
+}       function init() {
+          createHistoSlider(containerId, %s);
+#' Histo Slider Server Module
+mod_histo_slider_server <- function(id, data_reactive) {
+  moduleServer(id, function(input, output, session) {
+    ns <- session$nsddEventListener('DOMContentLoaded', init);
+        } else {
+    # When the reactive data changes, send an update message to the client.
+    observeEvent(data_reactive(), {
+      new_data <- data_reactive()
+      session$sendCustomMessage(paste0(ns("histo_slider"), "_updateHistoData"), new_data)
+    })  window.addEventListener('resize', function() {
+          clearTimeout(resizeTimer);
+    # Return a reactive expression for the current slider range.
+    reactive({eateHistoSlider(containerId, %s);
+      input[["histo_slider_range"]]
+    })  });
+  })
+}       Shiny.addCustomMessageHandler(containerId + '_updateHistoData', function(newData) {
           createHistoSlider(containerId, newData);
         });
       })();
