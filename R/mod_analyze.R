@@ -1043,15 +1043,13 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
           }
 
         } else{
+          shp <- shapefile[[input$activeshape]]$data
           if(!input$parallelanalysis){
-            shp <- do.call(rbind,
-                           lapply(shapefile[[input$activeshape]]$data, function(x){
-                             x |> dplyr::select(geometry)
-                           }))
             # Analyze the mosaic by plot
             bind <- list()
             progressSweetAlert(
-              session = session, id = "myprogress",
+              session = session,
+              id = "myprogress",
               title = "Start",
               display_pct = TRUE,
               value = 0,
@@ -1104,95 +1102,176 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
                                map_direction = input$mapdirection,
                                verbose = FALSE)
             }
-          } else{
+          } else {
 
             req(input$numworkers)
             nworkers <- input$numworkers
-            future::plan(future::multisession, workers = nworkers)
-            on.exit(future::plan(future::sequential))
-            `%dofut%` <- doFuture::`%dofuture%`
+
             waiter_show(
               html = tagList(
                 spin_google(),
-                h2(paste0("Analyzing the mosaic using parallel processing in multiple sessions (",input$numworkers ,"). Please, wait."))
+                h2(paste0("Analyzing ",nrow(shp) , " plots using parallel processing with ", nworkers, " workers. Please, wait."))
               ),
               color = "#228B227F"
             )
 
+            # --- prepare temp index on disk so workers can read it ----------------------
             tmpterra <- tempdir()
-            if(!is.null(index[[input$activeindex]]$data)){
-              mosaic_export(index[[input$activeindex]]$data, paste0(tmpterra, "/tmpindex.tif"), overwrite = TRUE)
+            tmpindex_path <- file.path(tmpterra, "tmpindex.tif")
+
+            if (!is.null(index[[input$activeindex]]$data)) {
+              mosaic_export(index[[input$activeindex]]$data, tmpindex_path, overwrite = TRUE)
               indexnull <- FALSE
-            } else{
+            } else {
               indexnull <- TRUE
             }
-            on.exit({
-              parallel::stopCluster(cl)
-              if(!is.null(index[[input$activeindex]]$data)){
-                file.remove(paste0(tmpterra, "/tmpindex.tif"))
-              }
-            })
-            shp <- reactive(shp)()
-            segment_plot <- input$segmentplot
-            segment_individuals <- input$segmentindividuals
-            segmentplot <- input$segmentplot
-            watershed <- input$watershed
-            tolerance <- input$tolerance
-            extension <- input$extension
-            invert <- input$invertindex
-            # summarize_fun <- input$summarizefun
-            summarize_quantiles <- quantiles
-            include_if <- input$includeif
-            threshold <- ifelse(input$threshold == "Otsu", "Otsu", input$threshvalue)
-            filter <- ifelse(input$filter, input$filterval, FALSE)
-            opening <- ifelse(input$opening, input$openingval, FALSE)
-            lower_noise <- input$lower_noise
-            simplify <- input$simplify
-            pathmosaic <- pathmosaic$path
-            mapindividuals = input$mapindividual
-            mapdirection = input$mapdirection
 
-            bind <-
-              foreach::foreach(i = 1:nrow(shp)) %dofut%{
-                if(indexnull){
-                  indexes <- NULL
-                } else{
-                  indexes <- terra::crop(terra::rast(paste0(tmpterra, "/tmpindex.tif")), terra::vect(shp$geometry[[i]]) |> terra::ext())
+            # capture inputs/objects once
+            segment_plot     <- input$segmentplot
+            segment_individuals <- input$segmentindividuals
+            watershed        <- input$watershed
+            tolerance        <- input$tolerance
+            extension        <- input$extension
+            invert           <- input$invertindex
+            summarize_quantiles <- quantiles
+            include_if       <- input$includeif
+            threshold        <- ifelse(input$threshold == "Otsu", "Otsu", input$threshvalue)
+            filter           <- ifelse(input$filter, input$filterval, FALSE)
+            opening          <- ifelse(input$opening, input$openingval, FALSE)
+            lower_noise      <- input$lower_noise
+            simplify         <- input$simplify
+            path_mosaic      <- pathmosaic$path
+            mapindividuals   <- input$mapindividual
+            mapdirection     <- input$mapdirection
+
+            # --- start mirai daemons ----------------------------------------------------
+            mirai::daemons(n = nworkers)
+            on.exit({
+              mirai::daemons(n = 0)
+              if (!indexnull && file.exists(tmpindex_path)) file.remove(tmpindex_path)
+              waiter_hide()
+            }, add = TRUE)
+
+            # chunk indices for workers (balanced)
+            ids <- seq_len(nrow(shp))
+            chunked_ids <- split(ids, rep(seq_len(nworkers), length.out = length(ids)))
+
+            results_chunks <- mirai::mirai_map(
+              .x = chunked_ids,
+              .f = function(id_chunk, shp, indexnull, tmpindex_path, path_mosaic,
+                            mask, segment_plot, segment_individuals, simplify,
+                            indcomp, watershed, tolerance, extension, invert,
+                            summf, summarize_quantiles, include_if, threshold,
+                            filter, opening, lower_noise, lower_size, upper_size,
+                            topn_lower, topn_upper, mapindividuals, mapdirection) {
+
+                # If needed on workers:
+                # requireNamespace("terra", quietly = TRUE)
+
+                out <- vector("list", length(id_chunk))
+                for (j in seq_along(id_chunk)) {
+                  i <- id_chunk[j]
+
+                  if (indexnull) {
+                    indexes <- NULL
+                  } else {
+                    indexes <- terra::crop(
+                      terra::rast(tmpindex_path),
+                      terra::ext(terra::vect(shp$geometry[[i]]))
+                    )
+                  }
+
+                  out[[j]] <- mosaic_analyze(
+                    terra::crop(terra::rast(path_mosaic),
+                                terra::ext(terra::vect(shp$geometry[[i]]))),
+                    indexes              = indexes,
+                    mask                 = mask,
+                    plot                 = FALSE,
+                    shapefile            = shp[i, ],
+                    segment_plot         = segment_plot,
+                    segment_individuals  = segment_individuals,
+                    simplify             = simplify,
+                    segment_index        = indcomp,
+                    watershed            = watershed,
+                    tolerance            = tolerance,
+                    extension            = extension,
+                    invert               = invert,
+                    summarize_fun        = summf,
+                    summarize_quantiles  = summarize_quantiles,
+                    include_if           = include_if,
+                    threshold            = threshold,
+                    filter               = filter,
+                    opening              = opening,
+                    lower_noise          = lower_noise,
+                    lower_size           = lower_size,
+                    upper_size           = upper_size,
+                    topn_lower           = topn_lower,
+                    topn_upper           = topn_upper,
+                    map_individuals      = mapindividuals,
+                    map_direction        = mapdirection,
+                    verbose              = FALSE
+                  )
                 }
-                mosaic_analyze(terra::crop(terra::rast(pathmosaic), terra::vect(shp$geometry[[i]]) |> terra::ext()),
-                               indexes = indexes,
-                               mask = maskval$mask,
-                               plot = FALSE,
-                               shapefile = shp[i, ],
-                               segment_plot = segment_plot,
-                               segment_individuals = segment_individuals,
-                               simplify = simplify,
-                               segment_index = indcomp,
-                               watershed = watershed,
-                               tolerance = tolerance,
-                               extension = extension,
-                               invert = invert,
-                               summarize_fun = summf,
-                               summarize_quantiles = summarize_quantiles,
-                               include_if = include_if,
-                               threshold = threshold,
-                               filter = filter,
-                               opening = opening,
-                               lower_noise = lower_noise,
-                               lower_size = lower_size,
-                               upper_size = upper_size,
-                               topn_lower = topn_lower,
-                               topn_upper = topn_upper,
-                               map_individuals = mapindividuals,
-                               map_direction = mapdirection,
-                               verbose = FALSE)
-              }
+                out
+              },
+              .args = list(
+                shp                 = shp,
+                indexnull           = indexnull,
+                tmpindex_path       = tmpindex_path,
+                path_mosaic         = path_mosaic,
+                mask                = maskval$mask,
+                segment_plot        = segment_plot,
+                segment_individuals = segment_individuals,
+                simplify            = simplify,
+                indcomp             = indcomp,
+                watershed           = watershed,
+                tolerance           = tolerance,
+                extension           = extension,
+                invert              = invert,
+                summf               = summf,
+                summarize_quantiles = summarize_quantiles,
+                include_if          = include_if,
+                threshold           = threshold,
+                filter              = filter,
+                opening             = opening,
+                lower_noise         = lower_noise,
+                lower_size          = lower_size,
+                upper_size          = upper_size,
+                topn_lower          = topn_lower,
+                topn_upper          = topn_upper,
+                mapindividuals      = mapindividuals,
+                mapdirection        = mapdirection
+              )
+            )[.progress]
+
+            # flatten list-of-lists from chunks
+            bind <- unlist(results_chunks, recursive = FALSE)
 
             req(bind)
-            names(bind) <- paste0("P", leading_zeros(1:length(bind), 4))
-
+            names(bind) <- paste0("P", leading_zeros(seq_along(bind), 4))
           }
 
+
+          result_plot <- dplyr::bind_rows(
+            lapply(bind, function(x){
+              tmp <- x$result_plot
+              tmp$plot_id <- NULL
+              tmp
+            }),
+            .id = "plot_id"
+          ) |>
+            dplyr::relocate(plot_id, .after = block) |>
+            sf::st_as_sf()
+
+          centr <-
+            suppressWarnings(
+              result_plot |>
+                sf::st_centroid() |>
+                sf::st_coordinates() |>
+                as.data.frame() |>
+                setNames(c("x", "y"))
+            ) |>
+            dplyr::bind_cols(result_plot |> sf::st_drop_geometry() |>  dplyr::select(block, plot_id))
 
           if(is.null(bind[[1]]$result_individ_map)){
             result_individ_map <- NULL
@@ -1220,32 +1299,14 @@ mod_analyze_server <- function(id, mosaic_data, basemap, shapefile, index, pathm
               .id = "plot_id"
             ) |>
               dplyr::relocate(plot_id, .after = block) |>
-              sf::st_as_sf()
+              sf::st_as_sf() |>
+              dplyr::left_join(centr, by = dplyr::join_by(block, plot_id)) |> dplyr::relocate(x, y, .after = plot_id)
           }
 
-          result_plot <- dplyr::bind_rows(
-            lapply(bind, function(x){
-              tmp <- x$result_plot
-              tmp$plot_id <- NULL
-              tmp
-            }),
-            .id = "plot_id"
-          ) |>
-            dplyr::relocate(plot_id, .after = block) |>
-            sf::st_as_sf()
-
-          centr <-
-            suppressWarnings(
-              res$result_plot |>
-                sf::st_centroid() |>
-                sf::st_coordinates() |>
-                as.data.frame() |>
-                setNames(c("x", "y"))
-            )
 
           res <-
             list(result_plot = result_plot |> dplyr::left_join(centr, by = dplyr::join_by(block, plot_id)) |> dplyr::relocate(x, y, .after = plot_id),
-                 result_plot_summ = result_plot_summ |> dplyr::left_join(centr, by = dplyr::join_by(block, plot_id)) |> dplyr::relocate(x, y, .after = plot_id),
+                 result_plot_summ = result_plot_summ,
                  result_indiv = result_indiv,
                  result_individ_map = NULL,
                  map_plot = NULL,

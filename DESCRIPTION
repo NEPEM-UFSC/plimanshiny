@@ -3,37 +3,41 @@ Title: A shiny app for the pliman package
 Version: 0.3.0
 Authors@R: 
     person("Tiago", "Olivoto", , "tiagoolivoto@gmail.com", role = c("aut", "cre"))
-Description: provides an interactive Shiny-based graphical user interface
-    for the pliman package, facilitating user-friendly access to advanced
-    plant image analysis tools without the need for extensive programming
-    knowledge. This package integrates a variety of functionalities for
-    high-throughput phenotyping, including but not limited to orthomosaic
-    analysis from drone and satellite imagery, shapefile creation and
-    handling, time series analysis, image analysis, and phytopathometry,
-    into a cohesive and intuitive application.
+Description: Provides an interactive Shiny-based graphical user interface
+    for the 'pliman' package, enabling user-friendly access to advanced
+    plant image analysis tools without requiring extensive programming
+    expertise. The application integrates a wide range of functionalities
+    for high-throughput phenotyping, including orthomosaic analysis from
+    drone and satellite imagery, shapefile creation and management, time
+    series exploration, image processing, and phytopathometry. All features
+    are combined into a cohesive and intuitive interface that is freely
+    available for academic and research purposes, with use restricted to
+    non-commercial applications.
+License: file LICENSE
 URL: https://github.com/NEPEM-UFSC/plimanshiny
 BugReports: https://github.com/NEPEM-UFSC/plimanshiny/issues
 Depends: 
     R (>= 4.1)
-License: MIT + file LICENSE
 Imports: 
+    base64enc,
     bs4Dash,
     config (>= 0.3.2),
     datamods,
-    doFuture,
     dplyr,
+    DT,
     esquisse,
     exactextractr,
-    foreach,
-    future,
     ggplot2,
     glue,
     golem (>= 0.4.1),
     graphics,
     grDevices,
+    httr2,
     leaflet,
+    lubridate,
     mapedit,
     mapview (>= 2.11.2),
+    mirai,
     pak,
     parallel,
     pliman (>= 3.0.0),
@@ -41,6 +45,7 @@ Imports:
     progressr,
     purrr,
     reactable,
+    rlang,
     scales,
     sf,
     shiny (>= 1.7.5.1),
@@ -54,8 +59,8 @@ Imports:
     waiter
 Suggests:
     fields,
-    leaflet.extras2,
     leafem,
+    leaflet.extras2,
     leafsync,
     magick,
     minpack.lm,

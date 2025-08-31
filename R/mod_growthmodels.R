@@ -278,6 +278,26 @@ mod_growthmodels_ui <- function(id) {
                        reactable::reactableOutput(ns("summarymodel"), height = "700px")  |> add_spinner()
               )
             )
+          ),
+          tabPanel(
+            title = "Plot grouping",
+            fluidRow(
+              col_6(
+                pickerInput(
+                  ns("groupby"),
+                  label = "Grouping variable to aggregate the values",
+                  choices = NULL
+                )
+              ),
+              col_6(
+                pickerInput(
+                  ns("traittogroup"),
+                  label = "Parameters to include in grouping",
+                  choices = NULL,
+                  multiple = TRUE
+                )
+              )
+            )
           )
         )
       )
@@ -649,13 +669,13 @@ mod_growthmodels_server <- function(id, dfs){
         sf::st_drop_geometry() |>
         as.data.frame()
 
-      waiter_show(
-        html = tagList(
-          spin_google(),
-          h2("{plimanshiny} is now fitting the growth models. Please wait while we finalize everything...")
-        ),
-        color = "#228B227F"
-      )
+      # waiter_show(
+      #   html = tagList(
+      #     spin_google(),
+      #     h2("{plimanshiny} is now fitting the growth models. Please wait while we finalize everything...")
+      #   ),
+      #   color = "#228B227F"
+      # )
 
       purrr::map(input$growthmodel, ~{
         switch(
@@ -664,75 +684,104 @@ mod_growthmodels_server <- function(id, dfs){
                                           predictor = input$flightdate,
                                           dependent = input$traittomodel,
                                           sowing_date = min(dftomodel$date),
-                                          parallel = input$parallel),
+                                          parallel = input$parallel,
+                                          session = session,
+                                          progress_id = "myprogress"),
           "Logistic 4P" = mod_logistic_4P(dftomodel,
                                           predictor = input$flightdate,
                                           dependent = input$traittomodel,
                                           sowing_date = min(dftomodel$date),
-                                          parallel = input$parallel),
+                                          parallel = input$parallel,
+                                          session = session),
           "Gompertz" = mod_gompertz(dftomodel,
                                     predictor = input$flightdate,
                                     dependent = input$traittomodel,
                                     sowing_date = min(dftomodel$date),
-                                    parallel = input$parallel),
+                                    parallel = input$parallel,
+                                    session = session,
+                                    progress_id = "myprogress"),
           "Weibull" = mod_weibull(dftomodel,
                                   predictor = input$flightdate,
                                   dependent = input$traittomodel,
                                   sowing_date = min(dftomodel$date),
-                                  parallel = input$parallel),
+                                  parallel = input$parallel,
+                                  session = session,
+                                  progress_id = "myprogress"),
           "Von Bertalanffy" = mod_vonbert(dftomodel,
                                           predictor = input$flightdate,
                                           dependent = input$traittomodel,
                                           sowing_date = min(dftomodel$date),
-                                          parallel = input$parallel),
+                                          parallel = input$parallel,
+                                          session = session,
+                                          progress_id = "myprogress"),
           "Exponential" = mod_exponential(dftomodel,
                                           predictor = input$traittomodel,
                                           sowing_date = min(dftomodel$date),
-                                          parallel = input$parallel),
+                                          parallel = input$parallel,
+                                          session = session,
+                                          progress_id = "myprogress"),
           "Janoschek" = mod_janoschek(dftomodel,
                                       predictor = input$traittomodel,
                                       sowing_date = min(dftomodel$date),
-                                      parallel = input$parallel),
+                                      parallel = input$parallel,
+                                      session = session,
+                                      progress_id = "myprogress"),
           "Trans-Gompertz" = mod_transgompertz(dftomodel,
                                                predictor = input$flightdate,
                                                dependent = input$traittomodel,
                                                sowing_date = min(dftomodel$date),
-                                               parallel = input$parallel),
+                                               parallel = input$parallel,
+                                               session = session,
+                                               progress_id = "myprogress"),
           "Sinusoidal" = mod_sinusoidal(dftomodel,
                                         predictor = input$flightdate,
                                         dependent = input$traittomodel,
                                         sowing_date = min(dftomodel$date),
-                                        parallel = input$parallel),
+                                        parallel = input$parallel,
+                                        session = session,
+                                        progress_id = "myprogress"),
           "Asymptotic" = mod_asymptotic(dftomodel,
                                         predictor = input$flightdate,
                                         dependent = input$traittomodel,
                                         sowing_date = min(dftomodel$date),
-                                        parallel = input$parallel),
+                                        parallel = input$parallel,
+                                        session = session,
+                                        progress_id = "myprogress"),
           "Asymmetric Gaussian" = mod_agauss(dftomodel,
                                              predictor = input$flightdate,
                                              dependent = input$traittomodel,
                                              sowing_date = min(dftomodel$date),
-                                             parallel = input$parallel),
+                                             parallel = input$parallel,
+                                             session = session,
+                                             progress_id = "myprogress"),
           "Beta growth" = mod_beta(dftomodel,
                                    predictor = input$flightdate,
                                    dependent = input$traittomodel,
                                    sowing_date = min(dftomodel$date),
-                                   parallel = input$parallel),
+                                   parallel = input$parallel,
+                                   session = session,
+                                   progress_id = "myprogress"),
           "Hill" = mod_hill(dftomodel,
                             predictor = input$flightdate,
                             dependent = input$traittomodel,
                             sowing_date = min(dftomodel$date),
-                            parallel = input$parallel),
+                            parallel = input$parallel,
+                            session = session,
+                            progress_id = "myprogress"),
           "Exponential-Plateau" = mod_expplat(dftomodel,
                                               predictor = input$flightdate,
                                               dependent = input$traittomodel,
                                               sowing_date = min(dftomodel$date),
-                                              parallel = input$parallel),
+                                              parallel = input$parallel,
+                                              session = session,
+                                              progress_id = "myprogress"),
           "Expolinear" = mod_explinear(dftomodel,
                                        predictor = input$flightdate,
                                        dependent = input$traittomodel,
                                        sowing_date = min(dftomodel$date),
-                                       parallel = input$parallel)
+                                       parallel = input$parallel,
+                                       session = session,
+                                       progress_id = "myprogress")
         )
       }) |>
         purrr::map_dfr(~.x) |>
@@ -757,7 +806,7 @@ mod_growthmodels_server <- function(id, dfs){
         icon("circle-xmark"), tags$b("Not Converged Models: "), paste0(notconverged), tags$br(),
         icon("chart-bar"), tags$b("Convergence Rate: "), paste0(convergencerate, "%"), tags$br()
       )
-      waiter_hide()
+      # waiter_hide()
       show_alert(
         title = NULL,
         text = div(content, style = "text-align: left; line-height: 1.5;"),
@@ -1030,6 +1079,24 @@ mod_growthmodels_server <- function(id, dfs){
         round_cols(digits = 3) |>
         render_reactable()
     })
+
+
+    # ## grouping the plots
+    # col_6(
+    #   pickerInput(
+    #     ns("groupby"),
+    #     label = "Grouping variable to aggregate the values",
+    #     choices = NULL
+    #   )
+    # ),
+    # col_6(
+    #   pickerInput(
+    #     ns("traittogroup"),
+    #     label = "Parameters to include in grouping",
+    #     choices = NULL,
+    #     multiple = TRUE
+    #   )
+    # )
 
 
     observeEvent(input$savetoglobalenv, {

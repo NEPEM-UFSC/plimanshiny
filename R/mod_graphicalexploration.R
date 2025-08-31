@@ -166,7 +166,6 @@ mod_graphicalexploration_ui <- function(id) {
             tabPanel("bar", icon = icon("chart-bar"))
           ),
 
-          # Variáveis disponíveis
           fluidRow(
             h4("Available variables:"),
             uiOutput(ns("variables_ui"))
@@ -191,7 +190,6 @@ mod_graphicalexploration_ui <- function(id) {
           plotOutput(ns("exploration_plot"), height = "750px") |> add_spinner()
         )
       ),
-      # JavaScript para interação drag and drop
       tags$script(HTML(paste0("
       var dragged;
       document.addEventListener('dragstart', function(event) {

@@ -1524,7 +1524,7 @@ mod_weather_server <- function(id, dfs) {
           incProgress(0.8, detail = "Creating plot...")
           # Use consistent colors
           num_colors <- length(unique(dfenviro$xcut))
-          env_colors <- RColorBrewer::brewer.pal(max(3, min(9, num_colors)), "Blues") # Example palette
+          env_colors <- grDevices::hcl.colors(max(3, min(9, num_colors)), palette = "Blues 3")
 
           p <-
             ggplot(dfenviro, aes(x = fr, y = ENV, fill = xcut)) + # Use fr for relative frequency

@@ -38,44 +38,34 @@ sdfun_L3 <- function(x, b0, b1, b2) {
       b0 * (exp((b1 - x)/b2) * (1/b2)) * (2 * (exp((b1 - x)/b2) *
                                                  (1/b2) * (1 + exp((b1 - x)/b2))))/((1 + exp((b1 - x)/b2))^2)^2)
 }
-
 mod_L3 <- function(data,
                    flight_date = "date",
                    predictor = "median.NGRDI",
                    sowing_date = NULL,
-                   parallel = FALSE) {
-  dftemp <-
-    data |>
-    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
-    dplyr::group_by(unique_plot) |>
-    tidyr::nest()
+                   parallel = FALSE,
+                   session     = NULL,
+                   progress_id = "myprogress") {
 
-  # Parallel or Sequential Plan
-  if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
-  } else {
-    future::plan(future::sequential)
-  }
-  on.exit(future::plan(future::sequential))
-
-  `%dofut%` <- doFuture::`%dofuture%`
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
-
+  # --- worker: computes metrics for one plot's data.frame ---------------------
+  mod_L3_worker <- function(df, sowing_date, flight_date, predictor,
+                            modfun_L3, fdfun_L3, sdfun_L3, to_datetime) {
     tryCatch({
+      df <- as.data.frame(df)
+
+      # Compute flight days
       if (!is.null(sowing_date)) {
-        flights <- as.numeric(round(difftime(to_datetime(df[[flight_date]]), to_datetime(sowing_date), units = "days")))
+        flights <- as.numeric(round(
+          difftime(to_datetime(df[[flight_date]]), to_datetime(sowing_date), units = "days")
+        ))
       } else {
         flights <- to_datetime(df[[flight_date]])$yday + 1
       }
 
       fflight <- min(flights)
       lflight <- max(flights) + 20
-      flights_seq <- fflight:lflight
       y <- df |> dplyr::pull(!!rlang::sym(predictor))
 
-      # Logistic regression to predict median.NDVI as a function of flights
+      # Fit logistic (SSlogis); fallback to nlsLM if needed
       model <- try(nls(y ~ SSlogis(flights, Asym, xmid, scal),
                        control = nls.control(maxiter = 1000),
                        data = data.frame(flights, y)),
@@ -93,25 +83,26 @@ mod_L3 <- function(data,
       b1 <- coefslog["xmid"]
       b2 <- coefslog["scal"]
 
-      # Critical points
+      # Critical points from first derivative
       xseq <- seq(fflight, lflight, length.out = 5000)
-      cp1 <- xseq[which.min(sdfun_L3(xseq, b0, b1, b2))]
-      cp2 <- xseq[which.max(sdfun_L3(xseq, b0, b1, b2))]
+      d1   <- sdfun_L3(xseq, b0, b1, b2)
+      cp1  <- xseq[which.min(d1)]
+      cp2  <- xseq[which.max(d1)]
 
-      xfd <- seq(min(flights), ceiling(cp1), length.out = 500)
-      yfd <- sdfun_L3(xfd, b0, b1, b2)
-
+      # Heading via max deviation from regression line on the early segment
+      xfd  <- seq(min(flights), ceiling(cp1), length.out = 500)
+      yfd  <- sdfun_L3(xfd, b0, b1, b2)
       dfreg <- data.frame(x = c(min(xfd), max(xfd)), y = c(max(yfd), min(yfd)))
-      regmod <- lm(y ~ x, data = dfreg)
-      predline <- predict(regmod, newdata = data.frame(x = xfd))
+      regmod <- stats::lm(y ~ x, data = dfreg)
+      predline <- stats::predict(regmod, newdata = data.frame(x = xfd))
       head <- xfd[which.max(abs(yfd - predline))]
 
-      int1 <- integrate(modfun_L3, lower = fflight, upper = lflight, b0 = b0, b1 = b1, b2 = b2)
-      int2 <- integrate(modfun_L3, lower = head, upper = cp2, b0 = b0, b1 = b1, b2 = b2)
-      int3 <- integrate(modfun_L3, lower = fflight, upper = head, b0 = b0, b1 = b1, b2 = b2)
+      # Areas under the curve
+      int1 <- stats::integrate(modfun_L3, lower = fflight, upper = lflight, b0 = b0, b1 = b1, b2 = b2)
+      int2 <- stats::integrate(modfun_L3, lower = head,    upper = cp2,    b0 = b0, b1 = b1, b2 = b2)
+      int3 <- stats::integrate(modfun_L3, lower = fflight, upper = head,   b0 = b0, b1 = b1, b2 = b2)
 
-      dplyr::tibble(
-        unique_plot = dftemp$unique_plot[i],
+      tibble::tibble(
         b0 = b0,
         b1 = b1,
         b2 = b2,
@@ -133,9 +124,7 @@ mod_L3 <- function(data,
         )
       )
     }, error = function(e) {
-      # Handle errors in model fitting or calculations
-      dplyr::tibble(
-        unique_plot = dftemp$unique_plot[i],
+      tibble::tibble(
         b0 = NA_real_,
         b1 = NA_real_,
         b2 = NA_real_,
@@ -150,8 +139,103 @@ mod_L3 <- function(data,
       )
     })
   }
-  results <- results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+
+  # --- prepare grouped data ---------------------------------------------------
+  dftemp <-
+    data |>
+    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::group_by(unique_plot) |>
+    tidyr::nest() |>
+    dplyr::ungroup()
+
+  if (isTRUE(parallel)) {
+    # Split in chunks ~ #cores and map with mirai
+    ncores <- max(1, ceiling(parallel::detectCores() * 0.5))
+
+    chunked <-
+      dftemp |>
+      dplyr::mutate(index = rep(seq_len(ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(index) |>
+      dplyr::group_split() |>
+      as.list()
+
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    results_list <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, sowing_date, flight_date, predictor,
+                    modfun_L3, fdfun_L3, sdfun_L3, to_datetime) {
+        x |>
+          dplyr::mutate(mod = purrr::map(
+            data,
+            mod_L3_worker,
+            sowing_date = sowing_date,
+            flight_date = flight_date,
+            predictor = predictor,
+            modfun_L3 = modfun_L3,
+            fdfun_L3 = fdfun_L3,
+            sdfun_L3 = sdfun_L3,
+            to_datetime = to_datetime
+          )) |>
+          tidyr::unnest(cols = mod) |>
+          dplyr::select(-c(data, index))
+      },
+      .args = list(
+        sowing_date = sowing_date,
+        flight_date = flight_date,
+        predictor = predictor,
+        modfun_L3 = modfun_L3,
+        fdfun_L3 = fdfun_L3,
+        sdfun_L3 = sdfun_L3,
+        to_datetime = to_datetime
+      )
+    )[.progress]
+
+    results_df <- dplyr::bind_rows(results_list)
+
+  } else {
+    # Sequential loop
+    results_each <- vector("list", nrow(dftemp))
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::progressSweetAlert(
+        session = session,
+        id      = progress_id,
+        title   = "Processing plots",
+        display_pct = TRUE,
+        value   = 0,
+        total   = nrow(dftemp)
+      )
+    }
+    for (i in seq_len(nrow(dftemp))) {
+      if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+        shinyWidgets::updateProgressBar(
+          session = session,
+          id      = progress_id,
+          value   = i,
+          title   = "Plimanshiny is fitting the models for maturity prediction...",
+          total   = nrow(dftemp)
+        )
+      }
+      row <- dftemp[i, ]
+      res <- mod_L3_worker(row$data[[1]],
+                           sowing_date = sowing_date,
+                           flight_date = flight_date,
+                           predictor = predictor,
+                           modfun_L3 = modfun_L3,
+                           fdfun_L3 = fdfun_L3,
+                           sdfun_L3 = sdfun_L3,
+                           to_datetime = to_datetime)
+      results_each[[i]] <- dplyr::bind_cols(dplyr::select(row, unique_plot), res)
+    }
+    results_df <- dplyr::bind_rows(results_each)
+  }
+
+  results <-
+    results_df |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"),
+                                delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
 
   return(results)
@@ -264,141 +348,13 @@ sdfun_L4 <- function(x, a, b, xmid, scal) {
                                                                                                      (1/scal)) * (2 * (exp((xmid - x)/scal) * (1/scal) * (1 +
                                                                                                                                                             exp((xmid - x)/scal))))/((1 + exp((xmid - x)/scal))^2)^2)
 }
-
-# mod_L4 <- function(data,
-#                    flight_date = "date",
-#                    predictor = "median.NDVI",
-#                    sowing_date = NULL,
-#                    parallel = FALSE) {
-#   # Prepare data
-#   dftemp <- data |>
-#     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-#     dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
-#     dplyr::group_by(unique_plot) |>
-#     tidyr::nest()
-#
-#   # Parallel or Sequential Plan
-#   if (parallel) {
-#     future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
-#   } else {
-#     future::plan(future::sequential)
-#   }
-#   on.exit(future::plan(future::sequential))
-#
-#   `%dofut%` <- doFuture::`%dofuture%`
-#
-#   # Fit model for each group
-#   results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
-#     df <- as.data.frame(dftemp$data[[i]])
-#     tryCatch({
-#       # Compute flight days
-#       if (!is.null(sowing_date)) {
-#         flights <- as.numeric(round(difftime(to_datetime(df[[flight_date]]), to_datetime(sowing_date), units = "days")))
-#       } else {
-#         flights <- to_datetime(df[[flight_date]])$yday + 1
-#       }
-#
-#       fflight <- min(flights)
-#       lflight <- max(flights) + 20
-#       y <- df |> dplyr::pull(!!rlang::sym(predictor))
-#
-#       model <- try(
-#         nls( y ~ SSfpl(flights, A, B, xmid, scal),
-#              data = data.frame(flights, y),
-#              control = nls.control(maxiter = 1000)),
-#         silent = TRUE
-#       )
-#
-#       if (inherits(model, "try-error")) {
-#         model <- suppressWarnings(
-#           minpack.lm::nlsLM(y ~ SSfpl(flights, A, B, xmid, scal),
-#                             data = data.frame(flights, y))
-#         )
-#       }
-#
-#       coefslog <- coef(model)
-#       a <- coefslog[1]
-#       b <- coefslog[2]
-#       xmid <- coefslog[3]
-#       scal <- coefslog[4]
-#
-#       # Critical points
-#       cp1 <- optimise(sdfun_L4, interval = c(fflight, lflight), a = a, b = b, xmid = xmid, scal = scal, maximum = FALSE)
-#       cp2 <- optimise(sdfun_L4, interval = c(fflight, lflight), a = a, b = b, xmid = xmid, scal = scal, maximum = TRUE)
-#
-#       # Heading and maturity
-#       xfd <- seq(min(flights), ceiling(cp1$minimum), length.out = 500)
-#       yfd <- sdfun_L4(xfd, a, b, xmid, scal)
-#       dfreg <- data.frame(x = c(min(xfd), max(xfd)), y = c(max(yfd), min(yfd)))
-#       regmod <- lm(y ~ x, data = dfreg)
-#       predline <- predict(regmod, newdata = data.frame(x = xfd))
-#       head <- xfd[which.max(abs(yfd - predline))]
-#
-#       xfd2 <- seq(ceiling(xmid), lflight, length.out = 500)
-#       yfd2 <- fdfun_L4(xfd2, a, b, xmid, scal)
-#       dfreg2 <- data.frame(x = c(min(xfd2), max(xfd2)), y = c(min(yfd2), max(yfd2)))
-#       regmod2 <- lm(y ~ x, data = dfreg2)
-#       predline2 <- predict(regmod2, newdata = data.frame(x = xfd2))
-#       maturation <- xfd2[which.max(abs(yfd2 - predline2))]
-#
-#       # Area under curve
-#       int1 <- integrate(modfun_L4, lower = fflight, upper = lflight, a = a, b = b, xmid = xmid, scal = scal)
-#       int2 <- integrate(modfun_L4, lower = head, upper = maturation, a = a, b = b, xmid = xmid, scal = scal)
-#
-#       tibble::tibble(
-#         unique_plot = dftemp$unique_plot[i],
-#         a = a,
-#         b = b,
-#         inflection = xmid,
-#         scal = scal,
-#         heading = head,
-#         maturity = maturation,
-#         repr_period = maturation - head,
-#         auc = int1$value,
-#         auc_repr_period = int2$value,
-#         parms = list(
-#           model = modfun_L4,
-#           modeladj = model,
-#           fd = fdfun_L4,
-#           sd = sdfun_L4,
-#           coefs = list(a = a, b = b, xmid = xmid, scal = scal),
-#           xmin = fflight,
-#           xmax = lflight
-#         )
-#       )
-#     }, error = function(e) {
-#       # Return NA values if model fitting fails
-#       tibble::tibble(
-#         unique_plot = dftemp$unique_plot[i],
-#         a = NA_real_,
-#         b = NA_real_,
-#         inflection = NA_real_,
-#         scal = NA_real_,
-#         heading = NA_real_,
-#         maturity = NA_real_,
-#         repr_period = NA_real_,
-#         auc = NA_real_,
-#         auc_repr_period = NA_real_,
-#         parms = NA
-#       )
-#     })
-#   }
-#
-#   # Final results table
-#   results <-
-#     results_list |>
-#     tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
-#     tidyr::nest(parms = parms)
-#
-#   return(results)
-# }
-
 mod_L4 <- function(data,
                    flight_date = "date",
-                   predictor = "median.NGRDI",
+                   predictor = "median.vNDVI",
                    sowing_date = "05-28-2024",
                    parallel = TRUE,
-                   session = NULL) {
+                   session = NULL,
+                   progress_id = "myprogress") {
   mod_L4_worker <- function(df, sowing_date, flight_date, predictor,
                             modfun_L4, fdfun_L4, sdfun_L4, to_datetime) {
     tryCatch({
@@ -409,7 +365,7 @@ mod_L4 <- function(data,
         flights <- to_datetime(df[[flight_date]])$yday + 1
       }
       fflight <- min(flights)
-      lflight <- max(flights) + 20
+      lflight <- max(flights) + 10
       y <- df[[predictor]]
 
       model <- try(nls(y ~ SSfpl(flights, A, B, xmid, scal),
@@ -425,22 +381,27 @@ mod_L4 <- function(data,
       }
 
       coefslog <- coef(model)
-      a <- coefslog[1]; b <- coefslog[2]; xmid <- coefslog[3]; scal <- coefslog[4]
+      a <- coefslog[1]
+      b <- coefslog[2]
+      xmid <- coefslog[3]
+      scal <- coefslog[4]
 
-      cp1 <- optimise(sdfun_L4, interval = c(fflight, lflight), a = a, b = b, xmid = xmid, scal = scal, maximum = FALSE)
-      cp2 <- optimise(sdfun_L4, interval = c(fflight, lflight), a = a, b = b, xmid = xmid, scal = scal, maximum = TRUE)
+      cp1 <- optimise(fdfun_L4, interval = c(fflight, lflight), a = a, b = b, xmid = xmid, scal = scal, maximum = FALSE)
+      # Heading via max deviation from regression line on the early segment
+      xsd  <- seq(min(flights), ceiling(cp1$minimum), length.out = 500)
+      ysd  <- fdfun_L4(xsd, a, b, xmid, scal)
+      dfreg <- data.frame(x = c(min(xsd), max(xsd)), y = c(max(ysd), min(ysd)))
+      regmod <- stats::lm(y ~ x, data = dfreg)
+      predline <- stats::predict(regmod, newdata = data.frame(x = xsd))
+      head <- xsd[which.max(abs(ysd - predline))]
 
-      xfd <- seq(min(flights), ceiling(cp1$minimum), length.out = 500)
-      yfd <- sdfun_L4(xfd, a, b, xmid, scal)
-      regmod <- lm(y ~ x, data = data.frame(x = xfd, y = yfd))
-      predline <- predict(regmod, newdata = data.frame(x = xfd))
-      head <- xfd[which.max(abs(yfd - predline))]
-
-      xfd2 <- seq(ceiling(xmid), lflight, length.out = 500)
-      yfd2 <- fdfun_L4(xfd2, a, b, xmid, scal)
-      regmod2 <- lm(y ~ x, data = data.frame(x = xfd2, y = yfd2))
-      predline2 <- predict(regmod2, newdata = data.frame(x = xfd2))
-      maturation <- xfd2[which.max(abs(yfd2 - predline2))]
+      # Maturity via max deviation from regression line on the maximum deceleration point
+      xsd2  <- seq(cp1$minimum, lflight, length.out = 500)
+      ysd2  <- fdfun_L4(xsd2, a, b, xmid, scal)
+      dfreg <- data.frame(x = c(min(xsd2), max(xsd2)), y = c(min(ysd2), max(ysd2)))
+      regmod <- stats::lm(y ~ x, data = dfreg)
+      predline <- stats::predict(regmod, newdata = data.frame(x = xsd2))
+      maturation <- xsd2[which.max(abs(ysd2 - predline))] - 4
 
       int1 <- integrate(modfun_L4, lower = fflight, upper = lflight, a = a, b = b, xmid = xmid, scal = scal)
       int2 <- integrate(modfun_L4, lower = head, upper = maturation, a = a, b = b, xmid = xmid, scal = scal)
@@ -538,7 +499,26 @@ mod_L4 <- function(data,
       dplyr::ungroup()
 
     results_list <- vector("list", nrow(dftemp))
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::progressSweetAlert(
+        session = session,
+        id      = progress_id,
+        title   = "Processing plots",
+        display_pct = TRUE,
+        value   = 0,
+        total   = nrow(dftemp)
+      )
+    }
     for (i in seq_len(nrow(dftemp))) {
+      if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+        shinyWidgets::updateProgressBar(
+          session = session,
+          id      = progress_id,
+          value   = i,
+          title   = "Plimanshiny is fitting the models for maturity prediction...",
+          total   = nrow(dftemp)
+        )
+      }
       row <- dftemp[i, ]
       res <- mod_L4_worker(row$data[[1]],
                            sowing_date = sowing_date,
@@ -753,30 +733,21 @@ mod_L5 <- function(data,
                    flight_date = "date",
                    predictor = "median.NDVI",
                    sowing_date = NULL,
-                   parallel = FALSE) {
+                   parallel = FALSE,
+                   session     = NULL,
+                   progress_id = "myprogress") {
 
-  # Prepare data
-  dftemp <- data |>
-    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
-    dplyr::group_by(unique_plot) |>
-    tidyr::nest()
-
-  # Parallel or Sequential Plan
-  if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
-  } else {
-    future::plan(future::sequential)
-  }
-  on.exit(future::plan(future::sequential))
-
-  `%dofut%` <- doFuture::`%dofuture%`
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
-
+  # --- worker for one plot ----------------------------------------------------
+  mod_L5_worker <- function(df, sowing_date, flight_date, predictor,
+                            modfun_L5, fdfun_L5, sdfun_L5, to_datetime) {
     tryCatch({
+      df <- as.data.frame(df)
+
+      # Flight days
       if (!is.null(sowing_date)) {
-        flights <- as.numeric(round(difftime(to_datetime(df[[flight_date]]), to_datetime(sowing_date), units = "days")))
+        flights <- as.numeric(round(
+          difftime(to_datetime(df[[flight_date]]), to_datetime(sowing_date), units = "days")
+        ))
       } else {
         flights <- to_datetime(df[[flight_date]])$yday + 1
       }
@@ -785,7 +756,7 @@ mod_L5 <- function(data,
       lflight <- max(flights) + 20
       y <- df |> dplyr::pull(!!rlang::sym(predictor))
 
-      # Fit the logistic model with 5 parameters
+      # 5-param logistic fit (+ fallback)
       model <- try(
         nls(y ~ SSlogis5(flights, asym1, asym2, xmid, iscal, theta),
             data = data.frame(flights, y),
@@ -801,102 +772,72 @@ mod_L5 <- function(data,
       }
 
       coefs <- coef(model)
-      asym1 <- coefs["asym1"]
-      asym2 <- coefs["asym2"]
-      xmid <- coefs["xmid"]
-      iscal <- coefs["iscal"]
-      theta <- coefs["theta"]
+      asym1 <- coefs["asym1"]; asym2 <- coefs["asym2"]; xmid <- coefs["xmid"]
+      iscal <- coefs["iscal"]; theta <- coefs["theta"]
+
       indexdecrease <- asym2 < asym1
-      # Critical Points
+
+      # Critical points
       inflec <- suppressWarnings(
         optimise(
           fdfun_L5,
           interval = c(fflight, lflight),
-          iscal = iscal,
-          asym1 = asym1,
-          asym2 = asym2,
-          xmid = xmid,
-          theta = theta,
+          iscal = iscal, asym1 = asym1, asym2 = asym2, xmid = xmid, theta = theta,
           maximum = !indexdecrease
         )
       )
 
-      cp1 <-
-        suppressWarnings(
-          optimise(
-            sdfun_L5,
-            interval = c(fflight, lflight),
-            iscal = iscal,
-            asym1 = asym1,
-            asym2 = asym2,
-            xmid = xmid,
-            theta = theta,
-            maximum = !indexdecrease
-          )
+      cp1 <- suppressWarnings(
+        optimise(
+          sdfun_L5,
+          interval = c(fflight, lflight),
+          iscal = iscal, asym1 = asym1, asym2 = asym2, xmid = xmid, theta = theta,
+          maximum = !indexdecrease
         )
+      )
 
-      cp2 <-
-        suppressWarnings(
-          optimise(
-            sdfun_L5,
-            interval = c(fflight, lflight),
-            iscal = iscal,
-            asym1 = asym1,
-            asym2 = asym2,
-            xmid = xmid,
-            theta = theta,
-            maximum = indexdecrease
-          )
+      cp2 <- suppressWarnings(
+        optimise(
+          sdfun_L5,
+          interval = c(fflight, lflight),
+          iscal = iscal, asym1 = asym1, asym2 = asym2, xmid = xmid, theta = theta,
+          maximum = indexdecrease
         )
+      )
 
       # Heading
-      xfd <- seq(min(flights), ceiling(cp1$minimum), length.out = 500)
-      yfd <- sdfun_L5(xfd, asym1, asym2, xmid, iscal,  theta)
+      xfd  <- seq(min(flights), ceiling(cp1$minimum), length.out = 500)
+      yfd  <- sdfun_L5(xfd, asym1, asym2, xmid, iscal, theta)
       dfreg <- data.frame(x = c(min(xfd), max(xfd)), y = c(max(yfd), min(yfd)))
-      regmod <- lm(y ~ x, data = dfreg)
-      predline <- predict(regmod, newdata = data.frame(x = xfd))
+      regmod <- stats::lm(y ~ x, data = dfreg)
+      predline <- stats::predict(regmod, newdata = data.frame(x = xfd))
       head <- xfd[which.max(abs(yfd - predline))]
 
       # Maturation
-      xfd2 <- seq(inflec[[1]], lflight, length.out = 500)
+      xfd2 <- seq(inflec$minimum, lflight, length.out = 500)
       yfd2 <- fdfun_L5(xfd2, asym1, asym2, xmid, iscal, theta)
       dfreg2 <- data.frame(x = c(min(xfd2), max(xfd2)), y = c(min(yfd2), max(yfd2)))
-      regmod2 <- lm(y ~ x, data = dfreg2)
-      predline2 <- predict(regmod2, newdata = data.frame(x = xfd2))
+      regmod2 <- stats::lm(y ~ x, data = dfreg2)
+      predline2 <- stats::predict(regmod2, newdata = data.frame(x = xfd2))
       maturation <- xfd2[which.max(abs(yfd2 - predline2))]
 
-      # Integrate AUC
-      int1 <- integrate(
-        modfun_L5,
-        lower = fflight,
-        upper = lflight,
-        asym1 = asym1,
-        asym2 = asym2,
-        xmid = xmid,
-        iscal = iscal,
-        theta = theta
+      # AUCs
+      int1 <- stats::integrate(
+        modfun_L5, lower = fflight, upper = lflight,
+        asym1 = asym1, asym2 = asym2, xmid = xmid, iscal = iscal, theta = theta
+      )
+      int2 <- stats::integrate(
+        modfun_L5, lower = head, upper = maturation,
+        asym1 = asym1, asym2 = asym2, xmid = xmid, iscal = iscal, theta = theta
       )
 
-      int2 <- integrate(
-        modfun_L5,
-        lower = head,
-        upper = maturation,
-        asym1 = asym1,
-        asym2 = asym2,
-        xmid = xmid,
-        iscal = iscal,
-        theta = theta
-      )
-
-      # Return results
       tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
         asym1 = asym1,
         asym2 = asym2,
-        xmid = xmid,
+        xmid  = xmid,
         iscal = iscal,
         theta = theta,
-        inflection = inflec[[1]],
+        inflection = inflec$minimum,
         heading = head,
         maturity = maturation,
         repr_period = maturation - head,
@@ -907,45 +848,121 @@ mod_L5 <- function(data,
           modeladj = model,
           fd = fdfun_L5,
           sd = sdfun_L5,
-          coefs = list(
-            asym1 = asym1,
-            asym2 = asym2,
-            xmid = xmid,
-            iscal = iscal,
-            theta = theta
-          ),
+          coefs = list(asym1 = asym1, asym2 = asym2, xmid = xmid, iscal = iscal, theta = theta),
           xmin = fflight,
           xmax = lflight
         )
       )
     }, error = function(e) {
-      # Return NA values if the model fails
       tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        asym1 = NA_real_,
-        asym2 = NA_real_,
-        xmid = NA_real_,
-        iscal = NA_real_,
-        theta = NA_real_,
-        inflection = NA_real_,
-        heading = NA_real_,
-        maturity = NA_real_,
-        repr_period = NA_real_,
-        auc = NA_real_,
-        auc_repr_period = NA_real_,
-        parms = NA
+        asym1 = NA_real_, asym2 = NA_real_, xmid = NA_real_, iscal = NA_real_, theta = NA_real_,
+        inflection = NA_real_, heading = NA_real_, maturity = NA_real_, repr_period = NA_real_,
+        auc = NA_real_, auc_repr_period = NA_real_, parms = NA
       )
     })
   }
 
-  # Finalize results
-  results <- results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+  # --- prepare grouped data ---------------------------------------------------
+  dftemp <-
+    data |>
+    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
+    dplyr::group_by(unique_plot) |>
+    tidyr::nest() |>
+    dplyr::ungroup()
+
+  if (isTRUE(parallel)) {
+    # Split into chunks and map with mirai
+    ncores <- max(1, ceiling(parallel::detectCores() * 0.5))
+    chunked <-
+      dftemp |>
+      dplyr::mutate(index = rep(seq_len(ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(index) |>
+      dplyr::group_split() |>
+      as.list()
+
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    results_list <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, sowing_date, flight_date, predictor,
+                    modfun_L5, fdfun_L5, sdfun_L5, to_datetime) {
+        x |>
+          dplyr::mutate(mod = purrr::map(
+            data,
+            mod_L5_worker,
+            sowing_date = sowing_date,
+            flight_date = flight_date,
+            predictor = predictor,
+            modfun_L5 = modfun_L5,
+            fdfun_L5 = fdfun_L5,
+            sdfun_L5 = sdfun_L5,
+            to_datetime = to_datetime
+          )) |>
+          tidyr::unnest(cols = mod) |>
+          dplyr::mutate(unique_plot = .data$unique_plot) |>
+          dplyr::select(-c(data, index))
+      },
+      .args = list(
+        sowing_date = sowing_date,
+        flight_date = flight_date,
+        predictor = predictor,
+        modfun_L5 = modfun_L5,
+        fdfun_L5 = fdfun_L5,
+        sdfun_L5 = sdfun_L5,
+        to_datetime = to_datetime
+      )
+    )[.progress]
+
+    results_df <- dplyr::bind_rows(results_list)
+
+  } else {
+    # Sequential
+    results_each <- vector("list", nrow(dftemp))
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::progressSweetAlert(
+        session = session,
+        id      = progress_id,
+        title   = "Processing plots",
+        display_pct = TRUE,
+        value   = 0,
+        total   = nrow(dftemp)
+      )
+    }
+    for (i in seq_len(nrow(dftemp))) {
+      if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+        shinyWidgets::updateProgressBar(
+          session = session,
+          id      = progress_id,
+          value   = i,
+          title   = "Plimanshiny is fitting the models for maturity prediction...",
+          total   = nrow(dftemp)
+        )
+      }
+      row <- dftemp[i, ]
+      res <- mod_L5_worker(row$data[[1]],
+                           sowing_date = sowing_date,
+                           flight_date = flight_date,
+                           predictor = predictor,
+                           modfun_L5 = modfun_L5,
+                           fdfun_L5 = fdfun_L5,
+                           sdfun_L5 = sdfun_L5,
+                           to_datetime = to_datetime)
+      results_each[[i]] <- dplyr::bind_cols(dplyr::select(row, unique_plot), res)
+    }
+    results_df <- dplyr::bind_rows(results_each)
+  }
+
+  # --- finalize ---------------------------------------------------------------
+  results <-
+    results_df |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"),
+                                delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
 
   return(results)
 }
-
 
 
 help_mod_L5_eq <- function() {
@@ -1042,59 +1059,163 @@ help_mod_L5 <- function() {
 # Threshold-based methods
 ########## loess model ############
 
-mod_loess <-  function(data,
-                       flight_date = "date",
-                       predictor = "median.NDVI",
-                       sowing_date = NULL,
-                       threshold,
-                       parallel = FALSE,
-                       span = 0.75){
+mod_loess <- function(data,
+                      flight_date = "date",
+                      predictor   = "median.NDVI",
+                      sowing_date = NULL,
+                      threshold,
+                      parallel = FALSE,
+                      span = 0.75,
+                      session     = NULL,
+                      progress_id = "myprogress") {
+
+  # --- worker: one plot -------------------------------------------------------
+  mod_loess_worker <- function(df, sowing_date, flight_date, predictor,
+                               threshold, span, to_datetime) {
+    tryCatch({
+      df <- as.data.frame(df)
+
+      # flight days
+      if (!is.null(sowing_date)) {
+        flights <- as.numeric(round(
+          difftime(to_datetime(df[[flight_date]]), to_datetime(sowing_date), units = "days")
+        ))
+      } else {
+        flights <- to_datetime(df[[flight_date]])$yday + 1
+      }
+
+      fflight <- min(flights)
+      lflight <- max(flights) + 20
+      flights_seq <- fflight:lflight
+
+      # response
+      y <- df |> dplyr::pull(!!rlang::sym(predictor))
+
+      # clean & order
+      dffit <- data.frame(flights = flights, y = y)
+      dffit <- dffit[stats::complete.cases(dffit), , drop = FALSE]
+      dffit <- dffit[order(dffit$flights), , drop = FALSE]
+
+      # loess
+      model <- stats::loess(y ~ flights, data = dffit, span = span)
+
+      # threshold-based maturity (inverse mapping via approx)
+      fitted_seq <- stats::predict(model, newdata = data.frame(flights = flights_seq))
+      list_date_pred <- stats::approx(x = fitted_seq, y = flights_seq, xout = threshold)
+
+      tibble::tibble(
+        maturity  = list_date_pred$y,
+        threshold = threshold,
+        parms = list(
+          modeladj = model,
+          xmin = fflight,
+          xmax = lflight
+        )
+      )
+    }, error = function(e) {
+      tibble::tibble(
+        maturity  = NA_real_,
+        threshold = threshold,
+        parms = NA
+      )
+    })
+  }
+
+  # --- prepare grouped data ---------------------------------------------------
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
     dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
     dplyr::group_by(unique_plot) |>
-    tidyr::nest()
+    tidyr::nest() |>
+    dplyr::ungroup()
 
-  # Apply the model
-  if(parallel){
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
-  } else{
-    future::plan(future::sequential)
-  }
-  on.exit(future::plan(future::sequential))
+  if (isTRUE(parallel)) {
+    # chunk and map with mirai
+    ncores <- max(1, ceiling(parallel::detectCores() * 0.5))
+    chunked <-
+      dftemp |>
+      dplyr::mutate(index = rep(seq_len(ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(index) |>
+      dplyr::group_split() |>
+      as.list()
 
-  `%dofut%` <- doFuture::`%dofuture%`
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine=rbind) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
-    if(!is.null(sowing_date)){
-      flights <- as.numeric(round(difftime(to_datetime(df[[flight_date]]), to_datetime(sowing_date), units = "days")))
-    } else {
-      flights <- to_datetime(df$date)$yday + 1
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    results_list <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, sowing_date, flight_date, predictor,
+                    threshold, span, to_datetime) {
+        x |>
+          dplyr::mutate(mod = purrr::map(
+            data,
+            mod_loess_worker,
+            sowing_date = sowing_date,
+            flight_date = flight_date,
+            predictor   = predictor,
+            threshold   = threshold,
+            span        = span,
+            to_datetime = to_datetime
+          )) |>
+          tidyr::unnest(cols = mod) |>
+          dplyr::select(-c(data, index))
+      },
+      .args = list(
+        sowing_date = sowing_date,
+        flight_date = flight_date,
+        predictor   = predictor,
+        threshold   = threshold,
+        span        = span,
+        to_datetime = to_datetime
+      )
+    )[.progress]
+
+    results_df <- dplyr::bind_rows(results_list)
+
+  } else {
+    # sequential
+    results_each <- vector("list", nrow(dftemp))
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::progressSweetAlert(
+        session = session,
+        id      = progress_id,
+        title   = "Processing plots",
+        display_pct = TRUE,
+        value   = 0,
+        total   = nrow(dftemp)
+      )
     }
-    fflight <- min(flights)
-    lflight <- max(flights) + 20
-    flights_seq <- fflight:lflight
-    y <- df |> dplyr::pull()
-    # extract the date of maturity
-    model <- loess(y ~ flights, span = span)
-
-    # Maturation
-    fitted.nge_loop <- predict(model, flights_seq)
-    list_date_pred <- approx(fitted.nge_loop, flights_seq, xout = threshold)
-
-    tibble::tibble(unique_plot = dftemp$unique_plot[i],
-                   maturity = list_date_pred$y,
-                   threshold = threshold,
-                   parms = list(modeladj = model,
-                                xmin = fflight,
-                                xmax = lflight))
+    for (i in seq_len(nrow(dftemp))) {
+      if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+        shinyWidgets::updateProgressBar(
+          session = session,
+          id      = progress_id,
+          value   = i,
+          title   = "Plimanshiny is fitting the models for maturity prediction...",
+          total   = nrow(dftemp)
+        )
+      }
+      row <- dftemp[i, ]
+      res <- mod_loess_worker(row$data[[1]],
+                              sowing_date = sowing_date,
+                              flight_date = flight_date,
+                              predictor   = predictor,
+                              threshold   = threshold,
+                              span        = span,
+                              to_datetime = to_datetime)
+      results_each[[i]] <- dplyr::bind_cols(dplyr::select(row, unique_plot), res)
+    }
+    results_df <- dplyr::bind_rows(results_each)
   }
 
+  # --- finalize ---------------------------------------------------------------
   results <-
-    results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+    results_df |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"),
+                                delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
+
   return(results)
 }
 
@@ -1142,78 +1263,189 @@ help_mod_loess <- function(){
 
 
 ############## SEGMENTED MODEL ################
+
 mod_segmented <- function(data,
                           flight_date = "date",
-                          predictor = "median.NDVI",
+                          predictor   = "median.NDVI",
                           sowing_date = NULL,
                           threshold,
                           slope = "min",
-                          parallel = FALSE) {
+                          parallel = FALSE,
+                          session     = NULL,
+                          progress_id = "myprogress") {
 
-  # Prepare data
-  dftemp <- data |>
+  # --- worker: one plot -------------------------------------------------------
+  mod_segmented_worker <- function(df, flight_date, predictor,
+                                   sowing_date, threshold, slope, to_datetime) {
+    tryCatch({
+      df <- as.data.frame(df)
+
+      # flights (days after sowing or day-of-year)
+      if (!is.null(sowing_date)) {
+        flights <- as.numeric(round(
+          difftime(to_datetime(df[[flight_date]]), to_datetime(sowing_date), units = "days")
+        ))
+      } else {
+        flights <- to_datetime(df[[flight_date]])$yday + 1
+      }
+
+      # response
+      y <- df[[predictor]]
+
+      # base linear model
+      mod <- stats::lm(y ~ flights)
+
+      # segmented search
+      attempts <- 0L
+      max_attempts <- 100L
+      dpm <- NA_real_
+      seg_model <- NULL
+
+      repeat {
+        attempts <- attempts + 1L
+        seg_model <- try(
+          segmented::segmented(
+            mod,
+            seg.Z = ~ flights,
+            npsi = ifelse(NROW(df) > 7, 2, 1),
+            control = segmented::seg.control(n.boot = 50, random = TRUE, tol = 0.01)
+          ),
+          silent = TRUE
+        )
+
+        if (!inherits(seg_model, "try-error") && !is.null(seg_model$psi)) {
+          slopes <- segmented::slope(seg_model)$flights
+          intercepts <- segmented::intercept(seg_model)$flights
+
+          # choose target slope
+          svals <- slopes[, 1]
+          target_slope <- if (identical(slope, "min")) min(svals, na.rm = TRUE) else max(svals, na.rm = TRUE)
+          idx <- which(svals == target_slope)[1]
+
+          if (!is.na(idx) && is.finite(target_slope) && abs(target_slope) > .Machine$double.eps) {
+            dpm <- (threshold - intercepts[idx, 1]) / target_slope
+          } else {
+            cf <- stats::coef(mod)
+            dpm <- (threshold - cf[1]) / cf[2]
+          }
+          break
+
+        } else if (attempts >= max_attempts || NROW(df) <= 7) {
+          cf <- stats::coef(mod)
+          dpm <- (threshold - cf[1]) / cf[2]
+          break
+        }
+      }
+
+      tibble::tibble(
+        maturity  = as.numeric(dpm),
+        threshold = threshold,
+        parms = list(
+          modeladj = if (!inherits(seg_model, "try-error") && !is.null(seg_model$psi)) seg_model else mod
+        )
+      )
+
+    }, error = function(e) {
+      tibble::tibble(
+        maturity  = NA_real_,
+        threshold = threshold,
+        parms = NA
+      )
+    })
+  }
+
+  # --- prepare grouped data ---------------------------------------------------
+  dftemp <-
+    data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
     dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
     dplyr::group_by(unique_plot) |>
-    tidyr::nest()
+    tidyr::nest() |>
+    dplyr::ungroup()
 
-  # Set parallel or sequential plan
-  if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
+  if (isTRUE(parallel)) {
+    # chunk and map with mirai
+    ncores <- max(1, ceiling(parallel::detectCores() * 0.5))
+    chunked <-
+      dftemp |>
+      dplyr::mutate(index = rep(seq_len(ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(index) |>
+      dplyr::group_split() |>
+      as.list()
+
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    results_list <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, flight_date, predictor, sowing_date, threshold, slope, to_datetime) {
+        x |>
+          dplyr::mutate(mod = purrr::map(
+            data,
+            mod_segmented_worker,
+            flight_date = flight_date,
+            predictor   = predictor,
+            sowing_date = sowing_date,
+            threshold   = threshold,
+            slope       = slope,
+            to_datetime = to_datetime
+          )) |>
+          tidyr::unnest(cols = mod) |>
+          dplyr::select(-c(data, index))
+      },
+      .args = list(
+        flight_date = flight_date,
+        predictor   = predictor,
+        sowing_date = sowing_date,
+        threshold   = threshold,
+        slope       = slope,
+        to_datetime = to_datetime
+      )
+    )[.progress]
+
+    results_df <- dplyr::bind_rows(results_list)
+
   } else {
-    future::plan(future::sequential)
-  }
-  on.exit(future::plan(future::sequential)) # Ensure plan reverts back
-
-  # Helper function to fit model and calculate DPM
-  calculate_dpm <- function(df, flights, threshold, slope) {
-    mod <- stats::lm(df[[predictor]] ~ flights)
-    attempts <- 0
-    max_attempts <- 100
-    dpm <- NA
-    repeat {
-      attempts <- attempts + 1
-      seg_model <- try(segmented::segmented(mod, seg.Z = ~flights, npsi = ifelse(nrow(df) > 7, 2, 1),
-                                            control = segmented::seg.control(n.boot = 50, random = TRUE, tol = 0.01)),
-                       silent = TRUE)
-
-      if (!inherits(seg_model, "try-error") && !is.null(seg_model$psi)) {
-        slopes <- segmented::slope(seg_model)$flights
-        intercepts <- segmented::intercept(seg_model)$flights
-
-        target_slope <- if (slope == "min") min(slopes[, 1]) else max(slopes[, 1])
-        idx <- which(slopes[, 1] == target_slope)
-        dpm <- (threshold - intercepts[idx, 1]) / target_slope
-        break
-      } else if (attempts >= max_attempts || nrow(df) <= 7) {
-        dpm <- (threshold - stats::coef(mod)[1]) / stats::coef(mod)[2]
-        break
+    # sequential
+    results_each <- vector("list", nrow(dftemp))
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::progressSweetAlert(
+        session = session,
+        id      = progress_id,
+        title   = "Processing plots",
+        display_pct = TRUE,
+        value   = 0,
+        total   = nrow(dftemp)
+      )
+    }
+    for (i in seq_len(nrow(dftemp))) {
+      if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+        shinyWidgets::updateProgressBar(
+          session = session,
+          id      = progress_id,
+          value   = i,
+          title   = "Plimanshiny is fitting the models for maturity prediction...",
+          total   = nrow(dftemp)
+        )
       }
+      row <- dftemp[i, ]
+      res <- mod_segmented_worker(row$data[[1]],
+                                  flight_date = flight_date,
+                                  predictor   = predictor,
+                                  sowing_date = sowing_date,
+                                  threshold   = threshold,
+                                  slope       = slope,
+                                  to_datetime = to_datetime)
+      results_each[[i]] <- dplyr::bind_cols(dplyr::select(row, unique_plot), res)
     }
-    list(dpm = dpm, model = ifelse(inherits(seg_model, "try-error"), mod, seg_model))
+    results_df <- dplyr::bind_rows(results_each)
   }
 
-  # Process each nested dataset in parallel
-  `%dofut%` <- doFuture::`%dofuture%`
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = rbind) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
-    flights <- to_datetime(df[[flight_date]])$yday + 1
-    if (!is.null(sowing_date)) {
-      flights <- as.numeric(round(difftime(to_datetime(df[[flight_date]]), to_datetime(sowing_date), units = "days")))
-    }
-    model_result <- calculate_dpm(df, flights, threshold, slope)
-
-    tibble::tibble(
-      unique_plot = dftemp$unique_plot[i],
-      maturity = as.numeric(model_result$dpm),
-      threshold = threshold,
-      parms = list(modeladj = model_result$model)
-    )
-  }
-
-  # Post-process results
-  results <- results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+  # --- finalize ---------------------------------------------------------------
+  results <-
+    results_df |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"),
+                                delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
 
   return(results)
@@ -1272,79 +1504,143 @@ help_mod_segmented <- function(){
 
 
 ############## SEGMENTED MODEL 2 ################
+
 mod_segmented2 <- function(data,
                            flight_date = "date",
-                           predictor = "median.NDVI",
+                           predictor   = "median.NDVI",
                            sowing_date = NULL,
-                           parallel = FALSE) {
+                           parallel    = FALSE,
+                           session     = NULL,
+                           progress_id = "myprogress") {
 
-  # Prepare data
-  dftemp <- data |>
+  mod_segmented2_worker <- function(df, flight_date, predictor, sowing_date, to_datetime) {
+    tryCatch({
+      df <- as.data.frame(df)
+      flights <- if (!is.null(sowing_date)) {
+        as.numeric(round(difftime(to_datetime(df[[flight_date]]), to_datetime(sowing_date), units = "days")))
+      } else {
+        to_datetime(df[[flight_date]])$yday + 1
+      }
+      y <- df[[predictor]]
+      mod <- stats::lm(y ~ flights)
+
+      seg_model <- try(
+        segmented::segmented(
+          mod,
+          seg.Z = ~ flights,
+          npsi = 2,
+          control = segmented::seg.control(n.boot = 50, random = TRUE, tol = 0.01)
+        ),
+        silent = TRUE
+      )
+
+      if (!inherits(seg_model, "try-error") && !is.null(seg_model$psi)) {
+        breakpoints <- seg_model$psi[, "Est."]
+        slopes      <- segmented::slope(seg_model)$flights[, 1]
+        intercepts  <- segmented::intercept(seg_model)$flights[, 1]
+        tibble::tibble(
+          maturity = as.numeric(breakpoints),
+          parms = list(modeladj = seg_model, coefs = list(slopes = slopes, intercepts = intercepts))
+        )
+      } else {
+        tibble::tibble(maturity = NA_real_, parms = list(modeladj = NA, coefs = NA))
+      }
+    }, error = function(e) tibble::tibble(maturity = NA_real_, parms = NA))
+  }
+
+  dftemp <-
+    data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
     dplyr::select(dplyr::all_of(c("unique_plot", flight_date, predictor))) |>
     dplyr::group_by(unique_plot) |>
-    tidyr::nest()
+    tidyr::nest() |>
+    dplyr::ungroup()
 
-  # Set parallel or sequential plan
-  if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
+  if (isTRUE(parallel)) {
+    ncores <- max(1, ceiling(parallel::detectCores() * 0.5))
+    chunked <-
+      dftemp |>
+      dplyr::mutate(index = rep(seq_len(ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(index) |>
+      dplyr::group_split() |>
+      as.list()
+
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    results_list <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, flight_date, predictor, sowing_date, to_datetime) {
+        x |>
+          dplyr::mutate(mod = purrr::map(
+            data,
+            mod_segmented2_worker,
+            flight_date = flight_date,
+            predictor   = predictor,
+            sowing_date = sowing_date,
+            to_datetime = to_datetime
+          )) |>
+          tidyr::unnest(cols = mod) |>
+          dplyr::select(-c(data, index))
+      },
+      .args = list(
+        flight_date = flight_date,
+        predictor   = predictor,
+        sowing_date = sowing_date,
+        to_datetime = to_datetime
+      )
+    )[.progress]
+
+    results_df <- dplyr::bind_rows(results_list)
+
   } else {
-    future::plan(future::sequential)
-  }
-  on.exit(future::plan(future::sequential)) # Ensure plan reverts back
+    # Sequential branch: UI progress only if session is provided
+    results_each <- vector("list", nrow(dftemp))
 
-  # Helper function to fit segmented regression model and calculate DPM
-  calculate_dpm <- function(y, flights) {
-    mod <- stats::lm(y ~ flights)  # Initial linear model
-    seg_model <- try(segmented::segmented(
-      mod,
-      seg.Z = ~flights,
-      npsi = 1,
-      control = segmented::seg.control(n.boot = 50, random = TRUE, tol = 0.01)
-    ), silent = TRUE)
-
-    if (!inherits(seg_model, "try-error") && !is.null(seg_model$psi)) {
-      # Extract breakpoint(s)
-      breakpoints <- seg_model$psi[, "Est."]
-
-      # Extract slopes and intercepts
-      slopes <- segmented::slope(seg_model)$flights[,1]
-      intercepts <- segmented::intercept(seg_model)$flights[, 1]
-
-      # Return results
-      list(dpm = breakpoints, model = seg_model, coefs = list(slopes = slopes, intercepts = intercepts))
-    } else {
-      # Fallback to linear regression if segmentation fails
-      list(dpm = NA,  model = NA, coefs = NA)
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::progressSweetAlert(
+        session = session,
+        id      = progress_id,
+        title   = "Processing plots",
+        display_pct = TRUE,
+        value   = 0,
+        total   = nrow(dftemp)
+      )
     }
-  }
 
-  # Process each nested dataset in parallel
-  `%dofut%` <- doFuture::`%dofuture%`
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = rbind) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
-    flights <- to_datetime(df[[flight_date]])$yday + 1
-    if (!is.null(sowing_date)) {
-      flights <- as.numeric(round(difftime(to_datetime(df[[flight_date]]), to_datetime(sowing_date), units = "days")))
+    for (i in seq_len(nrow(dftemp))) {
+      if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+        shinyWidgets::updateProgressBar(
+          session = session,
+          id      = progress_id,
+          value   = i,
+          title   = "Plimanshiny is fitting the models for maturity prediction...",
+          total   = nrow(dftemp)
+        )
+      }
+      row <- dftemp[i, ]
+      res <- mod_segmented2_worker(row$data[[1]],
+                                   flight_date = flight_date,
+                                   predictor   = predictor,
+                                   sowing_date = sowing_date,
+                                   to_datetime = to_datetime)
+      results_each[[i]] <- dplyr::bind_cols(dplyr::select(row, unique_plot), res)
     }
-    model_result <- calculate_dpm(df[[predictor]], flights)
 
-    tibble::tibble(
-      unique_plot = dftemp$unique_plot[i],
-      maturity = as.numeric(model_result$dpm),
-      parms = list(modeladj = model_result$model,
-                   coefs = model_result$coefs)
-    )
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::closeSweetAlert(session)
+    }
+
+    results_df <- dplyr::bind_rows(results_each)
   }
 
-  # Post-process results
-  results <-
-    results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+  results_df |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"),
+                                delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
-
-  return(results)
 }
+
+
 
 
 
@@ -1364,155 +1660,244 @@ sdfun_weibull <- function(x, Asym, Drop, lrc, pwr) {
                                                      1) * (pwr - 1) * pwr)) - exp(-exp(lrc) * x^pwr) * (exp(lrc) *
                                                                                                           (x^(pwr - 1) * pwr)) * (exp(lrc) * (x^(pwr - 1) * pwr)))
 }
-
 mod_weibull <- function(data,
-                        predictor = "date",
-                        dependent = "median.NDVI",
+                        predictor   = "date",          # x
+                        dependent   = "median.NDVI",   # y
                         sowing_date = NULL,
-                        parallel = FALSE) {
-  # Prepare data
+                        parallel    = FALSE,
+                        session     = NULL,            # for SweetAlert progress (sequential only)
+                        progress_id = "myprogress") {
+
+  # ---- worker: one plot ------------------------------------------------------
+  mod_weibull_worker <- function(df, predictor, dependent, sowing_date,
+                                 to_datetime, modfun_weibull, fdfun_weibull, sdfun_weibull, gof) {
+    tryCatch({
+      df <- as.data.frame(df)
+
+      # x (time axis)
+      if (identical(predictor, "date")) {
+        if (!is.null(sowing_date)) {
+          x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+            as.numeric() |> round()
+        } else {
+          x <- to_datetime(df[[predictor]])$yday + 1
+        }
+      } else {
+        x <- df[[predictor]]
+      }
+
+      # y (response)
+      y <- df |> dplyr::pull(!!rlang::sym(dependent))
+
+      fflight <- min(x, na.rm = TRUE)
+      lflight <- max(x, na.rm = TRUE) + 20
+
+      # Fit Weibull (fallback to nlsLM if needed)
+      model <- try(
+        nls(y ~ SSweibull(x, Asym, Drop, lrc, pwr),
+            control = nls.control(maxiter = 1000),
+            data = data.frame(x, y)),
+        silent = TRUE
+      )
+
+      if (inherits(model, "try-error")) {
+        model <- suppressWarnings(
+          minpack.lm::nlsLM(y ~ SSweibull(x, Asym, Drop, lrc, pwr),
+                            data = data.frame(x, y))
+        )
+      }
+
+      coefs <- stats::coef(model)
+
+      # Goodness-of-fit (safe)
+      gofval <- try(gof(model, y), silent = TRUE)
+      if (inherits(gofval, "try-error")) {
+        gofval <- list(AIC = NA_real_, RMSE = NA_real_, MAE = NA_real_)
+      }
+
+      # AUC
+      auc <- stats::integrate(
+        modfun_weibull,
+        lower = fflight, upper = lflight,
+        Asym = coefs[["Asym"]], Drop = coefs[["Drop"]],
+        lrc  = coefs[["lrc"]],  pwr  = coefs[["pwr"]]
+      )
+
+      # Critical points
+      fdopt_result <- stats::optimize(
+        fdfun_weibull,
+        Asym = coefs[["Asym"]], Drop = coefs[["Drop"]],
+        lrc  = coefs[["lrc"]],  pwr  = coefs[["pwr"]],
+        interval = c(fflight, lflight),
+        maximum  = TRUE
+      )
+
+      sdopt_result <- stats::optimize(
+        sdfun_weibull,
+        Asym = coefs[["Asym"]], Drop = coefs[["Drop"]],
+        lrc  = coefs[["lrc"]],  pwr  = coefs[["pwr"]],
+        interval = c(fflight, lflight),
+        maximum  = TRUE
+      )
+
+      sdopt_result2 <- stats::optimize(
+        sdfun_weibull,
+        Asym = coefs[["Asym"]], Drop = coefs[["Drop"]],
+        lrc  = coefs[["lrc"]],  pwr  = coefs[["pwr"]],
+        interval = c(fflight, lflight),
+        maximum  = FALSE
+      )
+
+      tibble::tibble(
+        model     = "Weibull",
+        asymptote = coefs[["Asym"]],
+        auc       = auc$value,
+        xinfp     = fdopt_result$maximum,
+        yinfp     = fdopt_result$objective,
+        xmace     = sdopt_result$maximum,
+        ymace     = sdopt_result$objective,
+        xmdes     = sdopt_result2$minimum,
+        ymdes     = sdopt_result2$objective,
+        aic       = gofval$AIC,
+        rmse      = gofval$RMSE,
+        mae       = gofval$MAE,
+        parms = list(
+          model    = modfun_weibull,
+          modeladj = model,
+          fd       = fdfun_weibull,
+          sd       = sdfun_weibull,
+          coefs    = list(
+            Asym = coefs[["Asym"]],
+            Drop = coefs[["Drop"]],
+            lrc  = coefs[["lrc"]],
+            pwr  = coefs[["pwr"]]
+          ),
+          xmin = fflight,
+          xmax = lflight
+        )
+      )
+    }, error = function(e) {
+      tibble::tibble(
+        model     = "Weibull",
+        asymptote = NA_real_,
+        auc = NA_real_, xinfp = NA_real_, yinfp = NA_real_,
+        xmace = NA_real_, ymace = NA_real_,
+        xmdes = NA_real_, ymdes = NA_real_,
+        aic = NA_real_, rmse = NA_real_, mae = NA_real_,
+        parms = NA
+      )
+    })
+  }
+
+  # ---- prepare grouped data --------------------------------------------------
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
     dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
-    tidyr::nest()
+    tidyr::nest() |>
+    dplyr::ungroup()
 
-  # Parallel or Sequential Plan
-  if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
+  if (isTRUE(parallel)) {
+    # chunk and map with mirai
+    ncores <- max(1, ceiling(parallel::detectCores() * 0.5))
+    chunked <-
+      dftemp |>
+      dplyr::mutate(index = rep(seq_len(ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(index) |>
+      dplyr::group_split() |>
+      as.list()
+
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    results_list <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, predictor, dependent, sowing_date,
+                    modfun_weibull, fdfun_weibull, sdfun_weibull, to_datetime, gof) {
+        x |>
+          dplyr::mutate(mod = purrr::map(
+            data,
+            mod_weibull_worker,
+            predictor       = predictor,
+            dependent       = dependent,
+            sowing_date     = sowing_date,
+            to_datetime     = to_datetime,
+            modfun_weibull  = modfun_weibull,
+            fdfun_weibull   = fdfun_weibull,
+            sdfun_weibull   = sdfun_weibull,
+            gof             = gof
+          )) |>
+          tidyr::unnest(cols = mod) |>
+          dplyr::select(-c(data, index))
+      },
+      .args = list(
+        predictor      = predictor,
+        dependent      = dependent,
+        sowing_date    = sowing_date,
+        modfun_weibull = modfun_weibull,
+        fdfun_weibull  = fdfun_weibull,
+        sdfun_weibull  = sdfun_weibull,
+        to_datetime    = to_datetime,
+        gof            = gof
+      )
+    )[.progress]
+
+    results_df <- dplyr::bind_rows(results_list)
+
   } else {
-    future::plan(future::sequential)
+    # sequential with SweetAlert progress
+    results_each <- vector("list", nrow(dftemp))
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::progressSweetAlert(
+        session = session,
+        id      = progress_id,
+        title   = "Fitting Weibull models",
+        display_pct = TRUE,
+        value   = 0,
+        total   = nrow(dftemp)
+      )
+    }
+
+    for (i in seq_len(nrow(dftemp))) {
+      if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+        shinyWidgets::updateProgressBar(
+          session = session,
+          id      = progress_id,
+          value   = i,
+          title   = "Plimanshiny is fitting the growth models...",
+          total   = nrow(dftemp)
+        )
+      }
+
+      row <- dftemp[i, ]
+      res <- mod_weibull_worker(row$data[[1]],
+                                predictor      = predictor,
+                                dependent      = dependent,
+                                sowing_date    = sowing_date,
+                                to_datetime    = to_datetime,
+                                modfun_weibull = modfun_weibull,
+                                fdfun_weibull  = fdfun_weibull,
+                                sdfun_weibull  = sdfun_weibull,
+                                gof            = gof)
+      results_each[[i]] <- dplyr::bind_cols(dplyr::select(row, unique_plot), res)
+    }
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::closeSweetAlert(session)
+    }
+
+    results_df <- dplyr::bind_rows(results_each)
   }
-  on.exit(future::plan(future::sequential))
 
-  `%dofut%` <- doFuture::`%dofuture%`
-
-  # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data),
-                                   .combine = dplyr::bind_rows,
-                                   .options.future = list(seed = TRUE)) %dofut% {
-                                     df <- as.data.frame(dftemp$data[[i]])
-
-                                     # Handle x (predictor)
-                                     if (predictor == "date") {
-                                       if (!is.null(sowing_date)) {
-                                         x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
-                                           as.numeric() |> round()
-                                       } else {
-                                         x <- to_datetime(df[[predictor]])$yday + 1
-                                       }
-                                     } else {
-                                       x <- df[[predictor]]
-                                     }
-
-                                     y <- df |> dplyr::pull(!!rlang::sym(dependent))
-
-                                     fflight <- min(x)
-                                     lflight <- max(x) + 20
-
-                                     result <- tryCatch({
-                                       # Fit Weibull model
-                                       model <- nls(y ~ SSweibull(x, Asym, Drop, lrc, pwr),
-                                                    control = nls.control(maxiter = 1000),
-                                                    data = data.frame(x, y))
-
-                                       coefs <- coef(model)
-                                       gofval <- gof(model, y)
-
-                                       # Area under the curve
-                                       auc <- integrate(modfun_weibull,
-                                                        lower = fflight,
-                                                        upper = lflight,
-                                                        Asym = coefs[["Asym"]],
-                                                        Drop = coefs[["Drop"]],
-                                                        lrc = coefs[["lrc"]],
-                                                        pwr = coefs[["pwr"]])
-
-                                       # Critical points
-                                       fdopt_result <- optimize(fdfun_weibull,
-                                                                Asym = coefs[["Asym"]],
-                                                                Drop = coefs[["Drop"]],
-                                                                lrc = coefs[["lrc"]],
-                                                                pwr = coefs[["pwr"]],
-                                                                interval = c(fflight, lflight),
-                                                                maximum = TRUE)
-
-                                       sdopt_result <- optimize(sdfun_weibull,
-                                                                Asym = coefs[["Asym"]],
-                                                                Drop = coefs[["Drop"]],
-                                                                lrc = coefs[["lrc"]],
-                                                                pwr = coefs[["pwr"]],
-                                                                interval = c(fflight, lflight),
-                                                                maximum = TRUE)
-
-                                       sdopt_result2 <- optimize(sdfun_weibull,
-                                                                 Asym = coefs[["Asym"]],
-                                                                 Drop = coefs[["Drop"]],
-                                                                 lrc = coefs[["lrc"]],
-                                                                 pwr = coefs[["pwr"]],
-                                                                 interval = c(fflight, lflight),
-                                                                 maximum = FALSE)
-
-                                       tibble::tibble(
-                                         unique_plot = dftemp$unique_plot[i],
-                                         model = "Weibull",
-                                         asymptote = coefs[["Asym"]],
-                                         auc = auc$value,
-                                         xinfp = fdopt_result$maximum,
-                                         yinfp = fdopt_result$objective,
-                                         xmace = sdopt_result$maximum,
-                                         ymace = sdopt_result$objective,
-                                         xmdes = sdopt_result2$minimum,
-                                         ymdes = sdopt_result2$objective,
-                                         aic = gofval$AIC,
-                                         rmse = gofval$RMSE,
-                                         mae = gofval$MAE,
-                                         parms = list(
-                                           model = modfun_weibull,
-                                           modeladj = model,
-                                           fd = fdfun_weibull,
-                                           sd = sdfun_weibull,
-                                           coefs = list(
-                                             Asym = coefs[["Asym"]],
-                                             Drop = coefs[["Drop"]],
-                                             lrc = coefs[["lrc"]],
-                                             pwr = coefs[["pwr"]]
-                                           ),
-                                           xmin = fflight,
-                                           xmax = lflight
-                                         )
-                                       )
-                                     }, error = function(e) {
-                                       tibble::tibble(
-                                         unique_plot = dftemp$unique_plot[i],
-                                         model = "Weibull",
-                                         asymptote = NA_real_,
-                                         auc = NA_real_,
-                                         xinfp = NA_real_,
-                                         yinfp = NA_real_,
-                                         xmace = NA_real_,
-                                         ymace = NA_real_,
-                                         xmdes = NA_real_,
-                                         ymdes = NA_real_,
-                                         aic = NA_real_,
-                                         rmse = NA_real_,
-                                         mae = NA_real_,
-                                         parms = NA
-                                       )
-                                     })
-
-                                     result
-                                   }
-
-  results <-
-    results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+  # ---- finalize --------------------------------------------------------------
+  results_df |>
+    dplyr::mutate(unique_plot = .data$unique_plot) |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"),
+                                delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
-
-  return(results)
 }
-
 
 
 help_mod_weibull_eq <- function() {
@@ -1593,115 +1978,111 @@ sdfun_gompertz <- function(x, Asym, b2, b3) {
 }
 
 mod_gompertz <- function(data,
-                         predictor = "date",
-                         dependent = "median.NDVI",
+                         predictor   = "date",
+                         dependent   = "median.NDVI",
                          sowing_date = NULL,
-                         parallel = FALSE) {
+                         parallel    = FALSE,
+                         session     = NULL,
+                         progress_id = "myprogress") {
 
-  # Prepare data
-  dftemp <-
-    data |>
-    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
-    dplyr::group_by(unique_plot) |>
-    tidyr::nest()
+  # ---- worker: one plot ------------------------------------------------------
+  mod_gompertz_worker <- function(df, predictor, dependent, sowing_date,
+                                  to_datetime, modfun_gompertz, fdfun_gompertz, sdfun_gompertz, gof) {
+    tryCatch({
+      df <- as.data.frame(df)
 
-  # Parallel or Sequential Plan
-  if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
-  } else {
-    future::plan(future::sequential)
-  }
-  on.exit(future::plan(future::sequential))
-
-  `%dofut%` <- doFuture::`%dofuture%`
-
-  # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
-
-    # Predictor variable (x)
-    if (predictor == "date") {
-      if (!is.null(sowing_date)) {
-        x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
-          as.numeric() |> round()
+      # x (time axis)
+      if (identical(predictor, "date")) {
+        if (!is.null(sowing_date)) {
+          x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+            as.numeric() |> round()
+        } else {
+          x <- to_datetime(df[[predictor]])$yday + 1
+        }
       } else {
-        x <- to_datetime(df[[predictor]])$yday + 1
+        x <- df[[predictor]]
       }
-    } else {
-      x <- df[[predictor]]
-    }
 
-    y <- df |> dplyr::pull(!!rlang::sym(dependent))
+      # y (response)
+      y <- df |> dplyr::pull(!!rlang::sym(dependent))
 
-    fflight <- min(x)
-    lflight <- max(x) + 20
+      fflight <- min(x, na.rm = TRUE)
+      lflight <- max(x, na.rm = TRUE) + 20
 
-    result <- tryCatch({
-      # Fit Gompertz model
-      model <- nls(y ~ SSgompertz(x, Asym, b2, b3),
-                   control = nls.control(maxiter = 1000),
-                   data = data.frame(x, y))
+      # Fit Gompertz (fallback to nlsLM if needed)
+      model <- try(
+        nls(y ~ SSgompertz(x, Asym, b2, b3),
+            control = nls.control(maxiter = 1000),
+            data = data.frame(x, y)),
+        silent = TRUE
+      )
 
-      coefs <- coef(model)
-      gofval <- gof(model, y)
+      if (inherits(model, "try-error")) {
+        model <- suppressWarnings(
+          minpack.lm::nlsLM(y ~ SSgompertz(x, Asym, b2, b3),
+                            data = data.frame(x, y))
+        )
+      }
 
-      # Area under curve
-      auc <- integrate(modfun_gompertz,
-                       lower = fflight,
-                       upper = lflight,
-                       Asym = coefs[["Asym"]],
-                       b2 = coefs[["b2"]],
-                       b3 = coefs[["b3"]])
+      coefs <- stats::coef(model)
 
-      # critical points
-      fdopt_result <- optimize(fdfun_gompertz,
-                               Asym = coefs[["Asym"]],
-                               b2 = coefs[["b2"]],
-                               b3 = coefs[["b3"]],
-                               interval = c(fflight, lflight),
-                               maximum = TRUE)
+      # Goodness-of-fit (safe)
+      gofval <- try(gof(model, y), silent = TRUE)
+      if (inherits(gofval, "try-error")) {
+        gofval <- list(AIC = NA_real_, RMSE = NA_real_, MAE = NA_real_)
+      }
 
-      # maximum acceleration
-      sdopt_result <- optimize(sdfun_gompertz,
-                               Asym = coefs[["Asym"]],
-                               b2 = coefs[["b2"]],
-                               b3 = coefs[["b3"]],
-                               interval = c(fflight, lflight),
-                               maximum = TRUE)
+      # AUC
+      auc <- stats::integrate(
+        modfun_gompertz,
+        lower = fflight, upper = lflight,
+        Asym = coefs[["Asym"]], b2 = coefs[["b2"]], b3 = coefs[["b3"]]
+      )
 
-      # maximum deceleration
-      sdopt_result2 <- optimize(sdfun_gompertz,
-                                Asym = coefs[["Asym"]],
-                                b2 = coefs[["b2"]],
-                                b3 = coefs[["b3"]],
-                                interval = c(fflight, lflight),
-                                maximum = FALSE)
+      # Critical points
+      fdopt_result <- stats::optimize(
+        fdfun_gompertz,
+        Asym = coefs[["Asym"]], b2 = coefs[["b2"]], b3 = coefs[["b3"]],
+        interval = c(fflight, lflight),
+        maximum  = TRUE
+      )
 
-      # Return results
+      sdopt_result <- stats::optimize(
+        sdfun_gompertz,
+        Asym = coefs[["Asym"]], b2 = coefs[["b2"]], b3 = coefs[["b3"]],
+        interval = c(fflight, lflight),
+        maximum  = TRUE
+      )
+
+      sdopt_result2 <- stats::optimize(
+        sdfun_gompertz,
+        Asym = coefs[["Asym"]], b2 = coefs[["b2"]], b3 = coefs[["b3"]],
+        interval = c(fflight, lflight),
+        maximum  = FALSE
+      )
+
       tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Gompertz",
+        model     = "Gompertz",
         asymptote = coefs[["Asym"]],
-        auc = auc$value,
-        xinfp = fdopt_result$maximum,
-        yinfp = fdopt_result$objective,
-        xmace = sdopt_result$maximum,
-        ymace = sdopt_result$objective,
-        xmdes = sdopt_result2$minimum,
-        ymdes = sdopt_result2$objective,
-        aic = gofval$AIC,
-        rmse = gofval$RMSE,
-        mae = gofval$MAE,
+        auc       = auc$value,
+        xinfp     = fdopt_result$maximum,
+        yinfp     = fdopt_result$objective,
+        xmace     = sdopt_result$maximum,
+        ymace     = sdopt_result$objective,
+        xmdes     = sdopt_result2$minimum,
+        ymdes     = sdopt_result2$objective,
+        aic       = gofval$AIC,
+        rmse      = gofval$RMSE,
+        mae       = gofval$MAE,
         parms = list(
-          model = modfun_gompertz,
+          model    = modfun_gompertz,
           modeladj = model,
-          fd = fdfun_gompertz,
-          sd = sdfun_gompertz,
-          coefs = list(
+          fd       = fdfun_gompertz,
+          sd       = sdfun_gompertz,
+          coefs    = list(
             Asym = coefs[["Asym"]],
-            b2 = coefs[["b2"]],
-            b3 = coefs[["b3"]]
+            b2   = coefs[["b2"]],
+            b3   = coefs[["b3"]]
           ),
           xmin = fflight,
           xmax = lflight
@@ -1709,32 +2090,125 @@ mod_gompertz <- function(data,
       )
     }, error = function(e) {
       tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Gompertz",
+        model     = "Gompertz",
         asymptote = NA_real_,
-        auc = NA_real_,
-        xinfp = NA_real_,
-        yinfp = NA_real_,
-        xmace = NA_real_,
-        ymace = NA_real_,
-        xmdes = NA_real_,
-        ymdes = NA_real_,
-        aic = NA_real_,
-        rmse = NA_real_,
-        mae = NA_real_,
+        auc = NA_real_, xinfp = NA_real_, yinfp = NA_real_,
+        xmace = NA_real_, ymace = NA_real_,
+        xmdes = NA_real_, ymdes = NA_real_,
+        aic = NA_real_, rmse = NA_real_, mae = NA_real_,
         parms = NA
       )
     })
-
-    result
   }
 
-  results <-
-    results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
-    tidyr::nest(parms = parms)
+  # ---- prepare grouped data --------------------------------------------------
+  dftemp <-
+    data |>
+    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
+    dplyr::group_by(unique_plot) |>
+    tidyr::nest() |>
+    dplyr::ungroup()
 
-  return(results)
+  if (isTRUE(parallel)) {
+    # chunk and map with mirai
+    ncores <- max(1, ceiling(parallel::detectCores() * 0.5))
+    chunked <-
+      dftemp |>
+      dplyr::mutate(index = rep(seq_len(ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(index) |>
+      dplyr::group_split() |>
+      as.list()
+
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    results_list <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, predictor, dependent, sowing_date,
+                    modfun_gompertz, fdfun_gompertz, sdfun_gompertz, to_datetime, gof) {
+        x |>
+          dplyr::mutate(mod = purrr::map(
+            data,
+            mod_gompertz_worker,
+            predictor        = predictor,
+            dependent        = dependent,
+            sowing_date      = sowing_date,
+            to_datetime      = to_datetime,
+            modfun_gompertz  = modfun_gompertz,
+            fdfun_gompertz   = fdfun_gompertz,
+            sdfun_gompertz   = sdfun_gompertz,
+            gof              = gof
+          )) |>
+          tidyr::unnest(cols = mod) |>
+          dplyr::select(-c(data, index))
+      },
+      .args = list(
+        predictor       = predictor,
+        dependent       = dependent,
+        sowing_date     = sowing_date,
+        modfun_gompertz = modfun_gompertz,
+        fdfun_gompertz  = fdfun_gompertz,
+        sdfun_gompertz  = sdfun_gompertz,
+        to_datetime     = to_datetime,
+        gof             = gof
+      )
+    )[.progress]
+
+    results_df <- dplyr::bind_rows(results_list)
+
+  } else {
+    # sequential with SweetAlert progress (fixed title per your preference)
+    results_each <- vector("list", nrow(dftemp))
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::progressSweetAlert(
+        session    = session,
+        id         = progress_id,
+        title      = "Plimanshiny is fitting the growth models...",
+        display_pct = TRUE,
+        value      = 0,
+        total      = nrow(dftemp)
+      )
+    }
+
+    for (i in seq_len(nrow(dftemp))) {
+      if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+        shinyWidgets::updateProgressBar(
+          session = session,
+          id      = progress_id,
+          value   = i,
+          title   = "Plimanshiny is fitting the growth models...",
+          total   = nrow(dftemp)
+        )
+      }
+
+      row <- dftemp[i, ]
+      res <- mod_gompertz_worker(row$data[[1]],
+                                 predictor       = predictor,
+                                 dependent       = dependent,
+                                 sowing_date     = sowing_date,
+                                 to_datetime     = to_datetime,
+                                 modfun_gompertz = modfun_gompertz,
+                                 fdfun_gompertz  = fdfun_gompertz,
+                                 sdfun_gompertz  = sdfun_gompertz,
+                                 gof             = gof)
+      results_each[[i]] <- dplyr::bind_cols(dplyr::select(row, unique_plot), res)
+    }
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::closeSweetAlert(session)
+    }
+
+    results_df <- dplyr::bind_rows(results_each)
+  }
+
+  # ---- finalize --------------------------------------------------------------
+  results_df |>
+    dplyr::mutate(unique_plot = .data$unique_plot) |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"),
+                                delim = "_", cols_remove = FALSE) |>
+    tidyr::nest(parms = parms)
 }
 
 
@@ -1802,147 +2276,242 @@ help_mod_gompertz <- function() {
 }
 
 ############## LOGISTIC MODEL 3 PARAMETERS - GROWTH MODELS #############
+
 mod_logistic_3P <- function(data,
-                            predictor = "date",
-                            dependent = "median.NDVI",
+                            predictor   = "date",
+                            dependent   = "median.NDVI",
                             sowing_date = NULL,
-                            parallel = FALSE) {
-  # Prepare data
+                            parallel    = FALSE,
+                            session     = NULL,            # for SweetAlert progress in sequential path
+                            progress_id = "myprogress") {  # pass a namespaced id from the module
+
+  # --- worker: one plot -------------------------------------------------------
+  mod_logistic_3P_worker <- function(df, predictor, dependent, sowing_date,
+                                     to_datetime, modfun_L3, fdfun_L3, sdfun_L3, gof) {
+    tryCatch({
+      df <- as.data.frame(df)
+
+      # x (time axis)
+      if (identical(predictor, "date")) {
+        if (!is.null(sowing_date)) {
+          x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+            as.numeric() |> round()
+        } else {
+          x <- to_datetime(df[[predictor]])$yday + 1
+        }
+      } else {
+        x <- df[[predictor]]
+      }
+
+      # y (response)
+      y <- df |> dplyr::pull(!!rlang::sym(dependent))
+
+      fflight <- min(x, na.rm = TRUE)
+      lflight <- max(x, na.rm = TRUE) + 20
+
+      # Fit 3-parameter logistic; fallback to nlsLM if needed
+      model <- try(
+        nls(y ~ SSlogis(x, Asym, xmid, scal),
+            control = nls.control(maxiter = 1000),
+            data = data.frame(x, y)),
+        silent = TRUE
+      )
+
+      if (inherits(model, "try-error")) {
+        model <- suppressWarnings(
+          minpack.lm::nlsLM(y ~ SSlogis(x, Asym, xmid, scal),
+                            data = data.frame(x, y))
+        )
+      }
+
+      coefs <- stats::coef(model)  # Asym, xmid, scal
+      b0 <- unname(coefs[["Asym"]])
+      b1 <- unname(coefs[["xmid"]])
+      b2 <- unname(coefs[["scal"]])
+
+      # GOF (safe)
+      gofval <- try(gof(model, y), silent = TRUE)
+      if (inherits(gofval, "try-error")) {
+        AICv <- NA_real_; RMSEv <- NA_real_; MAEv <- NA_real_
+      } else if (is.list(gofval) && !is.null(gofval$AIC)) {
+        AICv <- gofval$AIC; RMSEv <- gofval$RMSE; MAEv <- gofval$MAE
+      } else {
+        # fallback to index style [[1]], [[2]], [[3]]
+        AICv <- gofval[[1]]; RMSEv <- gofval[[2]]; MAEv <- gofval[[3]]
+      }
+
+      # AUC
+      int1 <- stats::integrate(
+        modfun_L3, lower = fflight, upper = lflight,
+        b0 = b0, b1 = b1, b2 = b2
+      )
+
+      # Critical points
+      fdopt_result <- stats::optimize(
+        fdfun_L3,
+        b0 = b0, b1 = b1, b2 = b2,
+        interval = c(fflight, lflight),
+        maximum  = TRUE
+      )
+
+      sdopt_result <- stats::optimize(
+        sdfun_L3,
+        b0 = b0, b1 = b1, b2 = b2,
+        interval = c(fflight, lflight),
+        maximum  = TRUE
+      )
+
+      sdopt_result2 <- stats::optimize(
+        sdfun_L3,
+        b0 = b0, b1 = b1, b2 = b2,
+        interval = c(fflight, lflight),
+        maximum  = FALSE
+      )
+
+      tibble::tibble(
+        model     = "Logistic 3P",
+        asymptote = b0,
+        auc       = int1$value,
+        xinfp     = fdopt_result$maximum,
+        yinfp     = fdopt_result$objective,
+        xmace     = sdopt_result$maximum,
+        ymace     = sdopt_result$objective,
+        xmdes     = sdopt_result2$minimum,
+        ymdes     = sdopt_result2$objective,
+        aic       = AICv,
+        rmse      = RMSEv,
+        mae       = MAEv,
+        parms = list(
+          model    = modfun_L3,
+          modeladj = model,
+          fd       = fdfun_L3,
+          sd       = sdfun_L3,
+          coefs    = list(b0 = b0, b1 = b1, b2 = b2),
+          xmin     = fflight,
+          xmax     = lflight
+        )
+      )
+    }, error = function(e) {
+      tibble::tibble(
+        model = "Logistic 3P",
+        asymptote = NA_real_,
+        auc = NA_real_, xinfp = NA_real_, yinfp = NA_real_,
+        xmace = NA_real_, ymace = NA_real_,
+        xmdes = NA_real_, ymdes = NA_real_,
+        aic = NA_real_, rmse = NA_real_, mae = NA_real_,
+        parms = NA
+      )
+    })
+  }
+
+  # --- prepare grouped data ---------------------------------------------------
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
     dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
-    tidyr::nest()
+    tidyr::nest() |>
+    dplyr::ungroup()
 
-  # Parallel or Sequential Plan
-  if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
+  if (isTRUE(parallel)) {
+    # chunk and map with mirai
+    ncores <- max(1, ceiling(parallel::detectCores() * 0.5))
+    chunked <-
+      dftemp |>
+      dplyr::mutate(index = rep(seq_len(ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(index) |>
+      dplyr::group_split() |>
+      as.list()
+
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    results_list <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, predictor, dependent, sowing_date,
+                    modfun_L3, fdfun_L3, sdfun_L3, to_datetime, gof) {
+        x |>
+          dplyr::mutate(mod = purrr::map(
+            data,
+            mod_logistic_3P_worker,
+            predictor    = predictor,
+            dependent    = dependent,
+            sowing_date  = sowing_date,
+            to_datetime  = to_datetime,
+            modfun_L3    = modfun_L3,
+            fdfun_L3     = fdfun_L3,
+            sdfun_L3     = sdfun_L3,
+            gof          = gof
+          )) |>
+          tidyr::unnest(cols = mod) |>
+          dplyr::select(-c(data, index))
+      },
+      .args = list(
+        predictor   = predictor,
+        dependent   = dependent,
+        sowing_date = sowing_date,
+        modfun_L3   = modfun_L3,
+        fdfun_L3    = fdfun_L3,
+        sdfun_L3    = sdfun_L3,
+        to_datetime = to_datetime,
+        gof         = gof
+      )
+    )[.progress]
+
+    results_df <- dplyr::bind_rows(results_list)
+
   } else {
-    future::plan(future::sequential)
-  }
-  on.exit(future::plan(future::sequential))
+    # sequential with SweetAlert progress (fixed title per your preference)
+    results_each <- vector("list", nrow(dftemp))
 
-  `%dofut%` <- doFuture::`%dofuture%`
-
-  # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
-    if(predictor == "date"){
-      if (!is.null(sowing_date)) {
-        flights <- (difftime(to_datetime(df$date), to_datetime(sowing_date), units = "days") + 1) |> as.numeric() |> round()
-      } else {
-        flights <- to_datetime(df$date)$yday + 1
-      }
-    } else{
-      flights <- df[[predictor]]
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::progressSweetAlert(
+        session    = session,
+        id         = progress_id,
+        title      = "Plimanshiny is fitting the growth models...",
+        display_pct = TRUE,
+        value      = 0,
+        total      = nrow(dftemp)
+      )
     }
 
-    fflight <- min(flights)
-    lflight <- max(flights) + 20
-    y <- df |> dplyr::pull(!!rlang::sym(dependent))
-    x <- flights
+    for (i in seq_len(nrow(dftemp))) {
+      if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+        shinyWidgets::updateProgressBar(
+          session = session,
+          id      = progress_id,
+          value   = i,
+          title   = "Plimanshiny is fitting the growth models...",
+          total   = nrow(dftemp)
+        )
+      }
 
-    result <- tryCatch({
-      # Fit Gompertz model
-      model <- nls(y ~ SSlogis(x, Asym, xmid, scal),
-                   control = nls.control(maxiter = 1000),
-                   data = data.frame(x, y))
+      row <- dftemp[i, ]
+      res <- mod_logistic_3P_worker(row$data[[1]],
+                                    predictor   = predictor,
+                                    dependent   = dependent,
+                                    sowing_date = sowing_date,
+                                    to_datetime = to_datetime,
+                                    modfun_L3   = modfun_L3,
+                                    fdfun_L3    = fdfun_L3,
+                                    sdfun_L3    = sdfun_L3,
+                                    gof         = gof)
+      results_each[[i]] <- dplyr::bind_cols(dplyr::select(row, unique_plot), res)
+    }
 
-      coefs <- coef(model)
-      gofval <- gof(model, y)
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::closeSweetAlert(session)
+    }
 
-      # Area under curve
-      int1 <-
-        integrate(modfun_L3,
-                  lower = fflight,
-                  upper = lflight,
-                  b0 = coefs[[1]],
-                  b1 = coefs[[2]],
-                  b2 = coefs[[3]])
-
-      # critical points
-      fdopt_result <-
-        optimize(fdfun_L3,
-                 b0 = coefs[[1]],
-                 b1 = coefs[[2]],
-                 b2 = coefs[[3]],
-                 interval = c(fflight, lflight),
-                 maximum = TRUE)
-
-      # maximum acceleration
-      sdopt_result <-
-        optimize(sdfun_L3,
-                 b0 = coefs[[1]],
-                 b1 = coefs[[2]],
-                 b2 = coefs[[3]],
-                 interval = c(fflight, lflight),
-                 maximum = TRUE)
-
-      # maximum deceleration
-      sdopt_result2 <-
-        optimize(sdfun_L3,
-                 b0 = coefs[[1]],
-                 b1 = coefs[[2]],
-                 b2 = coefs[[3]],
-                 interval = c(fflight, lflight),
-                 maximum = FALSE)
-
-
-      # Return results
-      tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Logistic 3P",
-        asymptote = coefs[[1]],
-        auc = int1$value,
-        xinfp = fdopt_result$maximum,
-        yinfp = fdopt_result$objective,
-        xmace = sdopt_result$maximum,
-        ymace = sdopt_result$objective,
-        xmdes = sdopt_result2$minimum,
-        ymdes = sdopt_result2$objective,
-        aic = gofval[[1]],
-        rmse = gofval[[2]],
-        mae = gofval[[3]],
-        parms = list(model = modfun_L3,
-                     modeladj = model,
-                     fd = fdfun_L3,
-                     sd = sdfun_L3,
-                     coefs = list(
-                       b0 = coefs[[1]],
-                       b1 = coefs[[2]],
-                       b2 = coefs[[3]]
-                     ),
-                     xmin = fflight, xmax = lflight)
-      )
-    }, error = function(e) {
-      # Return NA values if model fails
-      tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Logistic 3P",
-        asymptote = NA_real_,
-        auc = NA_real_,
-        xinfp = NA_real_,
-        yinfp = NA_real_,
-        xmace = NA_real_,
-        ymace = NA_real_,
-        xmdes = NA_real_,
-        ymdes = NA_real_,
-        aic = NA_real_,
-        rmse = NA_real_,
-        mae = NA_real_,
-        parms = NA
-      )
-    })
-
-    result
+    results_df <- dplyr::bind_rows(results_each)
   }
-  results <-
-    results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
-    tidyr::nest(parms = parms)
 
-  return(results)
+  # --- finalize ---------------------------------------------------------------
+  results_df |>
+    dplyr::mutate(unique_plot = .data$unique_plot) |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"),
+                                delim = "_", cols_remove = FALSE) |>
+    tidyr::nest(parms = parms)
 }
 
 
@@ -1996,111 +2565,102 @@ help_mod_L3_gm <- function() {
 
 
 ############## LOGISTIC MODEL 4 PARAMETERS - GROWTH MODELS #############
+
+
 mod_logistic_4P <- function(data,
                             predictor = "date",
                             dependent = "median.NDVI",
                             sowing_date = NULL,
-                            parallel = FALSE) {
-  # Prepare data
-  dftemp <-
-    data |>
-    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
-    dplyr::group_by(unique_plot) |>
-    tidyr::nest()
+                            parallel = FALSE,
+                            session = NULL) {
 
-  # Parallel or Sequential Plan
-  if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
-  } else {
-    future::plan(future::sequential)
-  }
-  on.exit(future::plan(future::sequential))
+  # --- worker that fits the 4P logistic for a single nested data.frame ---
+  mod_logistic_4P_worker <- function(df, predictor, dependent, sowing_date,
+                                     to_datetime, modfun_L4, fdfun_L4, sdfun_L4) {
+    tryCatch({
+      df <- as.data.frame(df)
 
-  `%dofut%` <- doFuture::`%dofuture%`
-
-  # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
-
-    if (predictor == "date") {
-      if (!is.null(sowing_date)) {
-        flights <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
-          as.numeric() |> round()
+      # build "flights" (x)
+      if (identical(predictor, "date")) {
+        if (!is.null(sowing_date)) {
+          flights <- as.numeric(round(difftime(to_datetime(df[[predictor]]),
+                                               to_datetime(sowing_date),
+                                               units = "days"))) + 1
+        } else {
+          flights <- lubridate::yday(to_datetime(df[[predictor]])) + 1
+        }
       } else {
-        flights <- to_datetime(df[[predictor]])$yday + 1
+        flights <- df[[predictor]]
       }
-    } else {
-      flights <- df[[predictor]]
-    }
 
-    fflight <- min(flights)
-    lflight <- max(flights) + 20
-    y <- df |> dplyr::pull(!!rlang::sym(dependent))
+      fflight <- min(flights, na.rm = TRUE)
+      lflight <- max(flights, na.rm = TRUE) + 20
+      y <- df[[dependent]]
 
-    result <- tryCatch({
-      model <- try(
-        nls(y ~ SSfpl(flights, a, b, xmid, scal),
-            data = data.frame(flights, y),
-            control = nls.control(maxiter = 1000)),
-        silent = TRUE
-      )
+      # fit model (try nls then nlsLM)
+      model <- try(stats::nls(y ~ SSfpl(flights, a, b, xmid, scal),
+                              data = data.frame(flights = flights, y = y),
+                              control = nls.control(maxiter = 1000)),
+                   silent = TRUE)
 
       if (inherits(model, "try-error")) {
         model <- suppressWarnings(
           minpack.lm::nlsLM(y ~ SSfpl(flights, a, b, xmid, scal),
-                            data = data.frame(flights, y))
+                            data = data.frame(flights = flights, y = y))
         )
       }
 
       coefslog <- coef(model)
-      a <- coefslog[["a"]]
-      b <- coefslog[["b"]]
+      a    <- coefslog[["a"]]
+      b    <- coefslog[["b"]]
       xmid <- coefslog[["xmid"]]
       scal <- coefslog[["scal"]]
 
+      # goodness of fit
       gofval <- gof(model, y)
 
+      # area under curve over [first flight, last flight + 20]
       auc <- integrate(modfun_L4, lower = fflight, upper = lflight,
                        a = a, b = b, xmid = xmid, scal = scal)
 
-      fdopt_result <- optimize(fdfun_L4, a = a, b = b, xmid = xmid, scal = scal,
-                               interval = c(fflight, lflight), maximum = TRUE)
+      # inflection & max/min slope points using first/second derivatives supplied
+      fdopt_result  <- optimize(fdfun_L4, interval = c(fflight, lflight),
+                                a = a, b = b, xmid = xmid, scal = scal,
+                                maximum = TRUE)
 
-      sdopt_result <- optimize(sdfun_L4, a = a, b = b, xmid = xmid, scal = scal,
-                               interval = c(fflight, lflight), maximum = TRUE)
+      sdopt_result  <- optimize(sdfun_L4, interval = c(fflight, lflight),
+                                a = a, b = b, xmid = xmid, scal = scal,
+                                maximum = TRUE)
 
-      sdopt_result2 <- optimize(sdfun_L4, a = a, b = b, xmid = xmid, scal = scal,
-                                interval = c(fflight, lflight), maximum = FALSE)
+      sdopt_result2 <- optimize(sdfun_L4, interval = c(fflight, lflight),
+                                a = a, b = b, xmid = xmid, scal = scal,
+                                maximum = FALSE)
 
       tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Logistic 4P",
         asymptote = b,
-        auc = auc$value,
-        xinfp = fdopt_result$maximum,
-        yinfp = fdopt_result$objective,
-        xmace = sdopt_result$maximum,
-        ymace = sdopt_result$objective,
-        xmdes = sdopt_result2$minimum,
-        ymdes = sdopt_result2$objective,
-        aic = gofval$AIC,
+        auc       = auc$value,
+        xinfp     = fdopt_result$maximum,
+        yinfp     = fdopt_result$objective,
+        xmace     = sdopt_result$maximum,
+        ymace     = sdopt_result$objective,
+        xmdes     = sdopt_result2$minimum,
+        ymdes     = sdopt_result2$objective,
+        aic  = gofval$AIC,
         rmse = gofval$RMSE,
-        mae = gofval$MAE,
+        mae  = gofval$MAE,
         parms = list(
-          model = modfun_L4,
-          modeladj = model,
-          fd = fdfun_L4,
-          sd = sdfun_L4,
-          coefs = list(a = a, b = b, xmid = xmid, scal = scal),
-          xmin = fflight,
-          xmax = lflight
+          model   = modfun_L4,
+          modeladj= model,
+          fd      = fdfun_L4,
+          sd      = sdfun_L4,
+          coefs   = list(a = a, b = b, xmid = xmid, scal = scal),
+          xmin    = fflight,
+          xmax    = lflight
         )
-      )
+      ) |> tidyr::nest(parms = parms)
+
     }, error = function(e) {
       tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Logistic 4P",
         asymptote = NA_real_,
         auc = NA_real_,
         xinfp = NA_real_,
@@ -2115,18 +2675,109 @@ mod_logistic_4P <- function(data,
         parms = NA
       )
     })
-
-    result
   }
 
-  results <-
-    results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
-    tidyr::nest(parms = parms)
+  # ---- build nested input (group per plot) ----
+  dftemp <-
+    data |>
+    dplyr::mutate(unique_plot = paste0(.data$block, "_", .data$plot_id)) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
+    dplyr::group_by(.data$unique_plot) |>
+    tidyr::nest() |>
+    dplyr::ungroup()
 
-  return(results)
+  # ---- run sequentially or in parallel with mirai ----
+  if (isTRUE(parallel)) {
+    # split nested rows into chunks ~ number of workers
+    ncores <- max(1L, ceiling(parallel::detectCores() * 0.5))
+    dflist <-
+      dftemp |>
+      dplyr::mutate(index = rep(seq_len(ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(.data$index) |>
+      dplyr::group_split() |>
+      as.list()
+
+    # start mirai daemons
+    mirai::daemons(n = min(length(dflist), ncores), .compute = session)
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    # map each chunk on a daemon
+    results_list <- mirai::mirai_map(
+      .x = dflist,
+      .f = function(chunk, predictor, dependent, sowing_date, to_datetime) {
+        chunk |>
+          dplyr::mutate(
+            model = purrr::map(
+              .data$data,
+              mod_logistic_4P_worker,
+              predictor     = predictor,
+              dependent     = dependent,
+              sowing_date   = sowing_date,
+              to_datetime   = to_datetime,
+              modfun_L4     = modfun_L4,
+              fdfun_L4      = fdfun_L4,
+              sdfun_L4      = sdfun_L4
+            )
+          ) |>
+          tidyr::unnest(cols = "model") |>
+          dplyr::select(-c(.data$data, .data$index))
+      },
+      .args = list(
+        predictor = predictor,
+        dependent = dependent,
+        sowing_date = sowing_date,
+        to_datetime = to_datetime
+      )
+    )[.progress]
+
+    # combine chunk results
+    results <-
+      results_list |>
+      dplyr::bind_rows()
+
+  } else {
+    # sequential
+    rows <- nrow(dftemp)
+    out  <- vector("list", rows)
+    # # fetch helpers once
+    progressSweetAlert(
+      session = session,
+      id = "myprogress",
+      title = "Start",
+      display_pct = TRUE,
+      value = 0,
+      total = rows
+    )
+    for (i in seq_len(rows)) {
+      updateProgressBar(
+        session = session,
+        id = "myprogress",
+        value = i,
+        title = paste0("Plimanshiny is fitting the growth models..."),
+        total = rows
+      )
+
+      res <- mod_logistic_4P_worker(dftemp$data[[i]],
+                                    predictor   = predictor,
+                                    dependent   = dependent,
+                                    sowing_date = sowing_date,
+                                    to_datetime = to_datetime,
+                                    modfun_L4   = modfun_L4,
+                                    fdfun_L4    = fdfun_L4,
+                                    sdfun_L4    = sdfun_L4)
+      out[[i]] <- dplyr::bind_cols(dplyr::select(dftemp[i, ], "unique_plot"), res)
+    }
+    results <- dplyr::bind_rows(out)
+  }
+
+  # reshape like your original (split unique_plot back to block/plot_id)
+  results |>
+    dplyr::mutate(model = "Logistic 4P", .before = 1) |>
+    tidyr::separate_wider_delim(.data$unique_plot,
+                                names = c("block", "plot_id"),
+                                delim = "_",
+                                cols_remove = FALSE)
 }
-
 
 # Logistic
 help_mod_L4_gm <- function() {
@@ -2228,143 +2879,235 @@ SSvonBertalanffy <- selfStart(
   },
   parameters = c("Linf", "k", "t0")
 )
+#
 
 mod_vonbert <- function(data,
-                        predictor = "date",
-                        dependent = "median.NDVI",
+                        predictor   = "date",
+                        dependent   = "median.NDVI",
                         sowing_date = NULL,
-                        parallel = FALSE) {
-  # Prepare data
+                        parallel    = FALSE,
+                        session     = NULL,            # for SweetAlert progress (sequential only)
+                        progress_id = "myprogress") {  # pass namespaced id from your module
+
+  # ---- worker: one plot ------------------------------------------------------
+  mod_vonbert_worker <- function(df, predictor, dependent, sowing_date,
+                                 to_datetime, modfun_vonbert, fdfun_vonbert, sdfun_vonbert, gof) {
+    tryCatch({
+      df <- as.data.frame(df)
+
+      # x (time axis)
+      if (identical(predictor, "date")) {
+        if (!is.null(sowing_date)) {
+          x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+            as.numeric() |> round()
+        } else {
+          x <- to_datetime(df[[predictor]])$yday + 1
+        }
+      } else {
+        x <- df[[predictor]]
+      }
+
+      # y (response)
+      y <- df |> dplyr::pull(!!rlang::sym(dependent))
+
+      fflight <- min(x, na.rm = TRUE)
+      lflight <- max(x, na.rm = TRUE) + 20
+
+      # Fit Von Bertalanffy (fallback to nlsLM if needed)
+      model <- try(
+        nls(y ~ SSvonBertalanffy(x, Linf, k, t0),
+            control = nls.control(maxiter = 1000),
+            data = data.frame(x, y)),
+        silent = TRUE
+      )
+
+      if (inherits(model, "try-error")) {
+        model <- suppressWarnings(
+          minpack.lm::nlsLM(y ~ SSvonBertalanffy(x, Linf, k, t0),
+                            data = data.frame(x, y))
+        )
+      }
+
+      coefs <- stats::coef(model)
+
+      # Goodness-of-fit (safe)
+      gofval <- try(gof(model, y), silent = TRUE)
+      if (inherits(gofval, "try-error")) {
+        gofval <- list(AIC = NA_real_, RMSE = NA_real_, MAE = NA_real_)
+      }
+
+      # AUC
+      auc <- stats::integrate(
+        modfun_vonbert,
+        lower = fflight, upper = lflight,
+        Linf = coefs[["Linf"]], k = coefs[["k"]], t0 = coefs[["t0"]]
+      )
+
+      # Critical points
+      fdopt_result <- stats::optimize(
+        fdfun_vonbert,
+        Linf = coefs[["Linf"]], k = coefs[["k"]], t0 = coefs[["t0"]],
+        interval = c(fflight, lflight),
+        maximum  = TRUE
+      )
+
+      sdopt_result <- stats::optimize(
+        sdfun_vonbert,
+        Linf = coefs[["Linf"]], k = coefs[["k"]], t0 = coefs[["t0"]],
+        interval = c(fflight, lflight),
+        maximum  = TRUE
+      )
+
+      sdopt_result2 <- stats::optimize(
+        sdfun_vonbert,
+        Linf = coefs[["Linf"]], k = coefs[["k"]], t0 = coefs[["t0"]],
+        interval = c(fflight, lflight),
+        maximum  = FALSE
+      )
+
+      tibble::tibble(
+        model     = "Von Bertalanffy",
+        asymptote = coefs[["Linf"]],
+        auc       = auc$value,
+        xinfp     = fdopt_result$maximum,
+        yinfp     = fdopt_result$objective,
+        xmace     = sdopt_result$maximum,
+        ymace     = sdopt_result$objective,
+        xmdes     = sdopt_result2$minimum,
+        ymdes     = sdopt_result2$objective,
+        aic       = gofval$AIC,
+        rmse      = gofval$RMSE,
+        mae       = gofval$MAE,
+        parms = list(
+          model    = modfun_vonbert,
+          modeladj = model,
+          fd       = fdfun_vonbert,
+          sd       = sdfun_vonbert,
+          coefs    = list(Linf = coefs[["Linf"]], k = coefs[["k"]], t0 = coefs[["t0"]]),
+          xmin     = fflight,
+          xmax     = lflight
+        )
+      )
+    }, error = function(e) {
+      tibble::tibble(
+        model = "Von Bertalanffy",
+        asymptote = NA_real_,
+        auc = NA_real_, xinfp = NA_real_, yinfp = NA_real_,
+        xmace = NA_real_, ymace = NA_real_,
+        xmdes = NA_real_, ymdes = NA_real_,
+        aic = NA_real_, rmse = NA_real_, mae = NA_real_,
+        parms = NA
+      )
+    })
+  }
+
+  # ---- prepare grouped data --------------------------------------------------
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
     dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
-    tidyr::nest()
+    tidyr::nest() |>
+    dplyr::ungroup()
 
-  # Parallel or Sequential Plan
-  if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
+  if (isTRUE(parallel)) {
+    # chunk and map with mirai
+    ncores <- max(1, ceiling(parallel::detectCores() * 0.5))
+    chunked <-
+      dftemp |>
+      dplyr::mutate(index = rep(seq_len(ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(index) |>
+      dplyr::group_split() |>
+      as.list()
+
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    results_list <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, predictor, dependent, sowing_date,
+                    modfun_vonbert, fdfun_vonbert, sdfun_vonbert, to_datetime, gof) {
+        x |>
+          dplyr::mutate(mod = purrr::map(
+            data,
+            mod_vonbert_worker,
+            predictor       = predictor,
+            dependent       = dependent,
+            sowing_date     = sowing_date,
+            to_datetime     = to_datetime,
+            modfun_vonbert  = modfun_vonbert,
+            fdfun_vonbert   = fdfun_vonbert,
+            sdfun_vonbert   = sdfun_vonbert,
+            gof             = gof
+          )) |>
+          tidyr::unnest(cols = mod) |>
+          dplyr::select(-c(data, index))
+      },
+      .args = list(
+        predictor      = predictor,
+        dependent      = dependent,
+        sowing_date    = sowing_date,
+        modfun_vonbert = modfun_vonbert,
+        fdfun_vonbert  = fdfun_vonbert,
+        sdfun_vonbert  = sdfun_vonbert,
+        to_datetime    = to_datetime,
+        gof            = gof
+      )
+    )[.progress]
+
+    results_df <- dplyr::bind_rows(results_list)
+
   } else {
-    future::plan(future::sequential)
+    # sequential with SweetAlert progress (fixed title)
+    results_each <- vector("list", nrow(dftemp))
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::progressSweetAlert(
+        session    = session,
+        id         = progress_id,
+        title      = "Plimanshiny is fitting the growth models...",
+        display_pct = TRUE,
+        value      = 0,
+        total      = nrow(dftemp)
+      )
+    }
+
+    for (i in seq_len(nrow(dftemp))) {
+      if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+        shinyWidgets::updateProgressBar(
+          session = session,
+          id      = progress_id,
+          value   = i,
+          title   = "Plimanshiny is fitting the growth models...",
+          total   = nrow(dftemp)
+        )
+      }
+
+      row <- dftemp[i, ]
+      res <- mod_vonbert_worker(row$data[[1]],
+                                predictor      = predictor,
+                                dependent      = dependent,
+                                sowing_date    = sowing_date,
+                                to_datetime    = to_datetime,
+                                modfun_vonbert = modfun_vonbert,
+                                fdfun_vonbert  = fdfun_vonbert,
+                                sdfun_vonbert  = sdfun_vonbert,
+                                gof            = gof)
+      results_each[[i]] <- dplyr::bind_cols(dplyr::select(row, unique_plot), res)
+    }
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::closeSweetAlert(session)
+    }
+
+    results_df <- dplyr::bind_rows(results_each)
   }
-  on.exit(future::plan(future::sequential))
 
-  `%dofut%` <- doFuture::`%dofuture%`
-
-  # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data),
-                                   .combine = dplyr::bind_rows,
-                                   .options.future = list(seed = TRUE)) %dofut% {
-                                     df <- as.data.frame(dftemp$data[[i]])
-
-                                     if (predictor == "date") {
-                                       if (!is.null(sowing_date)) {
-                                         x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
-                                           as.numeric() |> round()
-                                       } else {
-                                         x <- to_datetime(df[[predictor]])$yday + 1
-                                       }
-                                     } else {
-                                       x <- df[[predictor]]
-                                     }
-
-                                     fflight <- min(x)
-                                     lflight <- max(x) + 20
-                                     y <- df |> dplyr::pull(!!rlang::sym(dependent))
-
-                                     result <- tryCatch({
-                                       # Fit Von Bertalanffy model
-                                       model <- nls(y ~ SSvonBertalanffy(x, Linf, k, t0),
-                                                    control = nls.control(maxiter = 1000),
-                                                    data = data.frame(x, y))
-
-                                       coefs <- coef(model)
-                                       gofval <- gof(model, y)
-
-                                       # Area under the curve
-                                       auc <- integrate(modfun_vonbert,
-                                                        lower = fflight, upper = lflight,
-                                                        Linf = coefs[["Linf"]],
-                                                        k = coefs[["k"]],
-                                                        t0 = coefs[["t0"]])
-
-                                       # Critical points
-                                       fdopt_result <- optimize(fdfun_vonbert,
-                                                                Linf = coefs[["Linf"]],
-                                                                k = coefs[["k"]],
-                                                                t0 = coefs[["t0"]],
-                                                                interval = c(fflight, lflight),
-                                                                maximum = TRUE)
-
-                                       # Max acceleration
-                                       sdopt_result <- optimize(sdfun_vonbert,
-                                                                Linf = coefs[["Linf"]],
-                                                                k = coefs[["k"]],
-                                                                t0 = coefs[["t0"]],
-                                                                interval = c(fflight, lflight),
-                                                                maximum = TRUE)
-
-                                       # Max deceleration
-                                       sdopt_result2 <- optimize(sdfun_vonbert,
-                                                                 Linf = coefs[["Linf"]],
-                                                                 k = coefs[["k"]],
-                                                                 t0 = coefs[["t0"]],
-                                                                 interval = c(fflight, lflight),
-                                                                 maximum = FALSE)
-
-                                       tibble::tibble(
-                                         unique_plot = dftemp$unique_plot[i],
-                                         model = "Von Bertalanffy",
-                                         asymptote = coefs[["Linf"]],
-                                         auc = auc$value,
-                                         xinfp = fdopt_result$maximum,
-                                         yinfp = fdopt_result$objective,
-                                         xmace = sdopt_result$maximum,
-                                         ymace = sdopt_result$objective,
-                                         xmdes = sdopt_result2$minimum,
-                                         ymdes = sdopt_result2$objective,
-                                         aic = gofval$AIC,
-                                         rmse = gofval$RMSE,
-                                         mae = gofval$MAE,
-                                         parms = list(model = modfun_vonbert,
-                                                      modeladj = model,
-                                                      fd = fdfun_vonbert,
-                                                      sd = sdfun_vonbert,
-                                                      coefs = list(Linf = coefs[["Linf"]],
-                                                                   k = coefs[["k"]],
-                                                                   t0 = coefs[["t0"]]),
-                                                      xmin = fflight,
-                                                      xmax = lflight)
-                                       )
-                                     }, error = function(e) {
-                                       tibble::tibble(
-                                         unique_plot = dftemp$unique_plot[i],
-                                         model = "Von Bertalanffy",
-                                         asymptote = NA_real_,
-                                         auc = NA_real_,
-                                         xinfp = NA_real_,
-                                         yinfp = NA_real_,
-                                         xmace = NA_real_,
-                                         ymace = NA_real_,
-                                         xmdes = NA_real_,
-                                         ymdes = NA_real_,
-                                         aic = NA_real_,
-                                         rmse = NA_real_,
-                                         mae = NA_real_,
-                                         parms = NA
-                                       )
-                                     })
-
-                                     result
-                                   }
-
-  results <-
-    results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+  # ---- finalize --------------------------------------------------------------
+  results_df |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"),
+                                delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
-
-  return(results)
 }
 
 
@@ -2459,131 +3202,225 @@ SSexponential <- selfStart(
 )
 
 mod_exponential <- function(data,
-                            predictor = "date",
-                            dependent = "median.NDVI",
+                            predictor   = "date",
+                            dependent   = "median.NDVI",
                             sowing_date = NULL,
-                            parallel = FALSE) {
-  # Prepare data
+                            parallel    = FALSE,
+                            session     = NULL,            # for SweetAlert progress (sequential only)
+                            progress_id = "myprogress") {  # pass a namespaced id from your module
+
+  # ---- worker: one plot ------------------------------------------------------
+  mod_exponential_worker <- function(df, predictor, dependent, sowing_date,
+                                     to_datetime, modfun_exp, fdfun_exp, sdfun_exp, gof) {
+    tryCatch({
+      df <- as.data.frame(df)
+
+      # x (time axis)
+      if (identical(predictor, "date")) {
+        if (!is.null(sowing_date)) {
+          x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+            as.numeric() |> round()
+        } else {
+          x <- to_datetime(df[[predictor]])$yday + 1
+        }
+      } else {
+        x <- df[[predictor]]
+      }
+
+      # y (response)
+      y <- df |> dplyr::pull(!!rlang::sym(dependent))
+
+      fflight <- min(x, na.rm = TRUE)
+      lflight <- max(x, na.rm = TRUE) + 20
+
+      # Fit Exponential (fallback to nlsLM if needed)
+      model <- try(
+        stats::nls(y ~ SSexponential(x, a, b),
+                   control = stats::nls.control(maxiter = 1000),
+                   data = data.frame(x, y)),
+        silent = TRUE
+      )
+
+      if (inherits(model, "try-error")) {
+        model <- suppressWarnings(
+          minpack.lm::nlsLM(y ~ SSexponential(x, a, b),
+                            data = data.frame(x, y))
+        )
+      }
+
+      coefs <- stats::coef(model)
+
+      # GOF (safe)
+      gofval <- try(gof(model, y), silent = TRUE)
+      if (inherits(gofval, "try-error")) {
+        gofval <- list(AIC = NA_real_, RMSE = NA_real_, MAE = NA_real_)
+      }
+
+      # AUC
+      auc <- stats::integrate(
+        modfun_exp,
+        lower = fflight, upper = lflight,
+        a = coefs[["a"]], b = coefs[["b"]]
+      )
+
+      # Critical points
+      fdopt_result <- stats::optimize(
+        fdfun_exp,
+        a = coefs[["a"]], b = coefs[["b"]],
+        interval = c(fflight, lflight),
+        maximum  = TRUE
+      )
+
+      sdopt_result <- stats::optimize(
+        sdfun_exp,
+        a = coefs[["a"]], b = coefs[["b"]],
+        interval = c(fflight, lflight),
+        maximum  = TRUE
+      )
+
+      tibble::tibble(
+        model     = "Exponential",
+        asymptote = NA_real_,                  # not applicable to pure exponential
+        auc       = auc$value,
+        xinfp     = fdopt_result$maximum,
+        yinfp     = fdopt_result$objective,
+        xmace     = sdopt_result$maximum,
+        ymace     = sdopt_result$objective,
+        xmdes     = NA_real_,
+        ymdes     = NA_real_,
+        aic       = gofval$AIC,
+        rmse      = gofval$RMSE,
+        mae       = gofval$MAE,
+        parms = list(
+          model    = modfun_exp,
+          modeladj = model,
+          fd       = fdfun_exp,
+          sd       = sdfun_exp,
+          coefs    = list(a = coefs[["a"]], b = coefs[["b"]]),
+          xmin     = fflight,
+          xmax     = lflight
+        )
+      )
+    }, error = function(e) {
+      tibble::tibble(
+        model = "Exponential",
+        asymptote = NA_real_,
+        auc = NA_real_, xinfp = NA_real_, yinfp = NA_real_,
+        xmace = NA_real_, ymace = NA_real_,
+        xmdes = NA_real_, ymdes = NA_real_,
+        aic = NA_real_, rmse = NA_real_, mae = NA_real_,
+        parms = NA
+      )
+    })
+  }
+
+  # ---- prepare grouped data --------------------------------------------------
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
     dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
-    tidyr::nest()
+    tidyr::nest() |>
+    dplyr::ungroup()
 
-  # Parallel or Sequential Plan
-  if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
+  if (isTRUE(parallel)) {
+    # chunk and map with mirai
+    ncores <- max(1, ceiling(parallel::detectCores() * 0.5))
+    chunked <-
+      dftemp |>
+      dplyr::mutate(index = rep(seq_len(ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(index) |>
+      dplyr::group_split() |>
+      as.list()
+
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    results_list <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, predictor, dependent, sowing_date,
+                    modfun_exp, fdfun_exp, sdfun_exp, to_datetime, gof) {
+        x |>
+          dplyr::mutate(mod = purrr::map(
+            data,
+            mod_exponential_worker,
+            predictor    = predictor,
+            dependent    = dependent,
+            sowing_date  = sowing_date,
+            to_datetime  = to_datetime,
+            modfun_exp   = modfun_exp,
+            fdfun_exp    = fdfun_exp,
+            sdfun_exp    = sdfun_exp,
+            gof          = gof
+          )) |>
+          tidyr::unnest(cols = mod) |>
+          dplyr::select(-c(data, index))
+      },
+      .args = list(
+        predictor   = predictor,
+        dependent   = dependent,
+        sowing_date = sowing_date,
+        modfun_exp  = modfun_exp,
+        fdfun_exp   = fdfun_exp,
+        sdfun_exp   = sdfun_exp,
+        to_datetime = to_datetime,
+        gof         = gof
+      )
+    )[.progress]
+
+    results_df <- dplyr::bind_rows(results_list)
+
   } else {
-    future::plan(future::sequential)
+    # sequential with SweetAlert progress (fixed title per your preference)
+    results_each <- vector("list", nrow(dftemp))
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::progressSweetAlert(
+        session    = session,
+        id         = progress_id,
+        title      = "Plimanshiny is fitting the growth models...",
+        display_pct = TRUE,
+        value      = 0,
+        total      = nrow(dftemp)
+      )
+    }
+
+    for (i in seq_len(nrow(dftemp))) {
+      if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+        shinyWidgets::updateProgressBar(
+          session = session,
+          id      = progress_id,
+          value   = i,
+          title   = "Plimanshiny is fitting the growth models...",
+          total   = nrow(dftemp)
+        )
+      }
+
+      row <- dftemp[i, ]
+      res <- mod_exponential_worker(row$data[[1]],
+                                    predictor   = predictor,
+                                    dependent   = dependent,
+                                    sowing_date = sowing_date,
+                                    to_datetime = to_datetime,
+                                    modfun_exp  = modfun_exp,
+                                    fdfun_exp   = fdfun_exp,
+                                    sdfun_exp   = sdfun_exp,
+                                    gof         = gof)
+      results_each[[i]] <- dplyr::bind_cols(dplyr::select(row, unique_plot), res)
+    }
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::closeSweetAlert(session)
+    }
+
+    results_df <- dplyr::bind_rows(results_each)
   }
-  on.exit(future::plan(future::sequential))
 
-  `%dofut%` <- doFuture::`%dofuture%`
-
-  # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data),
-                                   .combine = dplyr::bind_rows,
-                                   .options.future = list(seed = TRUE)) %dofut% {
-                                     df <- as.data.frame(dftemp$data[[i]])
-
-                                     if (predictor == "date") {
-                                       if (!is.null(sowing_date)) {
-                                         x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
-                                           as.numeric() |> round()
-                                       } else {
-                                         x <- to_datetime(df[[predictor]])$yday + 1
-                                       }
-                                     } else {
-                                       x <- df[[predictor]]
-                                     }
-
-                                     fflight <- min(x)
-                                     lflight <- max(x) + 20
-                                     y <- df |> dplyr::pull(!!rlang::sym(dependent))
-
-                                     result <- tryCatch({
-                                       # Fit Exponential model
-                                       model <- nls(y ~ SSexponential(x, a, b),
-                                                    control = nls.control(maxiter = 1000),
-                                                    data = data.frame(x, y))
-
-                                       coefs <- coef(model)
-                                       gofval <- gof(model, y)
-
-                                       # Area under curve
-                                       auc <- integrate(modfun_exp,
-                                                        lower = fflight, upper = lflight,
-                                                        a = coefs[["a"]],
-                                                        b = coefs[["b"]])
-
-                                       # Critical points
-                                       fdopt_result <- optimize(fdfun_exp,
-                                                                a = coefs[["a"]],
-                                                                b = coefs[["b"]],
-                                                                interval = c(fflight, lflight),
-                                                                maximum = TRUE)
-
-                                       # Maximum acceleration
-                                       sdopt_result <- optimize(sdfun_exp,
-                                                                a = coefs[["a"]],
-                                                                b = coefs[["b"]],
-                                                                interval = c(fflight, lflight),
-                                                                maximum = TRUE)
-
-                                       # Return results
-                                       tibble::tibble(
-                                         unique_plot = dftemp$unique_plot[i],
-                                         model = "Exponential",
-                                         asymptote = NA_real_, # Not applicable for exponential
-                                         auc = auc$value,
-                                         xinfp = fdopt_result$maximum,
-                                         yinfp = fdopt_result$objective,
-                                         xmace = sdopt_result$maximum,
-                                         ymace = sdopt_result$objective,
-                                         xmdes = NA_real_, # No deceleration in pure exponential
-                                         ymdes = NA_real_,
-                                         aic = gofval$AIC,
-                                         rmse = gofval$RMSE,
-                                         mae = gofval$MAE,
-                                         parms = list(
-                                           model = modfun_exp,
-                                           modeladj = model,
-                                           fd = fdfun_exp,
-                                           sd = sdfun_exp,
-                                           coefs = list(a = coefs[["a"]], b = coefs[["b"]]),
-                                           xmin = fflight,
-                                           xmax = lflight
-                                         )
-                                       )
-                                     }, error = function(e) {
-                                       tibble::tibble(
-                                         unique_plot = dftemp$unique_plot[i],
-                                         model = "Exponential",
-                                         asymptote = NA_real_,
-                                         auc = NA_real_,
-                                         xinfp = NA_real_,
-                                         yinfp = NA_real_,
-                                         xmace = NA_real_,
-                                         ymace = NA_real_,
-                                         xmdes = NA_real_,
-                                         ymdes = NA_real_,
-                                         aic = NA_real_,
-                                         rmse = NA_real_,
-                                         mae = NA_real_,
-                                         parms = NA
-                                       )
-                                     })
-
-                                     result
-                                   }
-
-  results <-
-    results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+  # ---- finalize --------------------------------------------------------------
+  results_df |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"),
+                                delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
-
-  return(results)
 }
 
 
@@ -2696,156 +3533,242 @@ SSjanoschek <- selfStart(
 )
 
 
-
 mod_janoschek <- function(data,
-                          predictor = "date",
-                          dependent = "median.NDVI",
+                          predictor   = "date",
+                          dependent   = "median.NDVI",
                           sowing_date = NULL,
-                          parallel = FALSE) {
-  # Prepare data
-  dftemp <-
-    data |>
-    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
-    dplyr::group_by(unique_plot) |>
-    tidyr::nest()
+                          parallel    = FALSE,
+                          session     = NULL,            # Shiny session for progress (sequential only)
+                          progress_id = "myprogress") {  # pass a namespaced id from your module
 
-  # Parallel or Sequential Plan
-  if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
-  } else {
-    future::plan(future::sequential)
-  }
-  on.exit(future::plan(future::sequential))
+  # ---- worker: one plot ------------------------------------------------------
+  mod_janoschek_worker <- function(df, predictor, dependent, sowing_date,
+                                   to_datetime, modfun_janoschek, fdfun_janoschek, sdfun_janoschek, gof) {
+    tryCatch({
+      df <- as.data.frame(df)
 
-  `%dofut%` <- doFuture::`%dofuture%`
-
-  # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows, .options.future = list(seed = TRUE)) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
-
-    # Define predictor variable (x)
-    if (predictor == "date") {
-      if (!is.null(sowing_date)) {
-        x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
-          as.numeric() |> round()
+      # x (time axis)
+      if (identical(predictor, "date")) {
+        if (!is.null(sowing_date)) {
+          x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+            as.numeric() |> round()
+        } else {
+          x <- to_datetime(df[[predictor]])$yday + 1
+        }
       } else {
-        x <- to_datetime(df[[predictor]])$yday + 1
+        x <- df[[predictor]]
       }
-    } else {
-      x <- df[[predictor]]
-    }
 
-    fflight <- min(x)
-    lflight <- max(x) + 20
-    y <- df |> dplyr::pull(!!rlang::sym(dependent))
+      # y (response)
+      y <- df |> dplyr::pull(!!rlang::sym(dependent))
 
-    result <- tryCatch({
-      # Fit Janoschek model
-      model <- nls(y ~ SSjanoschek(x, Asym, y0, k, m),
-                   control = nls.control(maxiter = 1000),
-                   data = data.frame(x, y))
+      fflight <- min(x, na.rm = TRUE)
+      lflight <- max(x, na.rm = TRUE) + 20
 
-      coefs <- coef(model)
-      gofval <- gof(model, y)
+      # Fit Janoschek (fallback to nlsLM if needed)
+      model <- try(
+        stats::nls(y ~ SSjanoschek(x, Asym, y0, k, m),
+                   control = stats::nls.control(maxiter = 1000),
+                   data = data.frame(x, y)),
+        silent = TRUE
+      )
 
-      # Area under curve (AUC)
-      auc_result <- integrate(
+      if (inherits(model, "try-error")) {
+        model <- suppressWarnings(
+          minpack.lm::nlsLM(y ~ SSjanoschek(x, Asym, y0, k, m),
+                            data = data.frame(x, y))
+        )
+      }
+
+      coefs <- stats::coef(model)
+
+      # GOF (safe)
+      gofval <- try(gof(model, y), silent = TRUE)
+      if (inherits(gofval, "try-error")) {
+        gofval <- list(AIC = NA_real_, RMSE = NA_real_, MAE = NA_real_)
+      }
+
+      # AUC
+      auc_result <- stats::integrate(
         modfun_janoschek,
-        lower = fflight,
-        upper = lflight,
-        Asym = coefs["Asym"],
-        y0 = coefs["y0"],
-        k = coefs["k"],
-        m = coefs["m"]
+        lower = fflight, upper = lflight,
+        Asym = coefs[["Asym"]], y0 = coefs[["y0"]],
+        k = coefs[["k"]], m = coefs[["m"]]
       )
 
       # Critical points
-      fdopt_result <- optimize(
+      fdopt_result <- stats::optimize(
         fdfun_janoschek,
         interval = c(fflight, lflight),
-        maximum = TRUE,
-        Asym = coefs["Asym"],
-        y0 = coefs["y0"],
-        k = coefs["k"],
-        m = coefs["m"]
+        maximum  = TRUE,
+        Asym = coefs[["Asym"]], y0 = coefs[["y0"]],
+        k = coefs[["k"]], m = coefs[["m"]]
       )
 
-      sdopt_result <- optimize(
+      sdopt_result <- stats::optimize(
         sdfun_janoschek,
         interval = c(fflight, lflight),
-        maximum = TRUE,
-        Asym = coefs["Asym"],
-        y0 = coefs["y0"],
-        k = coefs["k"],
-        m = coefs["m"]
+        maximum  = TRUE,
+        Asym = coefs[["Asym"]], y0 = coefs[["y0"]],
+        k = coefs[["k"]], m = coefs[["m"]]
       )
 
-      deceleration_result <- optimize(
+      deceleration_result <- stats::optimize(
         fdfun_janoschek,
         interval = c(fflight, lflight),
-        maximum = FALSE,
-        Asym = coefs["Asym"],
-        y0 = coefs["y0"],
-        k = coefs["k"],
-        m = coefs["m"]
+        maximum  = FALSE,
+        Asym = coefs[["Asym"]], y0 = coefs[["y0"]],
+        k = coefs[["k"]], m = coefs[["m"]]
       )
 
       tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Janoschek",
-        asymptote = coefs["Asym"],
-        auc = auc_result$value,
-        xinfp = fdopt_result$maximum,
-        yinfp = fdopt_result$objective,
-        xmace = sdopt_result$maximum,
-        ymace = sdopt_result$objective,
-        xmdes = deceleration_result$minimum,
-        ymdes = deceleration_result$objective,
-        aic = gofval$AIC,
-        rmse = gofval$RMSE,
-        mae = gofval$MAE,
+        model     = "Janoschek",
+        asymptote = coefs[["Asym"]],
+        auc       = auc_result$value,
+        xinfp     = fdopt_result$maximum,
+        yinfp     = fdopt_result$objective,
+        xmace     = sdopt_result$maximum,
+        ymace     = sdopt_result$objective,
+        xmdes     = deceleration_result$minimum,
+        ymdes     = deceleration_result$objective,
+        aic       = gofval$AIC,
+        rmse      = gofval$RMSE,
+        mae       = gofval$MAE,
         parms = list(
-          model = modfun_janoschek,
+          model    = modfun_janoschek,
           modeladj = model,
-          fd = fdfun_janoschek,
-          sd = sdfun_janoschek,
-          coefs = list(
-            Asym = coefs["Asym"],
-            y0 = coefs["y0"],
-            k = coefs["k"],
-            m = coefs["m"]),
+          fd       = fdfun_janoschek,
+          sd       = sdfun_janoschek,
+          coefs    = list(
+            Asym = coefs[["Asym"]],
+            y0   = coefs[["y0"]],
+            k    = coefs[["k"]],
+            m    = coefs[["m"]]
+          ),
           xmin = fflight,
           xmax = lflight
         )
       )
     }, error = function(e) {
       tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
         model = "Janoschek",
         asymptote = NA_real_,
-        auc = NA_real_,
-        xinfp = NA_real_,
-        yinfp = NA_real_,
-        xmace = NA_real_,
-        ymace = NA_real_,
-        xmdes = NA_real_,
-        ymdes = NA_real_,
-        aic = NA_real_,
-        rmse = NA_real_,
-        mae = NA_real_,
+        auc = NA_real_, xinfp = NA_real_, yinfp = NA_real_,
+        xmace = NA_real_, ymace = NA_real_,
+        xmdes = NA_real_, ymdes = NA_real_,
+        aic = NA_real_, rmse = NA_real_, mae = NA_real_,
         parms = NA
       )
     })
-
-    result
   }
 
-  results <- results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
-    tidyr::nest(parms = parms)
+  # ---- prepare grouped data --------------------------------------------------
+  dftemp <-
+    data |>
+    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
+    dplyr::group_by(unique_plot) |>
+    tidyr::nest() |>
+    dplyr::ungroup()
 
-  return(results)
+  if (isTRUE(parallel)) {
+    # chunk and map with mirai
+    ncores <- max(1, ceiling(parallel::detectCores() * 0.5))
+    chunked <-
+      dftemp |>
+      dplyr::mutate(index = rep(seq_len(ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(index) |>
+      dplyr::group_split() |>
+      as.list()
+
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    results_list <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, predictor, dependent, sowing_date,
+                    modfun_janoschek, fdfun_janoschek, sdfun_janoschek, to_datetime, gof) {
+        x |>
+          dplyr::mutate(mod = purrr::map(
+            data,
+            mod_janoschek_worker,
+            predictor         = predictor,
+            dependent         = dependent,
+            sowing_date       = sowing_date,
+            to_datetime       = to_datetime,
+            modfun_janoschek  = modfun_janoschek,
+            fdfun_janoschek   = fdfun_janoschek,
+            sdfun_janoschek   = sdfun_janoschek,
+            gof               = gof
+          )) |>
+          tidyr::unnest(cols = mod) |>
+          dplyr::select(-c(data, index))
+      },
+      .args = list(
+        predictor        = predictor,
+        dependent        = dependent,
+        sowing_date      = sowing_date,
+        modfun_janoschek = modfun_janoschek,
+        fdfun_janoschek  = fdfun_janoschek,
+        sdfun_janoschek  = sdfun_janoschek,
+        to_datetime      = to_datetime,
+        gof              = gof
+      )
+    )[.progress]
+
+    results_df <- dplyr::bind_rows(results_list)
+
+  } else {
+    # sequential with SweetAlert progress (fixed title)
+    results_each <- vector("list", nrow(dftemp))
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::progressSweetAlert(
+        session    = session,
+        id         = progress_id,
+        title      = "Plimanshiny is fitting the growth models...",
+        display_pct = TRUE,
+        value      = 0,
+        total      = nrow(dftemp)
+      )
+    }
+
+    for (i in seq_len(nrow(dftemp))) {
+      if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+        shinyWidgets::updateProgressBar(
+          session = session,
+          id      = progress_id,
+          value   = i,
+          title   = "Plimanshiny is fitting the growth models...",
+          total   = nrow(dftemp)
+        )
+      }
+
+      row <- dftemp[i, ]
+      res <- mod_janoschek_worker(row$data[[1]],
+                                  predictor        = predictor,
+                                  dependent        = dependent,
+                                  sowing_date      = sowing_date,
+                                  to_datetime      = to_datetime,
+                                  modfun_janoschek = modfun_janoschek,
+                                  fdfun_janoschek  = fdfun_janoschek,
+                                  sdfun_janoschek  = sdfun_janoschek,
+                                  gof              = gof)
+      results_each[[i]] <- dplyr::bind_cols(dplyr::select(row, unique_plot), res)
+    }
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::closeSweetAlert(session)
+    }
+
+    results_df <- dplyr::bind_rows(results_each)
+  }
+
+  # ---- finalize --------------------------------------------------------------
+  results_df |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"),
+                                delim = "_", cols_remove = FALSE) |>
+    tidyr::nest(parms = parms)
 }
 
 # Helper for Janoschek model equation
@@ -2951,147 +3874,238 @@ SStransGompertz <- selfStart(
   },
   parameters = c("A", "b", "c")
 )
+#
 
 mod_transgompertz <- function(data,
-                              predictor = "date",
-                              dependent = "median.NDVI",
+                              predictor   = "date",
+                              dependent   = "median.NDVI",
                               sowing_date = NULL,
-                              parallel = FALSE) {
-  # Prepare data
-  dftemp <- data |>
+                              parallel    = FALSE,
+                              session     = NULL,            # Shiny session for progress (sequential only)
+                              progress_id = "myprogress") {  # pass a namespaced id from your module
+
+  # ---- worker: one plot ------------------------------------------------------
+  mod_transgompertz_worker <- function(df, predictor, dependent, sowing_date,
+                                       to_datetime,
+                                       modfun_transgompertz, fdfun_transgompertz, sdfun_transgompertz,
+                                       gof) {
+    tryCatch({
+      df <- as.data.frame(df)
+
+      # x (time axis)
+      if (identical(predictor, "date")) {
+        if (!is.null(sowing_date)) {
+          x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+            as.numeric() |> round()
+        } else {
+          x <- to_datetime(df[[predictor]])$yday + 1
+        }
+      } else {
+        x <- df[[predictor]]
+      }
+
+      # y (response)
+      y <- df |> dplyr::pull(!!rlang::sym(dependent))
+
+      fflight <- min(x, na.rm = TRUE)
+      lflight <- max(x, na.rm = TRUE) + 20
+
+      # Fit Trans-Gompertz (fallback to nlsLM if needed)
+      model <- try(
+        stats::nls(y ~ SStransGompertz(x, A, b, c),
+                   control = stats::nls.control(maxiter = 1000),
+                   data = data.frame(x, y)),
+        silent = TRUE
+      )
+
+      if (inherits(model, "try-error")) {
+        model <- suppressWarnings(
+          minpack.lm::nlsLM(y ~ SStransGompertz(x, A, b, c),
+                            data = data.frame(x, y))
+        )
+      }
+
+      coefs <- stats::coef(model)
+
+      # GOF (safe)
+      gofval <- try(gof(model, y), silent = TRUE)
+      if (inherits(gofval, "try-error")) {
+        gofval <- list(AIC = NA_real_, RMSE = NA_real_, MAE = NA_real_)
+      }
+
+      # AUC
+      auc <- stats::integrate(
+        modfun_transgompertz,
+        lower = fflight, upper = lflight,
+        A = coefs[["A"]], b = coefs[["b"]], c = coefs[["c"]]
+      )
+
+      # Critical points
+      fdopt_result <- stats::optimize(
+        fdfun_transgompertz,
+        A = coefs[["A"]], b = coefs[["b"]], c = coefs[["c"]],
+        interval = c(fflight, lflight),
+        maximum  = TRUE
+      )
+
+      sdopt_result <- stats::optimize(
+        sdfun_transgompertz,
+        A = coefs[["A"]], b = coefs[["b"]], c = coefs[["c"]],
+        interval = c(fflight, lflight),
+        maximum  = TRUE
+      )
+
+      sdopt_result2 <- stats::optimize(
+        sdfun_transgompertz,
+        A = coefs[["A"]], b = coefs[["b"]], c = coefs[["c"]],
+        interval = c(fflight, lflight),
+        maximum  = FALSE
+      )
+
+      tibble::tibble(
+        model     = "Trans-Gompertz",
+        asymptote = coefs[["A"]],
+        auc       = auc$value,
+        xinfp     = fdopt_result$maximum,
+        yinfp     = fdopt_result$objective,
+        xmace     = sdopt_result$maximum,
+        ymace     = sdopt_result$objective,
+        xmdes     = sdopt_result2$minimum,
+        ymdes     = sdopt_result2$objective,
+        aic       = gofval$AIC,
+        rmse      = gofval$RMSE,
+        mae       = gofval$MAE,
+        parms = list(
+          model    = modfun_transgompertz,
+          modeladj = model,
+          fd       = fdfun_transgompertz,
+          sd       = sdfun_transgompertz,
+          coefs    = list(A = coefs[["A"]], b = coefs[["b"]], c = coefs[["c"]]),
+          xmin     = fflight,
+          xmax     = lflight
+        )
+      )
+    }, error = function(e) {
+      tibble::tibble(
+        model = "Trans-Gompertz",
+        asymptote = NA_real_,
+        auc = NA_real_, xinfp = NA_real_, yinfp = NA_real_,
+        xmace = NA_real_, ymace = NA_real_,
+        xmdes = NA_real_, ymdes = NA_real_,
+        aic = NA_real_, rmse = NA_real_, mae = NA_real_,
+        parms = NA
+      )
+    })
+  }
+
+  # ---- prepare grouped data --------------------------------------------------
+  dftemp <-
+    data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
     dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
-    tidyr::nest()
+    tidyr::nest() |>
+    dplyr::ungroup()
 
-  # Parallel or Sequential Plan
-  if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
+  if (isTRUE(parallel)) {
+    # chunk and map with mirai
+    ncores <- max(1, ceiling(parallel::detectCores() * 0.5))
+    chunked <-
+      dftemp |>
+      dplyr::mutate(index = rep(seq_len(ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(index) |>
+      dplyr::group_split() |>
+      as.list()
+
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    results_list <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, predictor, dependent, sowing_date,
+                    modfun_transgompertz, fdfun_transgompertz, sdfun_transgompertz,
+                    to_datetime, gof) {
+        x |>
+          dplyr::mutate(mod = purrr::map(
+            data,
+            mod_transgompertz_worker,
+            predictor              = predictor,
+            dependent              = dependent,
+            sowing_date            = sowing_date,
+            to_datetime            = to_datetime,
+            modfun_transgompertz   = modfun_transgompertz,
+            fdfun_transgompertz    = fdfun_transgompertz,
+            sdfun_transgompertz    = sdfun_transgompertz,
+            gof                    = gof
+          )) |>
+          tidyr::unnest(cols = mod) |>
+          dplyr::select(-c(data, index))
+      },
+      .args = list(
+        predictor             = predictor,
+        dependent             = dependent,
+        sowing_date           = sowing_date,
+        modfun_transgompertz  = modfun_transgompertz,
+        fdfun_transgompertz   = fdfun_transgompertz,
+        sdfun_transgompertz   = sdfun_transgompertz,
+        to_datetime           = to_datetime,
+        gof                   = gof
+      )
+    )[.progress]
+
+    results_df <- dplyr::bind_rows(results_list)
+
   } else {
-    future::plan(future::sequential)
+    # sequential with SweetAlert progress (fixed title)
+    results_each <- vector("list", nrow(dftemp))
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::progressSweetAlert(
+        session    = session,
+        id         = progress_id,
+        title      = "Plimanshiny is fitting the growth models...",
+        display_pct = TRUE,
+        value      = 0,
+        total      = nrow(dftemp)
+      )
+    }
+
+    for (i in seq_len(nrow(dftemp))) {
+      if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+        shinyWidgets::updateProgressBar(
+          session = session,
+          id      = progress_id,
+          value   = i,
+          title   = "Plimanshiny is fitting the growth models...",
+          total   = nrow(dftemp)
+        )
+      }
+
+      row <- dftemp[i, ]
+      res <- mod_transgompertz_worker(row$data[[1]],
+                                      predictor             = predictor,
+                                      dependent             = dependent,
+                                      sowing_date           = sowing_date,
+                                      to_datetime           = to_datetime,
+                                      modfun_transgompertz  = modfun_transgompertz,
+                                      fdfun_transgompertz   = fdfun_transgompertz,
+                                      sdfun_transgompertz   = sdfun_transgompertz,
+                                      gof                   = gof)
+      results_each[[i]] <- dplyr::bind_cols(dplyr::select(row, unique_plot), res)
+    }
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::closeSweetAlert(session)
+    }
+
+    results_df <- dplyr::bind_rows(results_each)
   }
-  on.exit(future::plan(future::sequential))
 
-  `%dofut%` <- doFuture::`%dofuture%`
-
-  # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data),
-                                   .combine = dplyr::bind_rows,
-                                   .options.future = list(seed = TRUE)) %dofut% {
-                                     df <- as.data.frame(dftemp$data[[i]])
-
-                                     # Predictor variable (x)
-                                     if (predictor == "date") {
-                                       if (!is.null(sowing_date)) {
-                                         x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
-                                           as.numeric() |> round()
-                                       } else {
-                                         x <- to_datetime(df[[predictor]])$yday + 1
-                                       }
-                                     } else {
-                                       x <- df[[predictor]]
-                                     }
-
-                                     y <- df |> dplyr::pull(!!rlang::sym(dependent))
-                                     fflight <- min(x)
-                                     lflight <- max(x) + 20
-
-                                     result <- tryCatch({
-                                       # Fit Trans-Gompertz model
-                                       model <- nls(y ~ SStransGompertz(x, A, b, c),
-                                                    control = nls.control(maxiter = 1000),
-                                                    data = data.frame(x, y))
-
-                                       coefs <- coef(model)
-                                       gofval <- gof(model, y)
-
-                                       # Area under curve
-                                       auc <- integrate(modfun_transgompertz,
-                                                        lower = fflight,
-                                                        upper = lflight,
-                                                        A = coefs[["A"]],
-                                                        b = coefs[["b"]],
-                                                        c = coefs[["c"]])
-
-                                       # critical points
-                                       fdopt_result <- optimize(fdfun_transgompertz,
-                                                                A = coefs[["A"]],
-                                                                b = coefs[["b"]],
-                                                                c = coefs[["c"]],
-                                                                interval = c(fflight, lflight),
-                                                                maximum = TRUE)
-
-                                       # maximum acceleration
-                                       sdopt_result <- optimize(sdfun_transgompertz,
-                                                                A = coefs[["A"]],
-                                                                b = coefs[["b"]],
-                                                                c = coefs[["c"]],
-                                                                interval = c(fflight, lflight),
-                                                                maximum = TRUE)
-
-                                       # maximum deceleration
-                                       sdopt_result2 <- optimize(sdfun_transgompertz,
-                                                                 A = coefs[["A"]],
-                                                                 b = coefs[["b"]],
-                                                                 c = coefs[["c"]],
-                                                                 interval = c(fflight, lflight),
-                                                                 maximum = FALSE)
-
-                                       tibble::tibble(
-                                         unique_plot = dftemp$unique_plot[i],
-                                         model = "Trans-Gompertz",
-                                         asymptote = coefs[["A"]],
-                                         auc = auc$value,
-                                         xinfp = fdopt_result$maximum,
-                                         yinfp = fdopt_result$objective,
-                                         xmace = sdopt_result$maximum,
-                                         ymace = sdopt_result$objective,
-                                         xmdes = sdopt_result2$minimum,
-                                         ymdes = sdopt_result2$objective,
-                                         aic = gofval$AIC,
-                                         rmse = gofval$RMSE,
-                                         mae = gofval$MAE,
-                                         parms = list(
-                                           model = modfun_transgompertz,
-                                           modeladj = model,
-                                           fd = fdfun_transgompertz,
-                                           sd = sdfun_transgompertz,
-                                           coefs = list(
-                                             A = coefs[["A"]],
-                                             b = coefs[["b"]],
-                                             c = coefs[["c"]]
-                                           ),
-                                           xmin = fflight,
-                                           xmax = lflight
-                                         )
-                                       )
-                                     }, error = function(e) {
-                                       tibble::tibble(
-                                         unique_plot = dftemp$unique_plot[i],
-                                         model = "Trans-Gompertz",
-                                         asymptote = NA_real_,
-                                         auc = NA_real_,
-                                         xinfp = NA_real_,
-                                         yinfp = NA_real_,
-                                         xmace = NA_real_,
-                                         ymace = NA_real_,
-                                         xmdes = NA_real_,
-                                         ymdes = NA_real_,
-                                         aic = NA_real_,
-                                         rmse = NA_real_,
-                                         mae = NA_real_,
-                                         parms = NA
-                                       )
-                                     })
-
-                                     result
-                                   }
-
-  results <- results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+  # ---- finalize --------------------------------------------------------------
+  results_df |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"),
+                                delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
-
-  return(results)
 }
 
 
@@ -3220,121 +4234,208 @@ SSsinusoidal <- selfStart(
   parameters = c("y0", "a", "b", "c")
 )
 
-
 mod_sinusoidal <- function(data,
-                           predictor = "date",
-                           dependent = "median.NDVI",
+                           predictor   = "date",
+                           dependent   = "median.NDVI",
                            sowing_date = NULL,
-                           parallel = FALSE) {
-  # Prepare data
-  dftemp <- data |>
+                           parallel    = FALSE,
+                           session     = NULL,            # Shiny session for progress (sequential only)
+                           progress_id = "myprogress") {  # pass a namespaced id from your module
+
+  # ---- worker: one plot ------------------------------------------------------
+  mod_sinusoidal_worker <- function(df, predictor, dependent, sowing_date,
+                                    to_datetime, modfun_sinusoidal, fdfun_sinusoidal, sdfun_sinusoidal, gof) {
+    tryCatch({
+      df <- as.data.frame(df)
+
+      # x (time axis)
+      if (identical(predictor, "date")) {
+        if (!is.null(sowing_date)) {
+          x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+            as.numeric() |> round()
+        } else {
+          x <- to_datetime(df[[predictor]])$yday + 1
+        }
+      } else {
+        x <- df[[predictor]]
+      }
+
+      # y (response)
+      y <- df |> dplyr::pull(!!rlang::sym(dependent))
+
+      fflight <- min(x, na.rm = TRUE)
+      lflight <- max(x, na.rm = TRUE) + 20
+
+      # Fit Sinusoidal (fallback to nlsLM if needed)
+      model <- try(
+        stats::nls(y ~ SSsinusoidal(x, y0, a, b, c),
+                   control = stats::nls.control(maxiter = 1000),
+                   data = data.frame(x, y)),
+        silent = TRUE
+      )
+
+      if (inherits(model, "try-error")) {
+        model <- suppressWarnings(
+          minpack.lm::nlsLM(y ~ SSsinusoidal(x, y0, a, b, c),
+                            data = data.frame(x, y))
+        )
+      }
+
+      coefs <- stats::coef(model)
+
+      # GOF (safe)
+      gofval <- try(gof(model, y), silent = TRUE)
+      if (inherits(gofval, "try-error")) {
+        gofval <- list(AIC = NA_real_, RMSE = NA_real_, MAE = NA_real_)
+      }
+
+      # Critical point (max growth)
+      fdopt_result <- stats::optimize(
+        fdfun_sinusoidal,
+        y0 = coefs[["y0"]], a = coefs[["a"]], b = coefs[["b"]], c = coefs[["c"]],
+        interval = c(fflight, lflight),
+        maximum  = TRUE
+      )
+
+      tibble::tibble(
+        model        = "Sinusoidal",
+        baseline     = coefs[["y0"]],
+        amplitude    = coefs[["a"]],
+        period       = coefs[["b"]],
+        phase_shift  = coefs[["c"]],
+        xinfp        = fdopt_result$maximum,
+        yinfp        = fdopt_result$objective,
+        aic          = gofval$AIC,
+        rmse         = gofval$RMSE,
+        mae          = gofval$MAE,
+        parms = list(
+          model    = modfun_sinusoidal,
+          modeladj = model,
+          fd       = fdfun_sinusoidal,
+          sd       = sdfun_sinusoidal,
+          coefs    = list(y0 = coefs[["y0"]], a = coefs[["a"]], b = coefs[["b"]], c = coefs[["c"]]),
+          xmin     = fflight,
+          xmax     = lflight
+        )
+      )
+    }, error = function(e) {
+      tibble::tibble(
+        model = "Sinusoidal",
+        baseline = NA_real_, amplitude = NA_real_, period = NA_real_, phase_shift = NA_real_,
+        xinfp = NA_real_, yinfp = NA_real_, aic = NA_real_, rmse = NA_real_, mae = NA_real_,
+        parms = NA
+      )
+    })
+  }
+
+  # ---- prepare grouped data --------------------------------------------------
+  dftemp <-
+    data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
     dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
-    tidyr::nest()
+    tidyr::nest() |>
+    dplyr::ungroup()
 
-  # Parallel or Sequential Plan
-  if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
+  if (isTRUE(parallel)) {
+    # chunk and map with mirai
+    ncores <- max(1, ceiling(parallel::detectCores() * 0.5))
+    chunked <-
+      dftemp |>
+      dplyr::mutate(index = rep(seq_len(ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(index) |>
+      dplyr::group_split() |>
+      as.list()
+
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    results_list <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, predictor, dependent, sowing_date,
+                    modfun_sinusoidal, fdfun_sinusoidal, sdfun_sinusoidal,
+                    to_datetime, gof) {
+        x |>
+          dplyr::mutate(mod = purrr::map(
+            data,
+            mod_sinusoidal_worker,
+            predictor          = predictor,
+            dependent          = dependent,
+            sowing_date        = sowing_date,
+            to_datetime        = to_datetime,
+            modfun_sinusoidal  = modfun_sinusoidal,
+            fdfun_sinusoidal   = fdfun_sinusoidal,
+            sdfun_sinusoidal   = sdfun_sinusoidal,
+            gof                = gof
+          )) |>
+          tidyr::unnest(cols = mod) |>
+          dplyr::select(-c(data, index))
+      },
+      .args = list(
+        predictor         = predictor,
+        dependent         = dependent,
+        sowing_date       = sowing_date,
+        modfun_sinusoidal = modfun_sinusoidal,
+        fdfun_sinusoidal  = fdfun_sinusoidal,
+        sdfun_sinusoidal  = sdfun_sinusoidal,
+        to_datetime       = to_datetime,
+        gof               = gof
+      )
+    )[.progress]
+
+    results_df <- dplyr::bind_rows(results_list)
+
   } else {
-    future::plan(future::sequential)
+    # sequential with SweetAlert progress (fixed title)
+    results_each <- vector("list", nrow(dftemp))
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::progressSweetAlert(
+        session     = session,
+        id          = progress_id,
+        title       = "Plimanshiny is fitting the growth models...",
+        display_pct = TRUE,
+        value       = 0,
+        total       = nrow(dftemp)
+      )
+    }
+
+    for (i in seq_len(nrow(dftemp))) {
+      if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+        shinyWidgets::updateProgressBar(
+          session = session,
+          id      = progress_id,
+          value   = i,
+          title   = "Plimanshiny is fitting the growth models...",
+          total   = nrow(dftemp)
+        )
+      }
+
+      row <- dftemp[i, ]
+      res <- mod_sinusoidal_worker(row$data[[1]],
+                                   predictor         = predictor,
+                                   dependent         = dependent,
+                                   sowing_date       = sowing_date,
+                                   to_datetime       = to_datetime,
+                                   modfun_sinusoidal = modfun_sinusoidal,
+                                   fdfun_sinusoidal  = fdfun_sinusoidal,
+                                   sdfun_sinusoidal  = sdfun_sinusoidal,
+                                   gof               = gof)
+      results_each[[i]] <- dplyr::bind_cols(dplyr::select(row, unique_plot), res)
+    }
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::closeSweetAlert(session)
+    }
+
+    results_df <- dplyr::bind_rows(results_each)
   }
-  on.exit(future::plan(future::sequential))
 
-  `%dofut%` <- doFuture::`%dofuture%`
-
-  # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data),
-                                   .combine = dplyr::bind_rows,
-                                   .options.future = list(seed = TRUE)) %dofut% {
-                                     df <- as.data.frame(dftemp$data[[i]])
-
-                                     # Predictor variable (x)
-                                     if (predictor == "date") {
-                                       if (!is.null(sowing_date)) {
-                                         x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
-                                           as.numeric() |> round()
-                                       } else {
-                                         x <- to_datetime(df[[predictor]])$yday + 1
-                                       }
-                                     } else {
-                                       x <- df[[predictor]]
-                                     }
-
-                                     y <- df |> dplyr::pull(!!rlang::sym(dependent))
-                                     fflight <- min(x)
-                                     lflight <- max(x) + 20
-
-                                     result <- tryCatch({
-                                       # Fit Sinusoidal model
-                                       model <- nls(y ~ SSsinusoidal(x, y0, a, b, c),
-                                                    control = nls.control(maxiter = 1000),
-                                                    data = data.frame(x, y))
-
-                                       coefs <- coef(model)
-                                       gofval <- gof(model, y)
-
-                                       # Critical point (max growth)
-                                       fdopt_result <- optimize(fdfun_sinusoidal,
-                                                                y0 = coefs[["y0"]],
-                                                                a = coefs[["a"]],
-                                                                b = coefs[["b"]],
-                                                                c = coefs[["c"]],
-                                                                interval = c(fflight, lflight),
-                                                                maximum = TRUE)
-
-                                       tibble::tibble(
-                                         unique_plot = dftemp$unique_plot[i],
-                                         model = "Sinusoidal",
-                                         baseline = coefs[["y0"]],
-                                         amplitude = coefs[["a"]],
-                                         period = coefs[["b"]],
-                                         phase_shift = coefs[["c"]],
-                                         xinfp = fdopt_result$maximum,
-                                         yinfp = fdopt_result$objective,
-                                         aic = gofval$AIC,
-                                         rmse = gofval$RMSE,
-                                         mae = gofval$MAE,
-                                         parms = list(
-                                           model = modfun_sinusoidal,
-                                           modeladj = model,
-                                           fd = fdfun_sinusoidal,
-                                           sd = sdfun_sinusoidal,
-                                           coefs = list(
-                                             y0 = coefs[["y0"]],
-                                             a = coefs[["a"]],
-                                             b = coefs[["b"]],
-                                             c = coefs[["c"]]
-                                           ),
-                                           xmin = fflight,
-                                           xmax = lflight
-                                         )
-                                       )
-                                     }, error = function(e) {
-                                       tibble::tibble(
-                                         unique_plot = dftemp$unique_plot[i],
-                                         model = "Sinusoidal",
-                                         baseline = NA_real_,
-                                         amplitude = NA_real_,
-                                         period = NA_real_,
-                                         phase_shift = NA_real_,
-                                         xinfp = NA_real_,
-                                         yinfp = NA_real_,
-                                         aic = NA_real_,
-                                         rmse = NA_real_,
-                                         mae = NA_real_,
-                                         parms = NA
-                                       )
-                                     })
-
-                                     result
-                                   }
-
-  results <- results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+  # ---- finalize --------------------------------------------------------------
+  results_df |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"),
+                                delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
-
-  return(results)
 }
 
 
@@ -3411,111 +4512,204 @@ sdfun_asym <- function(x, Asym, R0, lrc) {
 
 
 mod_asymptotic <- function(data,
-                           predictor = "date",
-                           dependent = "median.NDVI",
+                           predictor   = "date",
+                           dependent   = "median.NDVI",
                            sowing_date = NULL,
-                           parallel = FALSE) {
-  # Prepare data
-  dftemp <-
-    data |>
-    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
-    dplyr::group_by(unique_plot) |>
-    tidyr::nest()
+                           parallel    = FALSE,
+                           session     = NULL,            # Shiny session for progress (sequential only)
+                           progress_id = "myprogress") {  # pass a namespaced id from your module
 
-  # Parallel or Sequential Plan
-  if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
-  } else {
-    future::plan(future::sequential)
-  }
-  on.exit(future::plan(future::sequential))
-
-  `%dofut%` <- doFuture::`%dofuture%`
-
-  # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
-
-    # Predictor variable (x)
-    if (predictor == "date") {
-      if (!is.null(sowing_date)) {
-        x <- to_datetime(df[[predictor]])$yday + 1 - to_datetime(sowing_date)$yday
-      } else {
-        x <- to_datetime(df[[predictor]])$yday + 1
-      }
-    } else {
-      x <- df[[predictor]]
-    }
-
-    y <- df |> dplyr::pull(!!rlang::sym(dependent))
-    fflight <- min(x)
-    lflight <- max(x) + 20
-
+  # ---- worker: one plot ------------------------------------------------------
+  mod_asymptotic_worker <- function(df, predictor, dependent, sowing_date,
+                                    to_datetime, modfun_asym, fdfun_asym, sdfun_asym, gof) {
     tryCatch({
-      # Fit Asymptotic model
-      model <- nls(y ~ SSasymp(x, Asym, R0, lrc),
-                   control = nls.control(maxiter = 1000),
-                   data = data.frame(x, y))
+      df <- as.data.frame(df)
 
-      coefs <- coef(model)
-      gofval <- gof(model, y)
+      # x (time axis)
+      if (identical(predictor, "date")) {
+        if (!is.null(sowing_date)) {
+          x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+            as.numeric() |> round()
+        } else {
+          x <- to_datetime(df[[predictor]])$yday + 1
+        }
+      } else {
+        x <- df[[predictor]]
+      }
 
-      # Area under curve
-      auc <- integrate(modfun_asym,
-                       lower = fflight,
-                       upper = lflight,
-                       Asym = coefs[["Asym"]],
-                       R0 = coefs[["R0"]],
-                       lrc = coefs[["lrc"]])
+      # y (response)
+      y <- df |> dplyr::pull(!!rlang::sym(dependent))
+
+      fflight <- min(x, na.rm = TRUE)
+      lflight <- max(x, na.rm = TRUE) + 20
+
+      # Fit Asymptotic (fallback to nlsLM if needed)
+      model <- try(
+        stats::nls(y ~ SSasymp(x, Asym, R0, lrc),
+                   control = stats::nls.control(maxiter = 1000),
+                   data = data.frame(x, y)),
+        silent = TRUE
+      )
+
+      if (inherits(model, "try-error")) {
+        model <- suppressWarnings(
+          minpack.lm::nlsLM(y ~ SSasymp(x, Asym, R0, lrc),
+                            data = data.frame(x, y))
+        )
+      }
+
+      coefs <- stats::coef(model)
+
+      # GOF (safe)
+      gofval <- try(gof(model, y), silent = TRUE)
+      if (inherits(gofval, "try-error")) {
+        gofval <- list(AIC = NA_real_, RMSE = NA_real_, MAE = NA_real_)
+      }
+
+      # AUC
+      auc <- stats::integrate(
+        modfun_asym,
+        lower = fflight, upper = lflight,
+        Asym = coefs[["Asym"]], R0 = coefs[["R0"]], lrc = coefs[["lrc"]]
+      )
 
       tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Asymptotic",
+        model     = "Asymptotic",
         asymptote = coefs[["Asym"]],
-        R0 = coefs[["R0"]],
-        lrc = coefs[["lrc"]],
-        auc = auc$value,
-        aic = gofval$AIC,
-        rmse = gofval$RMSE,
-        mae = gofval$MAE,
+        R0        = coefs[["R0"]],
+        lrc       = coefs[["lrc"]],
+        auc       = auc$value,
+        aic       = gofval$AIC,
+        rmse      = gofval$RMSE,
+        mae       = gofval$MAE,
         parms = list(
-          model = modfun_asym,
+          model    = modfun_asym,
           modeladj = model,
-          fd = fdfun_asym,
-          sd = sdfun_asym,
-          coefs = list(
-            Asym = coefs[["Asym"]],
-            R0 = coefs[["R0"]],
-            lrc = coefs[["lrc"]]
-          ),
-          xmin = fflight,
-          xmax = lflight
+          fd       = fdfun_asym,
+          sd       = sdfun_asym,
+          coefs    = list(Asym = coefs[["Asym"]], R0 = coefs[["R0"]], lrc = coefs[["lrc"]]),
+          xmin     = fflight,
+          xmax     = lflight
         )
       )
     }, error = function(e) {
       tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
         model = "Asymptotic",
-        asymptote = NA_real_,
-        R0 = NA_real_,
-        lrc = NA_real_,
-        auc = NA_real_,
-        aic = NA_real_,
-        rmse = NA_real_,
-        mae = NA_real_,
+        asymptote = NA_real_, R0 = NA_real_, lrc = NA_real_,
+        auc = NA_real_, aic = NA_real_, rmse = NA_real_, mae = NA_real_,
         parms = NA
       )
     })
   }
 
-  results <- results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+  # ---- prepare grouped data --------------------------------------------------
+  dftemp <-
+    data |>
+    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
+    dplyr::group_by(unique_plot) |>
+    tidyr::nest() |>
+    dplyr::ungroup()
+
+  if (isTRUE(parallel)) {
+    # chunk and map with mirai
+    ncores <- max(1, ceiling(parallel::detectCores() * 0.5))
+    chunked <-
+      dftemp |>
+      dplyr::mutate(index = rep(seq_len(ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(index) |>
+      dplyr::group_split() |>
+      as.list()
+
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    results_list <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, predictor, dependent, sowing_date,
+                    modfun_asym, fdfun_asym, sdfun_asym, to_datetime, gof) {
+        x |>
+          dplyr::mutate(mod = purrr::map(
+            data,
+            mod_asymptotic_worker,
+            predictor    = predictor,
+            dependent    = dependent,
+            sowing_date  = sowing_date,
+            to_datetime  = to_datetime,
+            modfun_asym  = modfun_asym,
+            fdfun_asym   = fdfun_asym,
+            sdfun_asym   = sdfun_asym,
+            gof          = gof
+          )) |>
+          tidyr::unnest(cols = mod) |>
+          dplyr::select(-c(data, index))
+      },
+      .args = list(
+        predictor   = predictor,
+        dependent   = dependent,
+        sowing_date = sowing_date,
+        modfun_asym = modfun_asym,
+        fdfun_asym  = fdfun_asym,
+        sdfun_asym  = sdfun_asym,
+        to_datetime = to_datetime,
+        gof         = gof
+      )
+    )[.progress]
+
+    results_df <- dplyr::bind_rows(results_list)
+
+  } else {
+    # sequential with SweetAlert progress (fixed title)
+    results_each <- vector("list", nrow(dftemp))
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::progressSweetAlert(
+        session     = session,
+        id          = progress_id,
+        title       = "Plimanshiny is fitting the growth models...",
+        display_pct = TRUE,
+        value       = 0,
+        total       = nrow(dftemp)
+      )
+    }
+
+    for (i in seq_len(nrow(dftemp))) {
+      if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+        shinyWidgets::updateProgressBar(
+          session = session,
+          id      = progress_id,
+          value   = i,
+          title   = "Plimanshiny is fitting the growth models...",
+          total   = nrow(dftemp)
+        )
+      }
+
+      row <- dftemp[i, ]
+      res <- mod_asymptotic_worker(row$data[[1]],
+                                   predictor   = predictor,
+                                   dependent   = dependent,
+                                   sowing_date = sowing_date,
+                                   to_datetime = to_datetime,
+                                   modfun_asym = modfun_asym,
+                                   fdfun_asym  = fdfun_asym,
+                                   sdfun_asym  = sdfun_asym,
+                                   gof         = gof)
+      results_each[[i]] <- dplyr::bind_cols(dplyr::select(row, unique_plot), res)
+    }
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::closeSweetAlert(session)
+    }
+
+    results_df <- dplyr::bind_rows(results_each)
+  }
+
+  # ---- finalize --------------------------------------------------------------
+  results_df |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"),
+                                delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
-
-  return(results)
 }
-
 
 help_mod_asym_eq <- function() {
   "$$y(x) = \\text{Asym} + (R_0 - \\text{Asym}) \\cdot e^{-e^{\\text{lrc}} \\cdot x}$$"
@@ -3637,6 +4831,7 @@ SSagauss <- selfStart(
   parameters = c("eta", "beta", "delta", "sigma1", "sigma2")
 )
 
+
 # Asymmetric Gaussian function
 modfun_agaus <- function(x, beta, eta, delta, sigma1, sigma2) {
   ifelse(
@@ -3667,37 +4862,24 @@ sdfun_agaus <- function(x, beta, eta, delta, sigma1, sigma2) {
 }
 
 mod_agauss <- function(data,
-                       predictor = "date",
-                       dependent = "q90",
+                       predictor   = "date",
+                       dependent   = "q90",
                        sowing_date = NULL,
-                       parallel = FALSE) {
-  # Prepare data
-  dftemp <-
-    data |>
-    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
-    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
-    dplyr::group_by(unique_plot) |>
-    tidyr::nest()
+                       parallel    = FALSE,
+                       session     = NULL,            # Shiny session for progress (sequential only)
+                       progress_id = "myprogress") {  # pass a namespaced id from your module
 
-  # Parallel or Sequential Plan
-  if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
-  } else {
-    future::plan(future::sequential)
-  }
-  on.exit(future::plan(future::sequential))
-
-  `%dofut%` <- doFuture::`%dofuture%`
-
-  # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data), .combine = dplyr::bind_rows) %dofut% {
-    df <- as.data.frame(dftemp$data[[i]])
-
+  # ---- worker: one plot ------------------------------------------------------
+  mod_agauss_worker <- function(df, predictor, dependent, sowing_date,
+                                to_datetime, modfun_agaus, fdfun_agaus, sdfun_agaus, gof) {
     tryCatch({
-      # Define x (predictor)
-      if (predictor == "date") {
+      df <- as.data.frame(df)
+
+      # x (time axis)
+      if (identical(predictor, "date")) {
         if (!is.null(sowing_date)) {
-          x <- to_datetime(df[[predictor]])$yday + 1 - to_datetime(sowing_date)$yday
+          x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+            as.numeric() |> round()
         } else {
           x <- to_datetime(df[[predictor]])$yday + 1
         }
@@ -3705,52 +4887,57 @@ mod_agauss <- function(data,
         x <- df[[predictor]]
       }
 
+      # y (response)
       y <- df |> dplyr::pull(!!rlang::sym(dependent))
-      fflight <- min(x)
-      lflight <- max(x) + 20
 
-      # Fit Asymmetric Gaussian model
+      fflight <- min(x, na.rm = TRUE)
+      lflight <- max(x, na.rm = TRUE) + 20
+
+      # Fit Asymmetric Gaussian (use nlsLM for robustness)
       model <- minpack.lm::nlsLM(
         y ~ SSagauss(x, eta, beta, delta, sigma1, sigma2),
         data = data.frame(x, y)
       )
 
-      coefs <- coef(model)
-      gofval <- gof(model, y)
+      coefs <- stats::coef(model)
 
-      # Area under curve
-      auc <- integrate(
+      # GOF (safe)
+      gofval <- try(gof(model, y), silent = TRUE)
+      if (inherits(gofval, "try-error")) {
+        gofval <- list(AIC = NA_real_, RMSE = NA_real_, MAE = NA_real_)
+      }
+
+      # AUC
+      auc <- stats::integrate(
         modfun_agaus,
-        lower = fflight,
-        upper = lflight,
-        beta = coefs[["beta"]],
-        eta = coefs[["eta"]],
-        delta = coefs[["delta"]],
+        lower = fflight, upper = lflight,
+        beta   = coefs[["beta"]],
+        eta    = coefs[["eta"]],
+        delta  = coefs[["delta"]],
         sigma1 = coefs[["sigma1"]],
         sigma2 = coefs[["sigma2"]]
       )
 
       tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Asymmetric Gaussian",
-        beta = coefs[["beta"]],
-        eta = coefs[["eta"]],
-        delta = coefs[["delta"]],
+        model  = "Asymmetric Gaussian",
+        beta   = coefs[["beta"]],
+        eta    = coefs[["eta"]],
+        delta  = coefs[["delta"]],
         sigma1 = coefs[["sigma1"]],
         sigma2 = coefs[["sigma2"]],
-        auc = auc$value,
-        aic = gofval$AIC,
-        rmse = gofval$RMSE,
-        mae = gofval$MAE,
+        auc    = auc$value,
+        aic    = gofval$AIC,
+        rmse   = gofval$RMSE,
+        mae    = gofval$MAE,
         parms = list(
-          model = modfun_agaus,
+          model    = modfun_agaus,
           modeladj = model,
-          fd = fdfun_agaus,
-          sd = sdfun_agaus,
-          coefs = list(
-            beta = coefs[["beta"]],
-            eta = coefs[["eta"]],
-            delta = coefs[["delta"]],
+          fd       = fdfun_agaus,
+          sd       = sdfun_agaus,
+          coefs    = list(
+            beta   = coefs[["beta"]],
+            eta    = coefs[["eta"]],
+            delta  = coefs[["delta"]],
             sigma1 = coefs[["sigma1"]],
             sigma2 = coefs[["sigma2"]]
           ),
@@ -3760,27 +4947,122 @@ mod_agauss <- function(data,
       )
     }, error = function(e) {
       tibble::tibble(
-        unique_plot = dftemp$unique_plot[i],
-        model = "Asymmetric Gaussian",
-        beta = NA_real_,
-        eta = NA_real_,
-        delta = NA_real_,
-        sigma1 = NA_real_,
-        sigma2 = NA_real_,
-        auc = NA_real_,
-        aic = NA_real_,
-        rmse = NA_real_,
-        mae = NA_real_,
+        model  = "Asymmetric Gaussian",
+        beta = NA_real_, eta = NA_real_, delta = NA_real_,
+        sigma1 = NA_real_, sigma2 = NA_real_,
+        auc = NA_real_, aic = NA_real_, rmse = NA_real_, mae = NA_real_,
         parms = NA
       )
     })
   }
 
-  results <- results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
-    tidyr::nest(parms = parms)
+  # ---- prepare grouped data --------------------------------------------------
+  dftemp <-
+    data |>
+    dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
+    dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
+    dplyr::group_by(unique_plot) |>
+    tidyr::nest() |>
+    dplyr::ungroup()
 
-  return(results)
+  if (isTRUE(parallel)) {
+    # chunk and map with mirai
+    ncores <- max(1, ceiling(parallel::detectCores() * 0.5))
+    chunked <-
+      dftemp |>
+      dplyr::mutate(index = rep(seq_len(ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(index) |>
+      dplyr::group_split() |>
+      as.list()
+
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    results_list <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, predictor, dependent, sowing_date,
+                    modfun_agaus, fdfun_agaus, sdfun_agaus, to_datetime, gof) {
+        x |>
+          dplyr::mutate(mod = purrr::map(
+            data,
+            mod_agauss_worker,
+            predictor    = predictor,
+            dependent    = dependent,
+            sowing_date  = sowing_date,
+            to_datetime  = to_datetime,
+            modfun_agaus = modfun_agaus,
+            fdfun_agaus  = fdfun_agaus,
+            sdfun_agaus  = sdfun_agaus,
+            gof          = gof
+          )) |>
+          tidyr::unnest(cols = mod) |>
+          dplyr::select(-c(data, index))
+      },
+      .args = list(
+        predictor    = predictor,
+        dependent    = dependent,
+        sowing_date  = sowing_date,
+        modfun_agaus = modfun_agaus,
+        fdfun_agaus  = fdfun_agaus,
+        sdfun_agaus  = sdfun_agaus,
+        to_datetime  = to_datetime,
+        gof          = gof
+      )
+    )[.progress]
+
+    results_df <- dplyr::bind_rows(results_list)
+
+  } else {
+    # sequential with SweetAlert progress (fixed title)
+    results_each <- vector("list", nrow(dftemp))
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::progressSweetAlert(
+        session     = session,
+        id          = progress_id,
+        title       = "Plimanshiny is fitting the growth models...",
+        display_pct = TRUE,
+        value       = 0,
+        total       = nrow(dftemp)
+      )
+    }
+
+    for (i in seq_len(nrow(dftemp))) {
+      if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+        shinyWidgets::updateProgressBar(
+          session = session,
+          id      = progress_id,
+          value   = i,
+          title   = "Plimanshiny is fitting the growth models...",
+          total   = nrow(dftemp)
+        )
+      }
+
+      row <- dftemp[i, ]
+      res <- mod_agauss_worker(row$data[[1]],
+                               predictor    = predictor,
+                               dependent    = dependent,
+                               sowing_date  = sowing_date,
+                               to_datetime  = to_datetime,
+                               modfun_agaus = modfun_agaus,
+                               fdfun_agaus  = fdfun_agaus,
+                               sdfun_agaus  = sdfun_agaus,
+                               gof          = gof)
+      results_each[[i]] <- dplyr::bind_cols(dplyr::select(row, unique_plot), res)
+    }
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::closeSweetAlert(session)
+    }
+
+    results_df <- dplyr::bind_rows(results_each)
+  }
+
+  # ---- finalize --------------------------------------------------------------
+  results_df |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"),
+                                delim = "_", cols_remove = FALSE) |>
+    tidyr::nest(parms = parms)
 }
 
 # Equation of the asymmetric Gaussian function
@@ -3940,115 +5222,198 @@ SSbetagf <- selfStart(
   parameters = c("w.max", "t.e", "t.m")
 )
 
-
 mod_beta <- function(data,
-                     predictor = "date",
-                     dependent = "median.NDVI",
+                     predictor   = "date",
+                     dependent   = "median.NDVI",
                      sowing_date = NULL,
-                     parallel = FALSE) {
-  # Prepare data
+                     parallel    = FALSE,
+                     session     = NULL,            # Shiny session for progress (sequential only)
+                     progress_id = "myprogress") {  # pass a namespaced id from your module
+
+  # ---- worker: one plot ------------------------------------------------------
+  mod_beta_worker <- function(df, predictor, dependent, sowing_date,
+                              to_datetime, modfun_beta, fdfun_beta, sdfun_beta, gof) {
+    tryCatch({
+      df <- as.data.frame(df)
+
+      # x (time axis)
+      if (identical(predictor, "date")) {
+        if (!is.null(sowing_date)) {
+          x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+            as.numeric() |> round()
+        } else {
+          x <- to_datetime(df[[predictor]])$yday + 1
+        }
+      } else {
+        x <- df[[predictor]]
+      }
+
+      # y (response)
+      y <- df |> dplyr::pull(!!rlang::sym(dependent))
+
+      fflight <- min(x, na.rm = TRUE)
+      lflight <- max(x, na.rm = TRUE) + 20
+
+      # Fit Beta Growth model (nlsLM for robustness)
+      model <- minpack.lm::nlsLM(
+        y ~ SSbetagf(x, asym, xe, xm),
+        control = nls.control(maxiter = 1000),
+        data = data.frame(x, y)
+      )
+
+      coefs <- stats::coef(model)
+
+      # GOF (safe)
+      gofval <- try(gof(model, y), silent = TRUE)
+      if (inherits(gofval, "try-error")) {
+        gofval <- list(AIC = NA_real_, RMSE = NA_real_, MAE = NA_real_)
+      }
+
+      # AUC
+      auc <- stats::integrate(
+        modfun_beta,
+        lower = fflight, upper = lflight,
+        asym = coefs[["asym"]],
+        xe   = coefs[["xe"]],
+        xm   = coefs[["xm"]]
+      )
+
+      tibble::tibble(
+        model     = "Beta Growth",
+        asymptote = coefs[["asym"]],
+        xe        = coefs[["xe"]],
+        xm        = coefs[["xm"]],
+        auc       = auc$value,
+        aic       = gofval$AIC,
+        rmse      = gofval$RMSE,
+        mae       = gofval$MAE,
+        parms = list(
+          model    = modfun_beta,
+          modeladj = model,
+          fd       = fdfun_beta,
+          sd       = sdfun_beta,
+          coefs    = list(asym = coefs[["asym"]], xe = coefs[["xe"]], xm = coefs[["xm"]]),
+          xmin     = fflight,
+          xmax     = lflight
+        )
+      )
+    }, error = function(e) {
+      tibble::tibble(
+        model = "Beta Growth",
+        asymptote = NA_real_, xe = NA_real_, xm = NA_real_,
+        auc = NA_real_, aic = NA_real_, rmse = NA_real_, mae = NA_real_,
+        parms = NA
+      )
+    })
+  }
+
+  # ---- prepare grouped data --------------------------------------------------
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
     dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
-    tidyr::nest()
+    tidyr::nest() |>
+    dplyr::ungroup()
 
-  # Parallel or Sequential Plan
-  if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
+  if (isTRUE(parallel)) {
+    # chunk and map with mirai
+    ncores <- max(1, ceiling(parallel::detectCores() * 0.5))
+    chunked <-
+      dftemp |>
+      dplyr::mutate(index = rep(seq_len(ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(index) |>
+      dplyr::group_split() |>
+      as.list()
+
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    results_list <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, predictor, dependent, sowing_date,
+                    modfun_beta, fdfun_beta, sdfun_beta, to_datetime, gof) {
+        x |>
+          dplyr::mutate(mod = purrr::map(
+            data,
+            mod_beta_worker,
+            predictor    = predictor,
+            dependent    = dependent,
+            sowing_date  = sowing_date,
+            to_datetime  = to_datetime,
+            modfun_beta  = modfun_beta,
+            fdfun_beta   = fdfun_beta,
+            sdfun_beta   = sdfun_beta,
+            gof          = gof
+          )) |>
+          tidyr::unnest(cols = mod) |>
+          dplyr::select(-c(data, index))
+      },
+      .args = list(
+        predictor   = predictor,
+        dependent   = dependent,
+        sowing_date = sowing_date,
+        modfun_beta = modfun_beta,
+        fdfun_beta  = fdfun_beta,
+        sdfun_beta  = sdfun_beta,
+        to_datetime = to_datetime,
+        gof         = gof
+      )
+    )[.progress]
+
+    results_df <- dplyr::bind_rows(results_list)
+
   } else {
-    future::plan(future::sequential)
+    # sequential with SweetAlert progress (fixed title)
+    results_each <- vector("list", nrow(dftemp))
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::progressSweetAlert(
+        session     = session,
+        id          = progress_id,
+        title       = "Plimanshiny is fitting the growth models...",
+        display_pct = TRUE,
+        value       = 0,
+        total       = nrow(dftemp)
+      )
+    }
+
+    for (i in seq_len(nrow(dftemp))) {
+      if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+        shinyWidgets::updateProgressBar(
+          session = session,
+          id      = progress_id,
+          value   = i,
+          title   = "Plimanshiny is fitting the growth models...",
+          total   = nrow(dftemp)
+        )
+      }
+
+      row <- dftemp[i, ]
+      res <- mod_beta_worker(row$data[[1]],
+                             predictor   = predictor,
+                             dependent   = dependent,
+                             sowing_date = sowing_date,
+                             to_datetime = to_datetime,
+                             modfun_beta = modfun_beta,
+                             fdfun_beta  = fdfun_beta,
+                             sdfun_beta  = sdfun_beta,
+                             gof         = gof)
+      results_each[[i]] <- dplyr::bind_cols(dplyr::select(row, unique_plot), res)
+    }
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::closeSweetAlert(session)
+    }
+
+    results_df <- dplyr::bind_rows(results_each)
   }
-  on.exit(future::plan(future::sequential))
 
-  `%dofut%` <- doFuture::`%dofuture%`
-
-  # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data),
-                                   .combine = dplyr::bind_rows) %dofut% {
-                                     df <- as.data.frame(dftemp$data[[i]])
-
-                                     tryCatch({
-                                       # Predictor variable (x)
-                                       if (predictor == "date") {
-                                         if (!is.null(sowing_date)) {
-                                           x <- to_datetime(df[[predictor]])$yday + 1 - to_datetime(sowing_date)$yday
-                                         } else {
-                                           x <- to_datetime(df[[predictor]])$yday + 1
-                                         }
-                                       } else {
-                                         x <- df[[predictor]]
-                                       }
-
-                                       y <- df |> dplyr::pull(!!rlang::sym(dependent))
-
-                                       fflight <- min(x)
-                                       lflight <- max(x) + 20
-
-                                       # Fit Beta Growth model
-                                       model <- minpack.lm::nlsLM(
-                                         y ~ SSbetagf(x, asym, xe, xm),
-                                         control = nls.control(maxiter = 1000),
-                                         data = data.frame(x, y)
-                                       )
-
-                                       coefs <- coef(model)
-                                       gofval <- gof(model, y)
-
-                                       # Area under curve
-                                       auc <- integrate(modfun_beta,
-                                                        lower = fflight,
-                                                        upper = lflight,
-                                                        asym = coefs[["asym"]],
-                                                        xe = coefs[["xe"]],
-                                                        xm = coefs[["xm"]])
-
-                                       tibble::tibble(
-                                         unique_plot = dftemp$unique_plot[i],
-                                         model = "Beta Growth",
-                                         asymptote = coefs[["asym"]],
-                                         xe = coefs[["xe"]],
-                                         xm = coefs[["xm"]],
-                                         auc = auc$value,
-                                         aic = gofval$AIC,
-                                         rmse = gofval$RMSE,
-                                         mae = gofval$MAE,
-                                         parms = list(
-                                           model = modfun_beta,
-                                           modeladj = model,
-                                           fd = fdfun_beta,
-                                           sd = sdfun_beta,
-                                           coefs = list(
-                                             asym = coefs[["asym"]],
-                                             xe = coefs[["xe"]],
-                                             xm = coefs[["xm"]]
-                                           ),
-                                           xmin = fflight,
-                                           xmax = lflight
-                                         )
-                                       )
-                                     }, error = function(e) {
-                                       tibble::tibble(
-                                         unique_plot = dftemp$unique_plot[i],
-                                         model = "Beta Growth",
-                                         asymptote = NA_real_,
-                                         xe = NA_real_,
-                                         xm = NA_real_,
-                                         auc = NA_real_,
-                                         aic = NA_real_,
-                                         rmse = NA_real_,
-                                         mae = NA_real_,
-                                         parms = NA
-                                       )
-                                     })
-                                   }
-
-  results <- results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+  # ---- finalize --------------------------------------------------------------
+  results_df |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"),
+                                delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
-
-  return(results)
 }
 
 
@@ -4077,7 +5442,7 @@ help_mod_beta <- function() {
     tags$blockquote(
       "Yin, X., J. Goudriaan, E.A. Lantinga, J. Vos, and H.J. Spiertz. 2003. ",
       em("A Flexible Sigmoid Function of Determinate Growth."),
-      " Annals of Botany 91(3): 361–371. doi: 10.1093/aob/mcg029."
+      " Annals of Botany 91(3): 361-371. doi: 10.1093/aob/mcg029."
     ),
     p("The equation for the Beta Growth Model is:"),
     p(help_mod_beta_eq()),
@@ -4117,7 +5482,7 @@ help_mod_beta <- function() {
       tags$li("Provides insights into the dynamics of growth stabilization.")
     ),
     h2(style = "color: #2E86C1;", "References"),
-    p("YIN, X., J. GOUDRIAAN, E.A. LANTINGA, J. VOS, and H.J. SPIERTZ. 2003. A Flexible Sigmoid Function of Determinate Growth. Annals of Botany 91(3): 361–371. doi: ",
+    p("YIN, X., J. GOUDRIAAN, E.A. LANTINGA, J. VOS, and H.J. SPIERTZ. 2003. A Flexible Sigmoid Function of Determinate Growth. Annals of Botany 91(3): 361-371. doi: ",
       a(href = "https://doi.org/10.1093/aob/mcg029",target = "_blank", "10.1093/aob/mcg029"))
   )
 }
@@ -4204,158 +5569,231 @@ SShill <- selfStart(
   parameters =  c("Ka","n","a")
 )
 
-
 mod_hill <- function(data,
-                     predictor = "date",
-                     dependent = "q90",
+                     predictor   = "date",
+                     dependent   = "q90",
                      sowing_date = NULL,
-                     parallel = FALSE) {
-  # Prepare data
+                     parallel    = FALSE,
+                     session     = NULL,            # Shiny session for progress (sequential only)
+                     progress_id = "myprogress") {  # pass a namespaced id from your module
+
+  # ---- worker: one plot ------------------------------------------------------
+  mod_hill_worker <- function(df, predictor, dependent, sowing_date,
+                              to_datetime, modfun_hill, fdfun_hill, sdfun_hill, gof) {
+    tryCatch({
+      df <- as.data.frame(df)
+
+      # x (time axis)
+      if (identical(predictor, "date")) {
+        if (!is.null(sowing_date)) {
+          x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+            as.numeric() |> round()
+        } else {
+          x <- to_datetime(df[[predictor]])$yday + 1
+        }
+      } else {
+        x <- df[[predictor]]
+      }
+
+      # y (response)
+      y <- df |> dplyr::pull(!!rlang::sym(dependent))
+
+      fflight <- min(x, na.rm = TRUE)
+      lflight <- max(x, na.rm = TRUE) + 20
+
+      # Fit Hill (fallback to nlsLM if needed)
+      model <- try(
+        stats::nls(y ~ SShill(x, Ka, n, a),
+                   data = data.frame(x, y),
+                   control = stats::nls.control(maxiter = 1000)),
+        silent = TRUE
+      )
+      if (inherits(model, "try-error")) {
+        model <- suppressWarnings(
+          minpack.lm::nlsLM(y ~ SShill(x, Ka, n, a), data = data.frame(x, y))
+        )
+      }
+
+      coefs <- stats::coef(model)
+
+      # GOF (safe)
+      gofval <- try(gof(model, y), silent = TRUE)
+      if (inherits(gofval, "try-error")) {
+        gofval <- list(AIC = NA_real_, RMSE = NA_real_, MAE = NA_real_)
+      }
+
+      # AUC
+      auc <- stats::integrate(
+        modfun_hill,
+        lower = fflight, upper = lflight,
+        Ka = coefs[["Ka"]], n = coefs[["n"]], a = coefs[["a"]]
+      )
+
+      # Critical points
+      fdopt_result <- stats::optimize(
+        fdfun_hill,
+        Ka = coefs[["Ka"]], n = coefs[["n"]], a = coefs[["a"]],
+        interval = c(fflight, lflight),
+        maximum  = TRUE
+      )
+
+      sdopt_result <- stats::optimize(
+        sdfun_hill,
+        Ka = coefs[["Ka"]], n = coefs[["n"]], a = coefs[["a"]],
+        interval = c(fflight, lflight),
+        maximum  = TRUE
+      )
+
+      sdopt_result2 <- stats::optimize(
+        sdfun_hill,
+        Ka = coefs[["Ka"]], n = coefs[["n"]], a = coefs[["a"]],
+        interval = c(fflight, lflight),
+        maximum  = FALSE
+      )
+
+      tibble::tibble(
+        model     = "Hill",
+        asymptote = coefs[["a"]],
+        auc       = auc$value,
+        xinfp     = fdopt_result$maximum,
+        yinfp     = fdopt_result$objective,
+        xmace     = sdopt_result$maximum,
+        ymace     = sdopt_result$objective,
+        xmdes     = sdopt_result2$minimum,
+        ymdes     = sdopt_result2$objective,
+        aic       = gofval$AIC,
+        rmse      = gofval$RMSE,
+        mae       = gofval$MAE,
+        parms = list(
+          model    = modfun_hill,
+          modeladj = model,
+          fd       = fdfun_hill,
+          sd       = sdfun_hill,
+          coefs    = list(Ka = coefs[["Ka"]], n = coefs[["n"]], a = coefs[["a"]]),
+          xmin     = fflight,
+          xmax     = lflight
+        )
+      )
+    }, error = function(e) {
+      tibble::tibble(
+        model = "Hill",
+        asymptote = NA_real_,
+        auc = NA_real_, xinfp = NA_real_, yinfp = NA_real_,
+        xmace = NA_real_, ymace = NA_real_,
+        xmdes = NA_real_, ymdes = NA_real_,
+        aic = NA_real_, rmse = NA_real_, mae = NA_real_,
+        parms = NA
+      )
+    })
+  }
+
+  # ---- prepare grouped data --------------------------------------------------
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
     dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
-    tidyr::nest()
+    tidyr::nest() |>
+    dplyr::ungroup()
 
-  # Parallel or Sequential Plan
-  if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
+  if (isTRUE(parallel)) {
+    # chunk and map with mirai
+    ncores <- max(1, ceiling(parallel::detectCores() * 0.5))
+    chunked <-
+      dftemp |>
+      dplyr::mutate(index = rep(seq_len(ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(index) |>
+      dplyr::group_split() |>
+      as.list()
+
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    results_list <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, predictor, dependent, sowing_date,
+                    modfun_hill, fdfun_hill, sdfun_hill, to_datetime, gof) {
+        x |>
+          dplyr::mutate(mod = purrr::map(
+            data,
+            mod_hill_worker,
+            predictor    = predictor,
+            dependent    = dependent,
+            sowing_date  = sowing_date,
+            to_datetime  = to_datetime,
+            modfun_hill  = modfun_hill,
+            fdfun_hill   = fdfun_hill,
+            sdfun_hill   = sdfun_hill,
+            gof          = gof
+          )) |>
+          tidyr::unnest(cols = mod) |>
+          dplyr::select(-c(data, index))
+      },
+      .args = list(
+        predictor   = predictor,
+        dependent   = dependent,
+        sowing_date = sowing_date,
+        modfun_hill = modfun_hill,
+        fdfun_hill  = fdfun_hill,
+        sdfun_hill  = sdfun_hill,
+        to_datetime = to_datetime,
+        gof         = gof
+      )
+    )[.progress]
+
+    results_df <- dplyr::bind_rows(results_list)
+
   } else {
-    future::plan(future::sequential)
+    # sequential with SweetAlert progress (fixed title)
+    results_each <- vector("list", nrow(dftemp))
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::progressSweetAlert(
+        session     = session,
+        id          = progress_id,
+        title       = "Plimanshiny is fitting the growth models...",
+        display_pct = TRUE,
+        value       = 0,
+        total       = nrow(dftemp)
+      )
+    }
+
+    for (i in seq_len(nrow(dftemp))) {
+      if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+        shinyWidgets::updateProgressBar(
+          session = session,
+          id      = progress_id,
+          value   = i,
+          title   = "Plimanshiny is fitting the growth models...",
+          total   = nrow(dftemp)
+        )
+      }
+
+      row <- dftemp[i, ]
+      res <- mod_hill_worker(row$data[[1]],
+                             predictor   = predictor,
+                             dependent   = dependent,
+                             sowing_date = sowing_date,
+                             to_datetime = to_datetime,
+                             modfun_hill = modfun_hill,
+                             fdfun_hill  = fdfun_hill,
+                             sdfun_hill  = sdfun_hill,
+                             gof         = gof)
+      results_each[[i]] <- dplyr::bind_cols(dplyr::select(row, unique_plot), res)
+    }
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::closeSweetAlert(session)
+    }
+
+    results_df <- dplyr::bind_rows(results_each)
   }
-  on.exit(future::plan(future::sequential))
 
-  `%dofut%` <- doFuture::`%dofuture%`
-
-  # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data),
-                                   .combine = dplyr::bind_rows,
-                                   .options.future = list(seed = TRUE)) %dofut% {
-                                     df <- as.data.frame(dftemp$data[[i]])
-
-                                     # Predictor (x)
-                                     if (predictor == "date") {
-                                       if (!is.null(sowing_date)) {
-                                         x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
-                                           as.numeric() |> round()
-                                       } else {
-                                         x <- to_datetime(df[[predictor]])$yday + 1
-                                       }
-                                     } else {
-                                       x <- df[[predictor]]
-                                     }
-
-                                     y <- df |> dplyr::pull(!!rlang::sym(dependent))
-                                     fflight <- min(x)
-                                     lflight <- max(x) + 20
-
-                                     result <- tryCatch({
-                                       # Fit Hill model
-                                       model <- try(
-                                         nls(y ~ SShill(x, Ka, n, a),
-                                             data = data.frame(x, y),
-                                             control = nls.control(maxiter = 1000)),
-                                         silent = TRUE
-                                       )
-
-                                       if (inherits(model, "try-error")) {
-                                         model <- suppressWarnings(
-                                           minpack.lm::nlsLM(y ~ SShill(x, Ka, n, a),
-                                                             data = data.frame(x, y))
-                                         )
-                                       }
-
-                                       coefslog <- coef(model)
-                                       gofval <- gof(model, y)
-
-                                       # Area under curve
-                                       auc <- integrate(modfun_hill,
-                                                        lower = fflight,
-                                                        upper = lflight,
-                                                        Ka = coefslog[["Ka"]],
-                                                        n = coefslog[["n"]],
-                                                        a = coefslog[["a"]])
-
-                                       # Inflection point
-                                       fdopt_result <- optimize(fdfun_hill,
-                                                                Ka = coefslog[["Ka"]],
-                                                                n = coefslog[["n"]],
-                                                                a = coefslog[["a"]],
-                                                                interval = c(fflight, lflight),
-                                                                maximum = TRUE)
-
-                                       # Max acceleration
-                                       sdopt_result <- optimize(sdfun_hill,
-                                                                Ka = coefslog[["Ka"]],
-                                                                n = coefslog[["n"]],
-                                                                a = coefslog[["a"]],
-                                                                interval = c(fflight, lflight),
-                                                                maximum = TRUE)
-
-                                       # Max deceleration
-                                       sdopt_result2 <- optimize(sdfun_hill,
-                                                                 Ka = coefslog[["Ka"]],
-                                                                 n = coefslog[["n"]],
-                                                                 a = coefslog[["a"]],
-                                                                 interval = c(fflight, lflight),
-                                                                 maximum = FALSE)
-
-                                       tibble::tibble(
-                                         unique_plot = dftemp$unique_plot[i],
-                                         model = "Hill",
-                                         asymptote = coefslog[["a"]],
-                                         auc = auc$value,
-                                         xinfp = fdopt_result$maximum,
-                                         yinfp = fdopt_result$objective,
-                                         xmace = sdopt_result$maximum,
-                                         ymace = sdopt_result$objective,
-                                         xmdes = sdopt_result2$minimum,
-                                         ymdes = sdopt_result2$objective,
-                                         aic = gofval$AIC,
-                                         rmse = gofval$RMSE,
-                                         mae = gofval$MAE,
-                                         parms = list(
-                                           model = modfun_hill,
-                                           modeladj = model,
-                                           fd = fdfun_hill,
-                                           sd = sdfun_hill,
-                                           coefs = list(
-                                             Ka = coefslog[["Ka"]],
-                                             n = coefslog[["n"]],
-                                             a = coefslog[["a"]]
-                                           ),
-                                           xmin = fflight,
-                                           xmax = lflight
-                                         )
-                                       )
-                                     }, error = function(e) {
-                                       tibble::tibble(
-                                         unique_plot = dftemp$unique_plot[i],
-                                         model = "Hill",
-                                         asymptote = NA_real_,
-                                         auc = NA_real_,
-                                         xinfp = NA_real_,
-                                         yinfp = NA_real_,
-                                         xmace = NA_real_,
-                                         ymace = NA_real_,
-                                         xmdes = NA_real_,
-                                         ymdes = NA_real_,
-                                         aic = NA_real_,
-                                         rmse = NA_real_,
-                                         mae = NA_real_,
-                                         parms = NA
-                                       )
-                                     })
-
-                                     result
-                                   }
-
-  results <- results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+  # ---- finalize --------------------------------------------------------------
+  results_df |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"),
+                                delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
-
-  return(results)
 }
 
 
@@ -4520,132 +5958,215 @@ SSexpplat <- selfStart(
   parameters = c("a", "c", "xs")
 )
 
-
 mod_expplat <- function(data,
-                        predictor = "date",
-                        dependent = "q90",
+                        predictor   = "date",
+                        dependent   = "q90",
                         sowing_date = NULL,
-                        parallel = FALSE) {
-  # Prepare data
+                        parallel    = FALSE,
+                        session     = NULL,            # Shiny session for progress (sequential only)
+                        progress_id = "myprogress") {  # pass a namespaced id from your module
+
+  # ---- worker: one plot ------------------------------------------------------
+  mod_expplat_worker <- function(df, predictor, dependent, sowing_date,
+                                 to_datetime,
+                                 modfun_exponential_plateau,
+                                 fdfun_exponential_plateau,
+                                 sdfun_exponential_plateau,
+                                 gof) {
+    tryCatch({
+      df <- as.data.frame(df)
+
+      # x (time axis)
+      if (identical(predictor, "date")) {
+        if (!is.null(sowing_date)) {
+          x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+            as.numeric() |> round()
+        } else {
+          x <- to_datetime(df[[predictor]])$yday + 1
+        }
+      } else {
+        x <- df[[predictor]]
+      }
+
+      # y (response)
+      y <- df |> dplyr::pull(!!rlang::sym(dependent))
+
+      fflight <- min(x, na.rm = TRUE)
+      lflight <- max(x, na.rm = TRUE) + 20
+
+      # Fit Exponential-Plateau (fallback to nlsLM if needed)
+      model <- try(
+        stats::nls(y ~ SSexpplat(x, a, c, xs),
+                   data = data.frame(x, y),
+                   control = stats::nls.control(maxiter = 1000)),
+        silent = TRUE
+      )
+      if (inherits(model, "try-error")) {
+        model <- suppressWarnings(
+          minpack.lm::nlsLM(y ~ SSexpplat(x, a, c, xs),
+                            data = data.frame(x, y))
+        )
+      }
+
+      coefs <- stats::coef(model)
+      # plateau (asymptote) from fitted curve over observed x
+      asymp <- max(stats::predict(model), na.rm = TRUE)
+
+      # GOF (safe)
+      gofval <- try(gof(model, y), silent = TRUE)
+      if (inherits(gofval, "try-error")) {
+        gofval <- list(AIC = NA_real_, RMSE = NA_real_, MAE = NA_real_)
+      }
+
+      # AUC
+      auc <- stats::integrate(
+        modfun_exponential_plateau,
+        lower = fflight, upper = lflight,
+        a = coefs[["a"]], c = coefs[["c"]], xs = coefs[["xs"]]
+      )
+
+      tibble::tibble(
+        model     = "Exponential-Plateau",
+        asymptote = asymp,
+        auc       = auc$value,
+        a         = coefs[["a"]],
+        c         = coefs[["c"]],
+        xs        = coefs[["xs"]],
+        aic       = gofval$AIC,
+        rmse      = gofval$RMSE,
+        mae       = gofval$MAE,
+        parms = list(
+          model    = modfun_exponential_plateau,
+          modeladj = model,
+          fd       = fdfun_exponential_plateau,
+          sd       = sdfun_exponential_plateau,
+          coefs    = list(a = coefs[["a"]], c = coefs[["c"]], xs = coefs[["xs"]]),
+          xmin     = fflight,
+          xmax     = lflight
+        )
+      )
+    }, error = function(e) {
+      tibble::tibble(
+        model = "Exponential-Plateau",
+        asymptote = NA_real_, auc = NA_real_,
+        a = NA_real_, c = NA_real_, xs = NA_real_,
+        aic = NA_real_, rmse = NA_real_, mae = NA_real_,
+        parms = NA
+      )
+    })
+  }
+
+  # ---- prepare grouped data --------------------------------------------------
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
     dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
-    tidyr::nest()
+    tidyr::nest() |>
+    dplyr::ungroup()
 
-  # Parallel or Sequential Plan
-  if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
+  if (isTRUE(parallel)) {
+    # chunk and map with mirai
+    ncores <- max(1, ceiling(parallel::detectCores() * 0.5))
+    chunked <-
+      dftemp |>
+      dplyr::mutate(index = rep(seq_len(ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(index) |>
+      dplyr::group_split() |>
+      as.list()
+
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    results_list <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, predictor, dependent, sowing_date,
+                    modfun_exponential_plateau,
+                    fdfun_exponential_plateau,
+                    sdfun_exponential_plateau,
+                    to_datetime, gof) {
+        x |>
+          dplyr::mutate(mod = purrr::map(
+            data,
+            mod_expplat_worker,
+            predictor                     = predictor,
+            dependent                     = dependent,
+            sowing_date                   = sowing_date,
+            to_datetime                   = to_datetime,
+            modfun_exponential_plateau    = modfun_exponential_plateau,
+            fdfun_exponential_plateau     = fdfun_exponential_plateau,
+            sdfun_exponential_plateau     = sdfun_exponential_plateau,
+            gof                           = gof
+          )) |>
+          tidyr::unnest(cols = mod) |>
+          dplyr::select(-c(data, index))
+      },
+      .args = list(
+        predictor                  = predictor,
+        dependent                  = dependent,
+        sowing_date                = sowing_date,
+        modfun_exponential_plateau = modfun_exponential_plateau,
+        fdfun_exponential_plateau  = fdfun_exponential_plateau,
+        sdfun_exponential_plateau  = sdfun_exponential_plateau,
+        to_datetime                = to_datetime,
+        gof                        = gof
+      )
+    )[.progress]
+
+    results_df <- dplyr::bind_rows(results_list)
+
   } else {
-    future::plan(future::sequential)
+    # sequential with SweetAlert progress (fixed title)
+    results_each <- vector("list", nrow(dftemp))
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::progressSweetAlert(
+        session     = session,
+        id          = progress_id,
+        title       = "Plimanshiny is fitting the growth models...",
+        display_pct = TRUE,
+        value       = 0,
+        total       = nrow(dftemp)
+      )
+    }
+
+    for (i in seq_len(nrow(dftemp))) {
+      if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+        shinyWidgets::updateProgressBar(
+          session = session,
+          id      = progress_id,
+          value   = i,
+          title   = "Plimanshiny is fitting the growth models...",
+          total   = nrow(dftemp)
+        )
+      }
+
+      row <- dftemp[i, ]
+      res <- mod_expplat_worker(row$data[[1]],
+                                predictor                  = predictor,
+                                dependent                  = dependent,
+                                sowing_date                = sowing_date,
+                                to_datetime                = to_datetime,
+                                modfun_exponential_plateau = modfun_exponential_plateau,
+                                fdfun_exponential_plateau  = fdfun_exponential_plateau,
+                                sdfun_exponential_plateau  = sdfun_exponential_plateau,
+                                gof                        = gof)
+      results_each[[i]] <- dplyr::bind_cols(dplyr::select(row, unique_plot), res)
+    }
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::closeSweetAlert(session)
+    }
+
+    results_df <- dplyr::bind_rows(results_each)
   }
-  on.exit(future::plan(future::sequential))
 
-  `%dofut%` <- doFuture::`%dofuture%`
-
-  # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data),
-                                   .combine = dplyr::bind_rows,
-                                   .options.future = list(seed = TRUE)) %dofut% {
-                                     df <- as.data.frame(dftemp$data[[i]])
-
-                                     # Define predictor (x)
-                                     if (predictor == "date") {
-                                       if (!is.null(sowing_date)) {
-                                         x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
-                                           as.numeric() |> round()
-                                       } else {
-                                         x <- to_datetime(df[[predictor]])$yday + 1
-                                       }
-                                     } else {
-                                       x <- df[[predictor]]
-                                     }
-
-                                     y <- df |> dplyr::pull(!!rlang::sym(dependent))
-                                     fflight <- min(x)
-                                     lflight <- max(x) + 20
-
-                                     result <- tryCatch({
-                                       # Fit Exponential-Plateau model
-                                       model <- try(
-                                         nls(y ~ SSexpplat(x, a, c, xs),
-                                             data = data.frame(x, y),
-                                             control = nls.control(maxiter = 1000)),
-                                         silent = TRUE
-                                       )
-
-                                       if (inherits(model, "try-error")) {
-                                         model <- suppressWarnings(
-                                           minpack.lm::nlsLM(y ~ SSexpplat(x, a, c, xs),
-                                                             data = data.frame(x, y))
-                                         )
-                                       }
-
-                                       coefs <- coef(model)
-                                       asymp <- max(predict(model))
-                                       gofval <- gof(model, y)
-
-                                       auc <- integrate(modfun_exponential_plateau,
-                                                        lower = fflight,
-                                                        upper = lflight,
-                                                        a = coefs[["a"]],
-                                                        c = coefs[["c"]],
-                                                        xs = coefs[["xs"]])
-
-                                       tibble::tibble(
-                                         unique_plot = dftemp$unique_plot[i],
-                                         model = "Exponential-Plateau",
-                                         asymptote = asymp,
-                                         auc = auc$value,
-                                         a = coefs[["a"]],
-                                         c = coefs[["c"]],
-                                         xs = coefs[["xs"]],
-                                         aic = gofval$AIC,
-                                         rmse = gofval$RMSE,
-                                         mae = gofval$MAE,
-                                         parms = list(
-                                           model = modfun_exponential_plateau,
-                                           modeladj = model,
-                                           fd = fdfun_exponential_plateau,
-                                           sd = sdfun_exponential_plateau,
-                                           coefs = list(
-                                             a = coefs[["a"]],
-                                             c = coefs[["c"]],
-                                             xs = coefs[["xs"]]
-                                           ),
-                                           xmin = fflight,
-                                           xmax = lflight
-                                         )
-                                       )
-                                     }, error = function(e) {
-                                       tibble::tibble(
-                                         unique_plot = dftemp$unique_plot[i],
-                                         model = "Exponential-Plateau",
-                                         asymptote = NA_real_,
-                                         auc = NA_real_,
-                                         a = NA_real_,
-                                         c = NA_real_,
-                                         xs = NA_real_,
-                                         aic = NA_real_,
-                                         rmse = NA_real_,
-                                         mae = NA_real_,
-                                         parms = NA
-                                       )
-                                     })
-
-                                     result
-                                   }
-
-  results <-
-    results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+  # ---- finalize --------------------------------------------------------------
+  results_df |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"),
+                                delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
-
-  return(results)
 }
-
-
 
 help_mod_exponential_plateau_eq <- function() {
   "$$f(x) = \\begin{cases}
@@ -4712,7 +6233,7 @@ help_mod_exponential_plateau <- function() {
       tags$li("Provides insights into the dynamics of exponential growth.")
     ),
     h2(style = "color: #2E86C1;", "References"),
-    p("Archontoulis, S.V., and F.E. Miguez. 2015. Nonlinear Regression Models and Applications in Agricultural Research. Agronomy Journal 107(2): 786–798. doi: ",
+    p("Archontoulis, S.V., and F.E. Miguez. 2015. Nonlinear Regression Models and Applications in Agricultural Research. Agronomy Journal 107(2): 786-798. doi: ",
       a(href = "https://acsess.onlinelibrary.wiley.com/doi/10.2134/agronj2012.0506",target = "_blank", "10.2134/agronj2012.0506"))
   )
 }
@@ -4800,116 +6321,203 @@ SSexplinear <- selfStart(
 
 
 mod_explinear <- function(data,
-                          predictor = "date",
-                          dependent = "q90",
+                          predictor   = "date",
+                          dependent   = "q90",
                           sowing_date = NULL,
-                          parallel = FALSE) {
-  # Prepare data
+                          parallel    = FALSE,
+                          session     = NULL,            # Shiny session for progress (sequential only)
+                          progress_id = "myprogress") {  # pass a namespaced id from your module
+
+  # ---- worker: one plot ------------------------------------------------------
+  mod_explinear_worker <- function(df, predictor, dependent, sowing_date,
+                                   to_datetime,
+                                   modfun_exponential_linear,
+                                   fdfun_exponential_linear,
+                                   sdfun_exponential_linear,
+                                   gof) {
+    tryCatch({
+      df <- as.data.frame(df)
+
+      # x (time axis)
+      if (identical(predictor, "date")) {
+        if (!is.null(sowing_date)) {
+          x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
+            as.numeric() |> round()
+        } else {
+          x <- to_datetime(df[[predictor]])$yday + 1
+        }
+      } else {
+        x <- df[[predictor]]
+      }
+
+      # y (response)
+      y <- df |> dplyr::pull(!!rlang::sym(dependent))
+
+      fflight <- min(x, na.rm = TRUE)
+      lflight <- max(x, na.rm = TRUE) + 20
+
+      # Fit Exponential-Linear (fallback to nlsLM if needed)
+      model <- try(
+        stats::nls(y ~ SSexplinear(x, cm, rm, tb),
+                   data = data.frame(x, y),
+                   control = stats::nls.control(maxiter = 1000)),
+        silent = TRUE
+      )
+
+      if (inherits(model, "try-error")) {
+        model <- suppressWarnings(
+          minpack.lm::nlsLM(y ~ SSexplinear(x, cm, rm, tb),
+                            data = data.frame(x, y))
+        )
+      }
+
+      coefs <- stats::coef(model)
+
+      # GOF (safe)
+      gofval <- try(gof(model, y), silent = TRUE)
+      if (inherits(gofval, "try-error")) {
+        gofval <- list(AIC = NA_real_, RMSE = NA_real_, MAE = NA_real_)
+      }
+
+      tibble::tibble(
+        model = "Exponential-Linear",
+        cm    = coefs[["cm"]],
+        rm    = coefs[["rm"]],
+        tb    = coefs[["tb"]],
+        aic   = gofval$AIC,
+        rmse  = gofval$RMSE,
+        mae   = gofval$MAE,
+        parms = list(
+          model    = modfun_exponential_linear,
+          modeladj = model,
+          fd       = fdfun_exponential_linear,
+          sd       = sdfun_exponential_linear,
+          coefs    = list(cm = coefs[["cm"]], rm = coefs[["rm"]], tb = coefs[["tb"]]),
+          xmin     = fflight,
+          xmax     = lflight
+        )
+      )
+    }, error = function(e) {
+      tibble::tibble(
+        model = "Exponential-Linear",
+        cm = NA_real_, rm = NA_real_, tb = NA_real_,
+        aic = NA_real_, rmse = NA_real_, mae = NA_real_,
+        parms = NA
+      )
+    })
+  }
+
+  # ---- prepare grouped data --------------------------------------------------
   dftemp <-
     data |>
     dplyr::mutate(unique_plot = paste0(block, "_", plot_id)) |>
     dplyr::select(dplyr::all_of(c("unique_plot", predictor, dependent))) |>
     dplyr::group_by(unique_plot) |>
-    tidyr::nest()
+    tidyr::nest() |>
+    dplyr::ungroup()
 
-  # Parallel or Sequential Plan
-  if (parallel) {
-    future::plan(future::multisession, workers = max(1, parallel::detectCores() %/% 3))
+  if (isTRUE(parallel)) {
+    # chunk and map with mirai
+    ncores <- max(1, ceiling(parallel::detectCores() * 0.5))
+    chunked <-
+      dftemp |>
+      dplyr::mutate(index = rep(seq_len(ncores), each = ceiling(dplyr::n() / ncores))[1:dplyr::n()]) |>
+      dplyr::group_by(index) |>
+      dplyr::group_split() |>
+      as.list()
+
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    results_list <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, predictor, dependent, sowing_date,
+                    modfun_exponential_linear,
+                    fdfun_exponential_linear,
+                    sdfun_exponential_linear,
+                    to_datetime, gof) {
+        x |>
+          dplyr::mutate(mod = purrr::map(
+            data,
+            mod_explinear_worker,
+            predictor                   = predictor,
+            dependent                   = dependent,
+            sowing_date                 = sowing_date,
+            to_datetime                 = to_datetime,
+            modfun_exponential_linear   = modfun_exponential_linear,
+            fdfun_exponential_linear    = fdfun_exponential_linear,
+            sdfun_exponential_linear    = sdfun_exponential_linear,
+            gof                         = gof
+          )) |>
+          tidyr::unnest(cols = mod) |>
+          dplyr::select(-c(data, index))
+      },
+      .args = list(
+        predictor                 = predictor,
+        dependent                 = dependent,
+        sowing_date               = sowing_date,
+        modfun_exponential_linear = modfun_exponential_linear,
+        fdfun_exponential_linear  = fdfun_exponential_linear,
+        sdfun_exponential_linear  = sdfun_exponential_linear,
+        to_datetime               = to_datetime,
+        gof                       = gof
+      )
+    )[.progress]
+
+    results_df <- dplyr::bind_rows(results_list)
+
   } else {
-    future::plan(future::sequential)
+    # sequential with SweetAlert progress (fixed title)
+    results_each <- vector("list", nrow(dftemp))
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::progressSweetAlert(
+        session     = session,
+        id          = progress_id,
+        title       = "Plimanshiny is fitting the growth models...",
+        display_pct = TRUE,
+        value       = 0,
+        total       = nrow(dftemp)
+      )
+    }
+
+    for (i in seq_len(nrow(dftemp))) {
+      if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+        shinyWidgets::updateProgressBar(
+          session = session,
+          id      = progress_id,
+          value   = i,
+          title   = "Plimanshiny is fitting the growth models...",
+          total   = nrow(dftemp)
+        )
+      }
+
+      row <- dftemp[i, ]
+      res <- mod_explinear_worker(row$data[[1]],
+                                  predictor                 = predictor,
+                                  dependent                 = dependent,
+                                  sowing_date               = sowing_date,
+                                  to_datetime               = to_datetime,
+                                  modfun_exponential_linear = modfun_exponential_linear,
+                                  fdfun_exponential_linear  = fdfun_exponential_linear,
+                                  sdfun_exponential_linear  = sdfun_exponential_linear,
+                                  gof                       = gof)
+      results_each[[i]] <- dplyr::bind_cols(dplyr::select(row, unique_plot), res)
+    }
+
+    if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+      shinyWidgets::closeSweetAlert(session)
+    }
+
+    results_df <- dplyr::bind_rows(results_each)
   }
-  on.exit(future::plan(future::sequential))
 
-  `%dofut%` <- doFuture::`%dofuture%`
-
-  # Fit model for each group
-  results_list <- foreach::foreach(i = seq_along(dftemp$data),
-                                   .combine = dplyr::bind_rows,
-                                   .options.future = list(seed = TRUE)) %dofut% {
-                                     df <- as.data.frame(dftemp$data[[i]])
-
-                                     # Predictor (x)
-                                     if (predictor == "date") {
-                                       if (!is.null(sowing_date)) {
-                                         x <- (difftime(to_datetime(df[[predictor]]), to_datetime(sowing_date), units = "days") + 1) |>
-                                           as.numeric() |> round()
-                                       } else {
-                                         x <- to_datetime(df[[predictor]])$yday + 1
-                                       }
-                                     } else {
-                                       x <- df[[predictor]]
-                                     }
-
-                                     y <- df |> dplyr::pull(!!rlang::sym(dependent))
-                                     fflight <- min(x)
-                                     lflight <- max(x) + 20
-
-                                     # Fit model
-                                     result <- tryCatch({
-                                       model <- try(
-                                         nls(y ~ SSexplinear(x, cm, rm, tb),
-                                             data = data.frame(x, y),
-                                             control = nls.control(maxiter = 1000)),
-                                         silent = TRUE
-                                       )
-
-                                       if (inherits(model, "try-error")) {
-                                         model <- suppressWarnings(
-                                           minpack.lm::nlsLM(y ~ SSexplinear(x, cm, rm, tb),
-                                                             data = data.frame(x, y))
-                                         )
-                                       }
-
-                                       coefs <- coef(model)
-                                       gofval <- gof(model, y)
-
-                                       tibble::tibble(
-                                         unique_plot = dftemp$unique_plot[i],
-                                         model = "Exponential-Linear",
-                                         cm = coefs[["cm"]],
-                                         rm = coefs[["rm"]],
-                                         tb = coefs[["tb"]],
-                                         aic = gofval$AIC,
-                                         rmse = gofval$RMSE,
-                                         mae = gofval$MAE,
-                                         parms = list(
-                                           model = modfun_exponential_linear,
-                                           modeladj = model,
-                                           fd = fdfun_exponential_linear,
-                                           sd = sdfun_exponential_linear,
-                                           coefs = list(
-                                             cm = coefs[["cm"]],
-                                             rm = coefs[["rm"]],
-                                             tb = coefs[["tb"]]
-                                           ),
-                                           xmin = fflight,
-                                           xmax = lflight
-                                         )
-                                       )
-                                     }, error = function(e) {
-                                       tibble::tibble(
-                                         unique_plot = dftemp$unique_plot[i],
-                                         model = "Exponential-Linear",
-                                         cm = NA_real_,
-                                         rm = NA_real_,
-                                         tb = NA_real_,
-                                         aic = NA_real_,
-                                         rmse = NA_real_,
-                                         mae = NA_real_,
-                                         parms = NA
-                                       )
-                                     })
-
-                                     result
-                                   }
-
-  results <- results_list |>
-    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"), delim = "_", cols_remove = FALSE) |>
+  # ---- finalize --------------------------------------------------------------
+  results_df |>
+    tidyr::separate_wider_delim(unique_plot, names = c("block", "plot_id"),
+                                delim = "_", cols_remove = FALSE) |>
     tidyr::nest(parms = parms)
-
-  return(results)
 }
-
 
 
 help_mod_exponential_linear_eq <- function() {
@@ -4967,7 +6575,7 @@ help_mod_exponential_linear <- function() {
       tags$li("Provides insights into the dynamics of the transition between growth phases.")
     ),
     h2(style = "color: #2E86C1;", "References"),
-    p("Goudriaan, J., and J.L. Monteith. 1990. A Mathematical Function for Crop Growth Based on Light Interception and Leaf Area Expansion. Annals of Botany 66(6): 695–701. doi: ",
+    p("Goudriaan, J., and J.L. Monteith. 1990. A Mathematical Function for Crop Growth Based on Light Interception and Leaf Area Expansion. Annals of Botany 66(6): 695-701. doi: ",
       a(href = "https://doi.org/10.1093/oxfordjournals.aob.a088084",target = "_blank", "10.1093/oxfordjournals.aob.a088084"))
   )
 }

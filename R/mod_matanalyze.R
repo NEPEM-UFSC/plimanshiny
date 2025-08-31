@@ -468,13 +468,16 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
       req(dfactive$df)
       req(input$vegetindex)
 
-      waiter_show(
-        html = tagList(
-          spin_google(),
-          h2("Predictions in progress. Please, wait.")
-        ),
-        color = "#228B227F"
-      )
+      if(input$parallel){
+        waiter_show(
+          html = tagList(
+            spin_google(),
+            h2("Fitting the models for maturity prediction using parallel processing. Please, wait.")
+          ),
+          color = "#228B227F"
+        )
+      }
+
 
       # modl <- reactive({
       if(input$method == "Logistic Model L3" & !input$usethresh){
@@ -483,7 +486,9 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
           mod_L3(predictor = input$vegetindex,
                  flight_date = input$flightdate,
                  sowing_date = input$sowing,
-                 parallel = input$parallel) |>
+                 parallel = input$parallel,
+                 session     = session,
+                 progress_id = ns("myprogress")) |>
           modl()
       } else if(input$method == "Logistic Model L4" & !input$usethresh){
         # modl <-
@@ -491,7 +496,9 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
           mod_L4(predictor = input$vegetindex,
                  flight_date = input$flightdate,
                  sowing_date = input$sowing,
-                 parallel = input$parallel) |>
+                 parallel = input$parallel,
+                 session     = session,
+                 progress_id = ns("myprogress")) |>
           modl()
       } else if(input$method == "Logistic Model L5" & !input$usethresh){
         # modl <-
@@ -499,7 +506,9 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
           mod_L5(predictor = input$vegetindex,
                  flight_date = input$flightdate,
                  sowing_date = input$sowing,
-                 parallel = input$parallel) |>
+                 parallel = input$parallel,
+                 session     = session,
+                 progress_id = ns("myprogress")) |>
           modl()
       } else if(input$methodthresh == "LOESS (Volpato et al., 2021)" & input$usethresh){
         # modl <-
@@ -517,7 +526,9 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
           mod_segmented2(predictor = input$vegetindex,
                          flight_date = input$flightdate,
                          sowing_date = input$sowing,
-                         parallel = input$parallel) |>
+                         parallel = input$parallel,
+                         session     = session,
+                         progress_id = ns("myprogress")) |>
           modl()
 
       } else if(input$methodthresh == "Segmented Regression (Volpato et al., 2021)" & input$usethresh){
@@ -527,11 +538,15 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
                         flight_date = input$flightdate,
                         sowing_date = input$sowing,
                         threshold = input$thresh,
-                        parallel = input$parallel) |>
+                        parallel = input$parallel,
+                        session     = session,
+                        progress_id = ns("myprogress")) |>
           modl()
       }
       req(modl())
-      waiter_hide()
+      if(input$parallel){
+        waiter_hide()
+      }
     })
 
     # send to dataset
@@ -667,6 +682,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
       if(input$usethresh){
         req(input$fittedmodel)
         req(modl())
+        req(c("unique_plot", input$flightdate, input$vegetindex) %in% colnames(dfactive$df))
         dfplot <-
           dfactive$df |>
           dplyr::select(dplyr::all_of(c("unique_plot", input$flightdate, input$vegetindex))) |>
@@ -698,6 +714,7 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
       } else if(!input$usethresh){
         req(input$fittedmodel)
         req(modl())
+        req(c("unique_plot", input$flightdate, input$vegetindex) %in% colnames(dfactive$df))
         dfplot <-
           dfactive$df |>
           dplyr::select(dplyr::all_of(c("unique_plot", input$flightdate, input$vegetindex))) |>

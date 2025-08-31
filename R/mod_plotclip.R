@@ -13,10 +13,9 @@ mod_plotclip_ui <- function(id){
     fluidRow(
       col_3(
         bs4Card(
-          title = "Mask Settings",
+          title = "Mask / Clip Settings",
           collapsible = FALSE,
           width = 12,
-          height = "710px",
           h3("Input"),
           selectInput(ns("mosaic_to_clip"),
                       label = "Mosaic to be clipped",
@@ -25,8 +24,9 @@ mod_plotclip_ui <- function(id){
                       label = "Shapefile",
                       choices = NULL),
           selectInput(ns("uniqueid"),
-                      label = "Unique ID",
+                      label = "Unique ID (column in shapefile)",
                       choices = NULL),
+
           fluidRow(
             col_7(
               switchInput(
@@ -41,24 +41,43 @@ mod_plotclip_ui <- function(id){
               conditionalPanel(
                 condition = "input.clipinparallel == true",  ns = ns,
                 numericInput(ns("numworkersclip"),
-                             label = "Clusters",
-                             value = NULL)
+                             label = "Workers",
+                             value = NULL, min = 1, step = 1)
               )
             )
           ),
+          actionBttn(ns("startclip"),
+                     label = "Generate Field Map",
+                     style = "pill",
+                     color = "success"),
+
+          hl(),
+          h3("Options"),
+          prettyCheckbox(
+            inputId = ns("exact_cut"),
+            label = "Exact clip (GDAL cutline)",
+            value = FALSE, status = "primary", outline = TRUE, animation = "pulse"
+          ),
+          prettyCheckbox(
+            inputId = ns("overwrite_files"),
+            label = "Overwrite existing files",
+            value = TRUE, status = "primary", outline = TRUE, animation = "pulse"
+          ),
+          prettyCheckbox(
+            inputId = ns("verbose_clip"),
+            label = "Verbose messages",
+            value = TRUE, status = "primary", outline = TRUE, animation = "pulse"
+          ),
+
           hl(),
           h3("Output"),
           shinyDirButton(id=ns("folderclip"),
                          label="Select an output folder",
-                         title="Select an output folder",
-                         buttonType = "default",
-                         class = NULL,
-                         icon = NULL,
-                         style = NULL),
+                         title="Select an output folder"),
           selectInput(ns("clipformat"),
                       label = "Format",
-                      choices = c(".png", ".tif"),
-                      selected = ".png"),
+                      choices = c(".tif", ".png"),
+                      selected = ".tif"),
           prettyCheckbox(
             inputId = ns("seeaclippedplot"),
             label = "Show me a clipped plot",
@@ -75,38 +94,28 @@ mod_plotclip_ui <- function(id){
                            label = "Clipped Plot",
                            choices = NULL)
           ),
-          fluidRow(
-            col_6(
-              actionBttn(ns("startclip"),
-                         label = "Start clipping!",
-                         style = "pill",
-                         color = "success")
-            ),
-            col_6(
-              actionBttn(ns("clipmosaic"),
-                         label = "Clip!",
-                         style = "pill",
-                         no_outline = FALSE,
-                         icon = icon("scissors"),
-                         color = "success")
-            )
-          )
+          actionBttn(ns("clipmosaic"),
+                     label = "Clip!",
+                     style = "pill",
+                     no_outline = FALSE,
+                     icon = icon("scissors"),
+                     color = "success")
         )
       ),
       col_9(
         bs4Card(
-          title = "Crop Results",
+          title = "Clip Results",
           collapsible = FALSE,
           width = 12,
-          height = "710px",
+          height = "760px",
           conditionalPanel(
             condition = "input.seeaclippedplot == true", ns = ns,
             h3("Clipped Plot"),
-            leafletOutput(ns("clippedplot"), height = "640px") |> add_spinner()
+            plotOutput(ns("clippedplot"), height = "670px") |> add_spinner()
           ),
           conditionalPanel(
             condition = "input.seeaclippedplot == false", ns = ns,
-            leafletOutput(ns("mosaicandshape"), height = "640px") |> add_spinner()
+            leafletOutput(ns("mosaicandshape"), height = "670px") |> add_spinner()
           )
         )
       )
@@ -114,47 +123,70 @@ mod_plotclip_ui <- function(id){
   )
 }
 
+
 #' plotclip Server Functions
 #'
 #' @noRd
 mod_plotclip_server <- function(id, mosaic_data, shapefile, r, g, b, basemap, settings){
-  moduleServer( id, function(input, output, session){
+  moduleServer(id, function(input, output, session){
     ns <- session$ns
+
+    # populate selectors
     observe({
       req(mosaic_data)
-      updateSelectInput(session, "mosaic_to_clip", choices = c("Active mosaic", setdiff(names(mosaic_data), "mosaic")), selected = "Active mosaic")
-      updateSelectInput(session, "shape_to_clip", choices = setdiff(names(shapefile), c("shapefile", "shapefileplot")))
+      updateSelectInput(session, "mosaic_to_clip",
+                        choices = c("Active mosaic", setdiff(names(mosaic_data), "mosaic")),
+                        selected = "Active mosaic")
+      updateSelectInput(session, "shape_to_clip",
+                        choices = setdiff(names(shapefile), c("shapefile", "shapefileplot")))
       availablecl <- parallel::detectCores()
-      updateNumericInput(session, "numworkersclip", value = round(availablecl * 0.5), max = availablecl - 2)
+      updateNumericInput(session, "numworkersclip",
+                         value = max(1, round(availablecl * 0.5)),
+                         max = max(1, availablecl - 1))
     })
-    observe({
-      updateTextInput(session, "new_mask", value = paste0(input$mosaic_to_clip, "_masked"))
-    })
+    mosaictocrop <- reactiveVal(NULL)
+    shptocrop <- reactiveVal(NULL)
 
     volumes <- c("R Installation" = R.home(), getVolumes()())
-    shinyDirChoose(input, "folderclip",
-                   roots = volumes,
-                   session = session,
+    shinyDirChoose(input, "folderclip", roots = volumes, session = session,
                    restrictions = system.file(package = "base"))
 
+    # update the Unique ID choices whenever the shapefile selection changes
+    observeEvent(input$shape_to_clip, {
+      req(input$shape_to_clip)
+      shp_sf <- shapefile[[input$shape_to_clip]]$data
+      req(shp_sf)
 
-    # Observe event for mosaic crop action
+      # attribute (non-geometry) columns only
+      cols <- colnames(sf::st_drop_geometry(shp_sf))
+
+      # pick a sensible default if present
+      preferred <- c("unique_id", "plot_id", "id", "ID", "plot", "name")
+      default_sel <- if (length(intersect(preferred, cols))) {
+        intersect(preferred, cols)[1]
+      } else {
+        cols[1]
+      }
+
+      updateSelectInput(session, "uniqueid",
+                        choices  = cols,
+                        selected = default_sel)
+    })
+
+
     observeEvent(input$startclip, {
-
       sendSweetAlert(
         session = session,
         title = "Clipping plots",
-        text = "First, choose an output directory to save the clipped plots. Select an Unique ID column to name the images, then click on 'Clip plots'",
-        type = "info"
+        text  = "Choose an output directory, select the unique ID column, then click 'Clip!'.",
+        type  = "info"
       )
-      req(input$mosaic_to_clip)
+      req(input$mosaic_to_clip, input$shape_to_clip)
       shptocrop <- shapefile[[input$shape_to_clip]]$data
-
-      updateSelectInput(session, "uniqueid", choices = names(shptocrop))
-      if(input$mosaic_to_clip == "Active mosaic"  && !is.null(basemap$map)){
-        mosaictocrop <- mosaic_data$mosaic$data
-        bcrop <- basemap$map
-      } else{
+      if (input$mosaic_to_clip == "Active mosaic" && !is.null(basemap$map)) {
+        mosaictocrop(mosaic_data$mosaic$data)
+        bcrop        <- basemap$map
+      } else {
         bcrop <-
           mosaic_view(
             mosaic_data[[input$mosaic_to_clip]]$data,
@@ -163,132 +195,272 @@ mod_plotclip_server <- function(id, mosaic_data, shapefile, r, g, b, basemap, se
             b = ifelse(is.na(b$b), 3, suppressWarnings(as.numeric(b$b))),
             max_pixels = 500000
           )
-        mosaictocrop <- mosaic_data[[input$mosaic_to_clip]]$data
+        mosaictocrop(mosaic_data[[input$mosaic_to_clip]]$data)
       }
 
       output$mosaicandshape <- renderLeaflet({
         req(bcrop)
         (bcrop + shapefile_view(shptocrop))@map
       })
+    })
 
 
-      # Observe event for mosaic crop action
-      observeEvent(input$clipmosaic, {
-        # Update mosaic_data$mosaic$data when input$cropmosaic is clicked
-        diroutput <- parseDirPath(volumes, input$folderclip)
-        req(diroutput)
-        if(diroutput == "character(0)"){
-          sendSweetAlert(
-            session = session,
-            title = "Ops, output folder not defined",
-            text = "To clip the plots, first choose an output directory using the 'Select an output folder' button.",
-            type = "error"
-          )
-        } else{
-          if(!input$clipinparallel){
-            req(input$uniqueid)
-            progressSweetAlert(
-              session = session, id = "myprogressclip",
-              title = "Start",
-              display_pct = TRUE,
-              value = 0,
-              total = nrow(shptocrop)
+    # main action
+    observeEvent(input$clipmosaic, {
+      req(input$mosaic_to_clip, input$shape_to_clip, input$uniqueid)
+      diroutput <- parseDirPath(volumes, input$folderclip)
+      if (is.null(diroutput) || identical(diroutput, "character(0)")) {
+        sendSweetAlert(
+          session = session,
+          title = "Output folder not defined",
+          text  = "Choose an output directory using the 'Select an output folder' button.",
+          type  = "error"
+        )
+        return(invisible(NULL))
+      }
+
+      shptocrop(shapefile[[input$shape_to_clip]]$data)
+      req(shptocrop())
+
+      # ids & validation
+      if (!input$uniqueid %in% names(shptocrop())) {
+        sendSweetAlert(session, "Invalid unique ID",
+                       paste0("Column '", input$uniqueid, "' not found in shapefile."),
+                       type = "error")
+        return(invisible(NULL))
+      }
+      ids <- as.character(shptocrop()[[input$uniqueid]])
+      if (length(unique(ids)) != length(ids)) {
+        sendSweetAlert(session, "Non-unique IDs",
+                       "The selected Unique ID column must have unique values.",
+                       type = "error")
+        return(invisible(NULL))
+      }
+
+      # prepare mosaic path on disk
+      tmpterra <- tempdir()
+      tf_rast  <- file.path(tmpterra, "tmpclip_src.tif")
+      if (terra::inMemory(mosaictocrop())) {
+        terra::writeRaster(mosaictocrop(), tf_rast, overwrite = TRUE)
+        src_path <- tf_rast
+      } else {
+        src_path <- terra::sources(mosaictocrop())
+        if (length(src_path) > 1) {
+          # write VRT if multiple sources
+          src_path <- file.path(tmpterra, "tmpclip_src.vrt")
+          terra::writeRaster(mosaictocrop(), src_path, overwrite = TRUE)
+        }
+      }
+
+      # pre-check overwrite
+      ext_chosen <- input$clipformat
+      out_paths  <- file.path(diroutput, paste0(ids, ext_chosen))
+      if (any(basename(out_paths) %in% list.files(diroutput)) && !isTRUE(input$overwrite_files)) {
+        sendSweetAlert(session, "Files already exist",
+                       "Some output tiles already exist. Enable 'Overwrite existing files' to replace.",
+                       type = "error")
+        return(invisible(NULL))
+      }
+
+      # sequential mode --------------------------------------------------------
+      if (!isTRUE(input$clipinparallel)) {
+        progressSweetAlert(
+          session = session, id = "myprogressclip",
+          title = "Plimanshiny is fitting the growth models...",
+          display_pct = TRUE, value = 0, total = nrow(shptocrop())
+        )
+
+        for (i in seq_len(nrow(shptocrop()))) {
+          if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+            shinyWidgets::updateProgressBar(
+              session = session,
+              id      = "myprogressclip",
+              value   = i,
+              title   = "Plimanshiny is fitting the growth models...",
+              total   = nrow(shptocrop())
             )
-
-            for(i in 1:nrow(shptocrop)){
-              updateProgressBar(
-                session = session,
-                id = "myprogressclip",
-                value = i,
-                title = paste0("Working in progress, Please, wait."),
-                total = nrow(shptocrop)
-              )
-              shptemp <- shptocrop[i, ]
-              ncolid <- which(colnames(shptemp) == input$uniqueid)
-              shpname <- shptemp |> as.data.frame() |> dplyr::pull(ncolid)
-              mosaictmp <- terra::crop(mosaictocrop, shptemp) |> terra::mask(shptemp)
-              terra::writeRaster(mosaictmp, paste0(diroutput, "/", shpname, input$clipformat), overwrite=TRUE)
-
-            }
-          } else{
-            req(input$numworkersclip)
-            nworkers <- input$numworkersclip
-            future::plan(future::multisession, workers = nworkers)
-            on.exit(future::plan(future::sequential))
-            `%dofut%` <- doFuture::`%dofuture%`
-
-            waiter_show(
-              html = tagList(
-                spin_google(),
-                h2(paste0("Clipping plots using parallel processing in multiple sessions (",input$numworkersclip ,"). Please, wait."))
-              ),
-              color = "#228B227F"
-            )
-            ## declare alias for dopar command
-            uniqueid <- input$uniqueid
-            shptocrop <- shapefile[[input$shape_to_clip]]$data
-            req(shptocrop)
-            tmpterra <- tempdir()
-            mosaic_export(mosaictocrop, paste0(tmpterra, "/tmpclip.tif"), overwrite = TRUE)
-            format <- input$clipformat
-
-            foreach::foreach(i = 1:nrow(shptocrop)) %dofut%{
-              shptemp <- shptocrop[i, ]
-              ncolid <- which(colnames(shptemp) == uniqueid)
-              shpname <- shptemp |> as.data.frame()  |> dplyr::pull(ncolid)
-              mosaictmp <- terra::crop(terra::rast(paste0(tmpterra, "/tmpclip.tif")), shptemp) |> terra::mask(shptemp)
-              terra::writeRaster(mosaictmp, paste0(diroutput, "/", shpname, format), overwrite=TRUE)
-            }
           }
 
-
-          filestoremove <- list.files(diroutput, pattern = "png.aux")
-          file.remove(paste0(diroutput, "/", filestoremove))
-          waiter_hide()
-
-          sendSweetAlert(
-            session = session,
-            title = "Mosaic successfully clipped!!",
-            text = paste0("The plots have been successfully clipped and can now be found at ", diroutput, "."),
-            type = "success"
-          )
+          # build options for gdal warp
+          if (isTRUE(input$exact_cut)) {
+            cutline_path <- tempfile(fileext = ".geojson")
+            sf::st_write(shptocrop()[i, ], cutline_path, driver = "GeoJSON", quiet = TRUE)
+            opts <- c("-cutline", cutline_path, "-crop_to_cutline", "-dstalpha",
+                      if (isTRUE(input$overwrite_files)) "-overwrite")
+            tmp_out <- if (ext_chosen == ".tif") out_paths[i] else tempfile(fileext = ".tif")
+            suppressWarnings(
+              sf::gdal_utils("warp", source = src_path, destination = tmp_out, options = opts)
+            )
+            if (ext_chosen == ".png") {
+              sf::gdal_utils("translate", source = tmp_out, destination = out_paths[i], options = character())
+              unlink(tmp_out)
+            }
+            unlink(cutline_path)
+          } else {
+            bb <- sf::st_bbox(shptocrop()[i, ])
+            opts <- c("-te", bb[["xmin"]], bb[["ymin"]], bb[["xmax"]], bb[["ymax"]],
+                      if (isTRUE(input$overwrite_files)) "-overwrite")
+            tmp_out <- if (ext_chosen == ".tif") out_paths[i] else tempfile(fileext = ".tif")
+            suppressWarnings(
+              sf::gdal_utils("warp", source = src_path, destination = tmp_out, options = opts)
+            )
+            if (ext_chosen == ".png") {
+              sf::gdal_utils("translate", source = tmp_out, destination = out_paths[i], options = character())
+              unlink(tmp_out)
+            }
+          }
+        }
+        if (!is.null(session) && requireNamespace("shinyWidgets", quietly = TRUE)) {
+          shinyWidgets::closeSweetAlert(session)
         }
 
-      })
+        # parallel (mirai) -------------------------------------------------------
+      } else {
+        req(input$numworkersclip)
+        nworkers <- input$numworkersclip
 
+        waiter_show(
+          html = tagList(
+            spin_google(),
+            h2(paste0("Clipping plots with mirai (", nworkers, " workers). Please, wait."))
+          ),
+          color = "#228B227F"
+        )
 
-      observe({
-        if(input$seeaclippedplot){
-          ncolid <- which(colnames(shptocrop) == input$uniqueid)
-          plots <- shptocrop |> as.data.frame() |> dplyr::pull(ncolid)
+        mirai::daemons(nworkers)
+        on.exit({ mirai::daemons(0); waiter_hide() }, add = TRUE)
 
-          updateSelectizeInput(session, "myclippedplot",
-                               options = list(maxOptions = 20000),
-                               server = TRUE,
-                               choices = plots)
-          req(input$myclippedplot)
-          shptoplot <- shptocrop[which(plots == input$myclippedplot), ]
-          motemp <- terra::crop(mosaictocrop, shptoplot) |> terra::mask(shptoplot)
+        idxs <- seq_len(nrow(shptocrop()))
+        chunks <- split(idxs, rep(seq_len(nworkers), length.out = length(idxs)))
 
-          output$mosaicandshapeclipped <- renderLeaflet({
-            (bcrop + shapefile_view(shptoplot))@map
-          })
+        results <- mirai::mirai_map(
+          .x = chunks,
+          .f = function(chunk, shp, ids, src_path, odir, ext_chosen, overwrite, exact){
+            # ensure deps
+            # requireNamespace("sf", quietly = TRUE)
 
-          output$clippedplot <- renderLeaflet({
-            croppplot <-
-              mosaic_view(
-                motemp,
+            outv <- character(length(chunk))
+            for (k in seq_along(chunk)) {
+              i <- chunk[k]
+              if (isTRUE(exact)) {
+                cutline_path <- tempfile(fileext = ".geojson")
+                sf::st_write(shp[i, ], cutline_path, driver = "GeoJSON", quiet = TRUE)
+                opts <- c("-cutline", cutline_path, "-crop_to_cutline", "-dstalpha",
+                          if (isTRUE(overwrite)) "-overwrite")
+              } else {
+                bb <- sf::st_bbox(shp[i, ])
+                opts <- c("-te", bb[["xmin"]], bb[["ymin"]], bb[["xmax"]], bb[["ymax"]],
+                          if (isTRUE(overwrite)) "-overwrite")
+              }
+
+              base_out <- file.path(odir, ids[i])
+              if (identical(ext_chosen, ".tif")) {
+                dest <- paste0(base_out, ".tif")
+                suppressWarnings(sf::gdal_utils("warp", src_path, dest, options = opts))
+                outv[k] <- dest
+              } else {
+                tmp_tif <- tempfile(fileext = ".tif")
+                suppressWarnings(sf::gdal_utils("warp", src_path, tmp_tif, options = opts))
+                dest_png <- paste0(base_out, ".png")
+                suppressWarnings(sf::gdal_utils("translate", tmp_tif, dest_png, options = character()))
+                unlink(tmp_tif)
+                outv[k] <- dest_png
+              }
+              if (isTRUE(exact)) unlink(cutline_path)
+            }
+            outv
+          },
+          .args = list(
+            shp         = shptocrop(),
+            ids         = ids,
+            src_path    = src_path,
+            odir        = diroutput,
+            ext_chosen  = ext_chosen,
+            overwrite   = input$overwrite_files,
+            exact       = input$exact_cut
+          )
+        )[.progress]
+
+        invisible(results) # paths are returned if you need them
+      }
+
+      # cleanup aux PNG sidecars created by GDAL/terra (best-effort)
+      aux <- list.files(diroutput, pattern = "png\\.aux(\\.xml)?$", full.names = TRUE)
+      if (length(aux)) file.remove(aux)
+
+      sendSweetAlert(
+        session = session,
+        title = "Clipping finished!",
+        text  = paste0("Tiles saved at: ", diroutput),
+        type  = "success"
+      )
+    })
+
+    # preview of a single clipped tile
+    observeEvent(input$seeaclippedplot, {
+      req(input$seeaclippedplot)
+      req(input$uniqueid, input$shape_to_clip, input$mosaic_to_clip)
+
+      shptocrop <- shapefile[[input$shape_to_clip]]$data
+      ncolid    <- which(colnames(shptocrop) == input$uniqueid)
+      plots     <- shptocrop |> as.data.frame() |> dplyr::pull(ncolid)
+
+      updateSelectizeInput(session, "myclippedplot",
+                           options = list(maxOptions = 20000),
+                           server  = TRUE,
+                           choices = plots)
+
+      req(input$myclippedplot)
+
+      # display clipped area over original mosaic AND the clipped tile (if exists)
+      shptoplot <- shptocrop[which(plots == input$myclippedplot), ]
+      # if (input$mosaic_to_clip == "Active mosaic" && !is.null(basemap$map)) {
+      #   bcrop <- basemap$map
+      # } else {
+      #   bcrop <-
+      #     mosaic_view(
+      #       mosaic_data[[input$mosaic_to_clip]]$data,
+      #       r = ifelse(is.na(r$r), 1, suppressWarnings(as.numeric(r$r))),
+      #       g = ifelse(is.na(g$g), 2, suppressWarnings(as.numeric(g$g))),
+      #       b = ifelse(is.na(b$b), 3, suppressWarnings(as.numeric(b$b))),
+      #       max_pixels = 500000
+      #     )
+      # }
+      #
+      # output$mosaicandshapeclipped <- renderLeaflet({
+      #   (bcrop + shapefile_view(shptoplot))@map
+      # })
+
+      # If output exists, show it; otherwise show on-the-fly crop for preview
+      observeEvent(input$myclippedplot, {
+        diroutput <- parseDirPath(volumes, input$folderclip)
+        if (!is.null(diroutput) && !identical(diroutput, "character(0)")) {
+          path_try <- file.path(diroutput, paste0(input$myclippedplot, input$clipformat))
+          if (file.exists(path_try)) {
+            output$clippedplot <- renderPlot({
+              mosaic_plot_rgb(
+                terra::rast(path_try),
                 r = ifelse(is.na(r$r), 1, suppressWarnings(as.numeric(r$r))),
                 g = ifelse(is.na(g$g), 2, suppressWarnings(as.numeric(g$g))),
-                b = ifelse(is.na(b$b), 3, suppressWarnings(as.numeric(b$b))),
-                max_pixels = 500000
+                b = ifelse(is.na(b$b), 3, suppressWarnings(as.numeric(b$b)))
               )
-            croppplot@map
-          })
-
+            })
+            return(invisible(NULL))
+          }
         }
+        # fallback: compute quick crop for preview
+        motemp <-
+          terra::crop(mosaic_data[[input$mosaic_to_clip]]$data, shptoplot) |>
+          terra::mask(shptoplot)
+        output$clippedplot <- renderPlot({
+          mosaic_plot_rgb(
+            motemp,
+            r = ifelse(is.na(r$r), 1, suppressWarnings(as.numeric(r$r))),
+            g = ifelse(is.na(g$g), 2, suppressWarnings(as.numeric(g$g))),
+            b = ifelse(is.na(b$b), 3, suppressWarnings(as.numeric(b$b)))
+          )
+        })
       })
-
     })
   })
 }

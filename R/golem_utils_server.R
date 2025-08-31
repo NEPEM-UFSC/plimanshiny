@@ -1538,345 +1538,261 @@ get_climate <- function(env = NULL, lat, lon, start, end,
                         workers = 2,
                         environment = c("r", "shiny")) {
 
-  # Helper functions (kept from original)
+  # --- helpers ----------------------------------------------------------------
   deg2rad <- function(deg) (deg * pi) / 180
   Ra_fun <- function(J, lat) {
     rlat <- deg2rad(lat)
     fi <- 0.409 * sin((2 * pi / 365) * J - 1.39)
-    dr <- 1 + 0.033 * cos((2 * pi / 365) * J)
+    dr <- 1 + 0.033 * cos(2 * pi / 365 * J)
     ws <- acos(-tan(rlat) * tan(fi))
     Ra <- (1440 / pi) * 0.082 * dr * (ws * sin(rlat) * sin(fi) + cos(rlat) * cos(fi) * sin(ws))
     P <- asin(0.39795 * cos(0.2163108 + 2 * atan(0.9671396 * tan(0.0086 * (J - 186)))))
-    # Ensure P calculation is safe
     P_arg <- (sin(0.8333 * pi / 180) + sin(lat * pi / 180) * sin(P)) /
       (cos(lat * pi / 180) * cos(P))
-    P_arg <- pmin(pmax(P_arg, -1), 1) # Clamp value to [-1, 1] to avoid acos domain error
+    P_arg <- pmin(pmax(P_arg, -1), 1)
     DL <- 24 - (24 / pi) * acos(P_arg)
     data.frame(Ra = Ra, N = DL)
   }
-
   vpd <- function(temp, rh) {
     es <- 0.61078 * exp((17.27 * temp) / (temp + 237.3))
     ea <- es * (rh / 100)
-    vpd <- es - ea
-    return(data.frame(ES = es, EA = ea, VPD = vpd))
+    data.frame(ES = es, EA = ea, VPD = es - ea)
   }
   slope_svp <- function(tmed) {
     4098 * (0.6108 * exp((17.27 * tmed) / (tmed + 237.3))) / (tmed + 237.3)^2
   }
 
-
-  # Initial validations
+  # --- validations / defaults -------------------------------------------------
   stopifnot(length(lat) == length(lon))
-  if (is.null(env)) {
-    env <- paste0("ENV", seq_along(lat))
-  }
+  if (is.null(env)) env <- paste0("ENV", seq_along(lat))
   stopifnot(length(env) == length(lat))
-  scale <- match.arg(scale)
-  environment <- match.arg(environment)
 
-  # Validate parameters for selected scale
+  scale       <- match.arg(scale)
+  environment <- match.arg(environment)
+  n_points    <- length(lat)
+  start_vec   <- if (length(start) == 1) rep(start, n_points) else start
+  end_vec     <- if (length(end)   == 1) rep(end,   n_points) else end
+
   nasaparams_path <- system.file("app/www/nasaparams.csv", package = "plimanshiny", mustWork = FALSE)
   if (nasaparams_path == "") stop("nasaparams.csv file not found")
-  nasaparams <- read.csv(nasaparams_path)
+  nasaparams <- utils::read.csv(nasaparams_path, stringsAsFactors = FALSE)
 
-  # Internal function to fetch data for a single point
+  # --- point fetcher ----------------------------------------------------------
   fetch_data_point <- function(lat_i, lon_i, env_i, start_i, end_i) {
     tryCatch({
-      # Prepare scale and parameters
       scale_lowercase <- tolower(scale)
-      api_scale <- scale_lowercase
-      if(scale_lowercase == "climatology") api_scale = "climatology"
+      api_scale <- if (scale_lowercase == "climatology") "climatology" else scale_lowercase
 
-      # Check for future dates and adjust if needed
       current_date <- Sys.Date()
       start_date <- as.Date(start_i)
-      end_date <- as.Date(end_i)
+      end_date   <- as.Date(end_i)
 
       if (start_date > current_date || end_date > current_date) {
-        warning(paste("Future dates detected for point", lat_i, lon_i,
-                      "- NASA POWER only provides historical data."))
-
-        # For non-climatology requests, adjust dates to recent historical period
+        warning(sprintf("Future dates detected for point (%.4f, %.4f). Adjusting.", lat_i, lon_i))
         if (api_scale != "climatology") {
-          # Adjust to recent past (last 30 days up to yesterday)
-          new_end_date <- current_date - 1
-          new_start_date <- new_end_date - 30
-
-          warning(paste("Adjusting request dates to recent historical period:",
-                        format(new_start_date, "%Y-%m-%d"), "to",
-                        format(new_end_date, "%Y-%m-%d")))
-
-          start_date <- new_start_date
-          end_date <- new_end_date
+          end_date   <- current_date - 1
+          start_date <- end_date - 30
         }
       }
 
-      # Validate parameters for the selected scale
-      suitableparams <- nasaparams[nasaparams$level == scale_lowercase, ]$abbreviation
-      valid_params <- intersect(params, suitableparams)
-      if(length(valid_params) == 0) {
-        warning(paste("No valid parameters for scale", scale_lowercase, "at point", lat_i, lon_i))
-        return(NULL)
-      }
+      suitable <- nasaparams[nasaparams$level == scale_lowercase, "abbreviation"]
+      valid_params <- intersect(params, suitable)
+      if (length(valid_params) == 0) return(NULL)
       params_str_i <- paste(valid_params, collapse = ",")
 
-      # Build API URL
       base_url <- "https://power.larc.nasa.gov/api/temporal"
       if (api_scale == "monthly") {
-        # For monthly, use only the YYYY format (year only)
         start_fmt <- format(start_date, "%Y")
-        end_fmt <- format(end_date, "%Y")
-
-        # Ensure it does not exceed the current year for future data
+        end_fmt   <- format(end_date,   "%Y")
         current_year <- as.numeric(format(current_date, "%Y"))
-        if (as.numeric(end_fmt) > current_year) {
-          end_fmt <- format(current_date, "%Y")
-          warning(paste("End date adjusted to current year:", end_fmt))
-        }
-
+        if (as.numeric(end_fmt) > current_year) end_fmt <- format(current_date, "%Y")
         url <- glue::glue("{base_url}/{api_scale}/point?parameters={params_str_i}&community=AG&longitude={lon_i}&latitude={lat_i}&start={start_fmt}&end={end_fmt}&format=CSV")
       } else if (api_scale %in% c("hourly", "daily")) {
         start_fmt <- format(start_date, "%Y%m%d")
-        end_fmt <- format(end_date, "%Y%m%d")
+        end_fmt   <- format(end_date,   "%Y%m%d")
         url <- glue::glue("{base_url}/{api_scale}/point?parameters={params_str_i}&community=AG&longitude={lon_i}&latitude={lat_i}&start={start_fmt}&end={end_fmt}&format=CSV")
       } else {
         url <- glue::glue("{base_url}/climatology/point?parameters={params_str_i}&community=AG&longitude={lon_i}&latitude={lat_i}&format=CSV")
       }
 
-      req <- httr2::request(url) |> httr2::req_options(timeout = 60, ssl_verifypeer = 0)
-      resp <- tryCatch(httr2::req_perform(req), error = function(e) {
-        warning(paste("HTTP request error for point", lat_i, lon_i, ":", e$message))
-        return(NULL)
-      })
+      req  <- httr2::request(url) |> httr2::req_options(timeout = 60, ssl_verifypeer = 0)
+      resp <- tryCatch(httr2::req_perform(req), error = function(e) NULL)
+      if (is.null(resp) || httr2::resp_status(resp) >= 400) return(NULL)
 
-      if (is.null(resp)) {
-        warning(paste("HTTP request failed for point", lat_i, lon_i))
-        return(NULL)
-      }
-
-      if (httr2::resp_status(resp) >= 400) {
-        warning(paste("Invalid API response for point", lat_i, lon_i, "status:",
-                      httr2::resp_status(resp),
-                      "- Reason:", httr2::resp_status_desc(resp)))
-
-        # Try to extract more error details from response body if possible
-        error_body <- tryCatch(httr2::resp_body_string(resp), error = function(e) NULL)
-        if (!is.null(error_body) && nchar(error_body) > 0) {
-          warning(paste("NASA POWER API error details:", substr(error_body, 1, 200), "..."))
-        }
-
-        return(NULL)
-      }
-
-      # Process response
-      file <- tempfile(fileext = ".csv")
-      on.exit(unlink(file), add = TRUE)
       content <- httr2::resp_body_string(resp)
+      if (grepl("No data was found that matched your query", content, ignore.case = TRUE)) return(NULL)
 
-      # Check if data exists
-      if (grepl("No data was found that matched your query", content, ignore.case = TRUE)) {
-        warning(paste("No data found for point", lat_i, lon_i))
-        return(NULL)
-      }
+      tf <- tempfile(fileext = ".csv")
+      on.exit(unlink(tf), add = TRUE)
+      writeLines(content, tf)
 
-      writeLines(content, file)
-
-      # Read CSV skipping NASA header
-      linhas <- readLines(file)
+      linhas <- readLines(tf)
       linha_inicio_dados <- which(grepl("-END HEADER-", linhas)) + 1
-
-      if(length(linha_inicio_dados) == 0) {
-        # Try reading without skipping header if marker not found
-        dados <- tryCatch(read.csv(file, check.names = FALSE), error = function(e) {
-          warning(paste("Error reading CSV for point", lat_i, lon_i, ":", e$message))
-          return(NULL)
-        })
+      dados <- if (length(linha_inicio_dados)) {
+        tryCatch(utils::read.csv(tf, skip = linha_inicio_dados - 1, check.names = FALSE), error = function(e) NULL)
       } else {
-        dados <- tryCatch(read.csv(file, skip = linha_inicio_dados - 1, check.names = FALSE),
-                          error = function(e) {
-                            warning(paste("Error reading CSV with skip for point", lat_i, lon_i, ":", e$message))
-                            return(NULL)
-                          })
+        tryCatch(utils::read.csv(tf, check.names = FALSE), error = function(e) NULL)
       }
+      if (is.null(dados) || !nrow(dados)) return(NULL)
 
-      if (is.null(dados) || nrow(dados) == 0) {
-        warning(paste("Empty data for point", lat_i, lon_i))
-        return(NULL)
-      }
+      dados$ENV <- env_i; dados$LAT <- lat_i; dados$LON <- lon_i
+      dados[dados == -999] <- NA; dados[dados == -99] <- NA
 
-      # Add metadata
-      dados$ENV <- env_i
-      dados$LAT <- lat_i
-      dados$LON <- lon_i
-
-      # Convert NASA fill values to NA
-      dados[dados == -999] <- NA
-      dados[dados == -99] <- NA
-
-      # Create DATE column if possible
       if ("YEAR" %in% names(dados) && "DOY" %in% names(dados)) {
-        dados$DATE <- tryCatch(as.Date(paste0(dados$YEAR, "-", dados$DOY), format = "%Y-%j"),
-                               error = function(e) NA)
+        dados$DATE <- tryCatch(as.Date(paste0(dados$YEAR, "-", dados$DOY), format = "%Y-%j"), error = function(e) NA)
       } else if ("YYYYMMDD" %in% names(dados)) {
-        dados$DATE <- tryCatch(as.Date(as.character(dados$YYYYMMDD), format = "%Y%m%d"),
-                               error = function(e) NA)
+        dados$DATE <- tryCatch(as.Date(as.character(dados$YYYYMMDD), format = "%Y%m%d"), error = function(e) NA)
       } else if (all(c("YEAR", "MO", "DY") %in% names(dados))) {
         date_str <- paste(dados$YEAR,
-                          formatC(as.numeric(dados$MO), width = 2, flag = "0"),
-                          formatC(as.numeric(dados$DY), width = 2, flag = "0"), sep = "-")
+                          sprintf("%02d", as.integer(dados$MO)),
+                          sprintf("%02d", as.integer(dados$DY)), sep = "-")
         dados$DATE <- tryCatch(as.Date(date_str), error = function(e) NA)
       }
 
-      # Standardize common column names
-      if("PRECTOTCORR" %in% names(dados))
+      if ("PRECTOTCORR" %in% names(dados))
         names(dados)[names(dados) == "PRECTOTCORR"] <- "PRECTOT"
 
-      return(dados)
-    }, error = function(e) {
-      warning(paste("General error processing point", lat_i, lon_i, ":", e$message))
-      return(NULL)
-    })
+      dados
+    }, error = function(e) NULL)
   }
 
-  # Check cache first, if provided
+  # --- cache (optional) -------------------------------------------------------
   if (!is.null(cache_service)) {
-    # The cache_service should implement getOrFetch()
     request_params <- list(
-      coordinates = data.frame(env = env, lat = lat, lon = lon, start = start, end = end),
+      coordinates = data.frame(env = env, lat = lat, lon = lon, start = start_vec, end = end_vec),
       params = params,
       scale = scale
     )
-
-    # Use cache service
     cache_result <- cache_service$getOrFetch(request_params)
-
-    # If no fetch needed, return cache data
-    if (!cache_result$needs_fetch) {
-      return(cache_result$data)
-    }
-
-    # If fetch needed, store cache key for later use
+    if (!isTRUE(cache_result$needs_fetch)) return(cache_result$data)
     cache_key <- cache_result$cache_key
   }
 
-  # Configure parallelism
-  if (parallel) {
-    future::plan(future::multisession, workers = workers)
-  } else {
-    future::plan(future::sequential)
-  }
-  on.exit(future::plan(future::sequential), add = TRUE)
+  # --- fetch: CHUNKED batches -------------------------------------------------
+  tasks <- data.frame(
+    env  = env,
+    lat  = lat,
+    lon  = lon,
+    start = start_vec,
+    end   = end_vec,
+    stringsAsFactors = FALSE
+  )
 
-  # Fetch data with progress (if needed)
-  if (progress && environment == "shiny") {
-    if(parallel){
-      progressr::withProgressShiny({
-        p <- progressr::progressor(steps = length(lat))
-        result_list <- furrr::future_map(seq_along(lat), function(i) {
-          p(message = sprintf("%s", env[i]))
-          fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
-        }, .options = furrr::furrr_options(seed = TRUE))
-      }, message = "Fetching climate data for")
-    } else{
-      progressr::withProgressShiny({
-        p <- progressr::progressor(steps = length(lat))
-        result_list <- furrr::future_map(seq_along(lat), function(i) {
-          p(message = sprintf("%s (%d/%d)", env[i], i, length(lat)))
-          fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
-        }, .options = furrr::furrr_options(seed = TRUE))
-      }, message = "Fetching climate data for")
+  result_list <- NULL
+
+  if (isTRUE(parallel)) {
+    # number of workers and chunking like your mod_L3
+    ncores <- ifelse(is.null(workers), max(1, ceiling(parallel::detectCores() * 0.5)), max(1, workers))
+    # balanced chunking by index
+    tasks$index <- rep(seq_len(ncores), each = ceiling(nrow(tasks) / ncores))[seq_len(nrow(tasks))]
+    chunked <- split(tasks, tasks$index)
+
+    # show a spinner in shiny, if requested
+    if (isTRUE(progress) && identical(environment, "shiny") && requireNamespace("waiter", quietly = TRUE)) {
+      waiter_show(
+        html = tagList(
+          spin_google(),
+          h2("Fetching climate data in parallel. Please, wait...")
+        ),
+        color = "#228B227F"
+      )
+      on.exit(try(waiter::waiter_hide(), silent = TRUE), add = TRUE)
     }
-  } else if (progress && environment == "r") {
-    progressr::handlers(global = TRUE)
-    progressr::with_progress({
-      p <- progressr::progressor(steps = length(lat))
-      result_list <- furrr::future_map(seq_along(lat), function(i) {
-        p(message = sprintf("Fetching %s (%d/%d)", env[i], i, length(lat)))
-        fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
-      }, .options = furrr::furrr_options(seed = TRUE))
-    })
+
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    res_chunks <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, fetch_data_point) {
+        # x is a data.frame chunk with columns env, lat, lon, start, end
+        lapply(seq_len(nrow(x)), function(i) {
+          fetch_data_point(
+            lat_i   = x$lat[i],
+            lon_i   = x$lon[i],
+            env_i   = x$env[i],
+            start_i = x$start[i],
+            end_i   = x$end[i]
+          )
+        })
+      },
+      .args = list(fetch_data_point = fetch_data_point)
+    )[.progress]
+
+    result_list <- unlist(res_chunks, recursive = FALSE, use.names = FALSE)
+
   } else {
-    # No progress bar
-    result_list <- furrr::future_map(seq_along(lat), function(i) {
-      fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
-    }, .options = furrr::furrr_options(seed = TRUE))
+    # sequential with progress, chunking not needed here but we keep UX similar
+    if (isTRUE(progress) && identical(environment, "shiny")) {
+      progressr::withProgressShiny({
+        p <- progressr::progressor(steps = nrow(tasks))
+        result_list <- purrr::map(seq_len(nrow(tasks)), function(i) {
+          p(message = sprintf("%s (%d/%d)", tasks$env[i], i, nrow(tasks)))
+          fetch_data_point(tasks$lat[i], tasks$lon[i], tasks$env[i], tasks$start[i], tasks$end[i])
+        })
+      }, message = "Fetching climate data for")
+    } else if (isTRUE(progress) && identical(environment, "r")) {
+      progressr::handlers(global = TRUE)
+      progressr::with_progress({
+        p <- progressr::progressor(steps = nrow(tasks))
+        result_list <- purrr::map(seq_len(nrow(tasks)), function(i) {
+          p(message = sprintf("Fetching %s (%d/%d)", tasks$env[i], i, nrow(tasks)))
+          fetch_data_point(tasks$lat[i], tasks$lon[i], tasks$env[i], tasks$start[i], tasks$end[i])
+        })
+      })
+    } else {
+      result_list <- purrr::map(seq_len(nrow(tasks)), function(i) {
+        fetch_data_point(tasks$lat[i], tasks$lon[i], tasks$env[i], tasks$start[i], tasks$end[i])
+      })
+    }
   }
 
-  # Remove null results
-  result_list <- result_list[!sapply(result_list, is.null)]
-
-  if (length(result_list) == 0) {
+  # --- assemble ---------------------------------------------------------------
+  result_list <- result_list[!vapply(result_list, is.null, logical(1))]
+  if (!length(result_list)) {
     warning("No data was obtained for the requested points")
     return(NULL)
   }
 
-  # Combine results
-  final_df <- tryCatch(
-    dplyr::bind_rows(result_list),
-    error = function(e) {
-      warning(paste("Error combining results:", e$message))
-      return(NULL)
-    }
-  )
+  final_df <- tryCatch(dplyr::bind_rows(result_list), error = function(e) NULL)
+  if (is.null(final_df) || !nrow(final_df)) return(NULL)
 
-  # Save to cache if provided
-  if (!is.null(cache_service) && !is.null(final_df) && nrow(final_df) > 0) {
-    cache_service$save(cache_key, final_df)
-  }
-  if(scale == "daily"){
-    ra_n_results <- Ra_fun(final_df$DOY, final_df$LAT)
+  if (!is.null(cache_service)) cache_service$save(cache_key, final_df)
 
-
+  # Post-processing per scale
+  if (identical(scale, "daily")) {
     final_df <-
       final_df |>
       dplyr::relocate(ENV, LAT, LON, DATE, .before = 1) |>
-      dplyr::select(-any_of(c("YEAR", "MO", "DY"))) |>
+      dplyr::select(-dplyr::any_of(c("YEAR", "MO", "DY"))) |>
       tidyr::separate_wider_delim(DATE, names = c("YEAR", "MO", "DY"), delim = "-") |>
       dplyr::group_by(ENV) |>
       dplyr::mutate(DFS = dplyr::row_number(), .after = DOY,
-                    RA = ra_n_results$Ra,
-                    N  = ra_n_results$N) |>
+                    RA = Ra_fun(DOY, LAT)$Ra,
+                    N  = Ra_fun(DOY, LAT)$N) |>
       dplyr::ungroup() |>
       tidyr::unite("DATE", YEAR, MO, DY, sep = "-", remove = FALSE)
 
-    # Calculate VPD, ES, EA if possible (No check for existence)
-    temp_col <- if("T2M" %in% names(final_df)) "T2M" else if("T2M_MAX" %in% names(final_df)) "T2M_MAX" else NULL
-    rh_col <- if("RH2M" %in% names(final_df)) "RH2M" else NULL
-
+    temp_col <- if ("T2M" %in% names(final_df)) "T2M" else if ("T2M_MAX" %in% names(final_df)) "T2M_MAX" else NULL
+    rh_col   <- if ("RH2M" %in% names(final_df)) "RH2M" else NULL
     if (!is.null(temp_col) && !is.null(rh_col)) {
       vpd_results <- vpd(final_df[[temp_col]], final_df[[rh_col]])
-      final_df$ES <- vpd_results$ES
-      final_df$EA <- vpd_results$EA
-      final_df$VPD <- vpd_results$VPD
+      final_df$ES <- vpd_results$ES; final_df$EA <- vpd_results$EA; final_df$VPD <- vpd_results$VPD
     }
-    if(!is.null(temp_col)){
-      final_df$SLOPE_SVP <- slope_svp(final_df[[temp_col]])
-    }
-  }
-  if(scale == "hourly"){
-    final_df <-
-      final_df |>
-      dplyr::relocate(ENV, LAT, LON, DATE, .before = 1)
-
-    temp_col <- if("T2M" %in% names(final_df)) "T2M" else if("T2M_MAX" %in% names(final_df)) "T2M_MAX" else NULL
-    rh_col <- if("RH2M" %in% names(final_df)) "RH2M" else NULL
-
+    if (!is.null(temp_col)) final_df$SLOPE_SVP <- slope_svp(final_df[[temp_col]])
+  } else if (identical(scale, "hourly")) {
+    final_df <- final_df |> dplyr::relocate(ENV, LAT, LON, DATE, .before = 1)
+    temp_col <- if ("T2M" %in% names(final_df)) "T2M" else if ("T2M_MAX" %in% names(final_df)) "T2M_MAX" else NULL
+    rh_col   <- if ("RH2M" %in% names(final_df)) "RH2M" else NULL
     if (!is.null(temp_col) && !is.null(rh_col)) {
       vpd_results <- vpd(final_df[[temp_col]], final_df[[rh_col]])
-      final_df$ES <- vpd_results$ES
-      final_df$EA <- vpd_results$EA
-      final_df$VPD <- vpd_results$VPD
+      final_df$ES <- vpd_results$ES; final_df$EA <- vpd_results$EA; final_df$VPD <- vpd_results$VPD
     }
-    if(!is.null(temp_col)){
-      final_df$SLOPE_SVP <- slope_svp(final_df[[temp_col]])
-    }
+    if (!is.null(temp_col)) final_df$SLOPE_SVP <- slope_svp(final_df[[temp_col]])
+  } else if (scale %in% c("monthly", "climatology")) {
+    final_df <- final_df |> dplyr::relocate(ENV, LAT, LON, .before = 1)
+  }
 
-  }
-  if(scale %in% c("monthly", "climatology")){
-    final_df <-
-      final_df |>
-      dplyr::relocate(ENV, LAT, LON, .before = 1)
-  }
-  return(final_df)
+  final_df
 }
+
