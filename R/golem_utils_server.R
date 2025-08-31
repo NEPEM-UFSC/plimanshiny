@@ -1046,129 +1046,129 @@ mosaic_chm_quality <- function(chm,
 }
 
 gdd_ometto_frue <- function(df,
-                                Tbase = 10,
-                                Tceil = 40,
-                                Topt1 = 26,
-                                Topt2 = 32) {
+                            Tbase = 10,
+                            Tceil = 40,
+                            Topt1 = 26,
+                            Topt2 = 32) {
 
-      # Ensure required columns exist
-      required_cols <- c("T2M_MAX", "T2M_MIN")
-      if (!all(required_cols %in% names(df))) {
-        # Try to derive from T2M if available (assuming aggregate_hourly_data was called)
-        if ("T2M" %in% names(df)) {
-           warning("T2M_MIN/T2M_MAX not found, attempting to use T2M assuming it represents daily mean.", call. = FALSE)
-           # This is a fallback, ideally aggregate_hourly_data should create T2M_MIN/MAX
-           df <- df |> dplyr::mutate(T2M_MAX = T2M, T2M_MIN = T2M)
-        } else {
-           stop("Required columns for GDD calculation are missing: T2M_MIN, T2M_MAX. ",
-                "Ensure they are selected or derived (e.g., from hourly T2M).")
-        }
-      }
-
-
-      Tb <- Tbase
-      TB <- Tceil
-
-      # Step 1: Calculate intermediate numeric columns explicitly
-      df_intermediate <- df |>
-        dplyr::mutate(
-          # Ensure temps are numeric (use suppressWarnings for robustness)
-          T2M_MAX_num = suppressWarnings(as.numeric(T2M_MAX)),
-          T2M_MIN_num = suppressWarnings(as.numeric(T2M_MIN)),
-          # Also pre-calculate T2M_num if T2M exists, otherwise NA
-          T2M_num = if ("T2M" %in% names(df)) suppressWarnings(as.numeric(T2M)) else NA_real_
-        )
-
-      # Step 2: Calculate Tmed using pre-calculated numeric columns
-      df_intermediate <- df_intermediate |>
-        dplyr::mutate(
-          Tmed = dplyr::case_when(
-            # Use T2M_num if it's valid (not NA)
-            !is.na(T2M_num) ~ T2M_num,
-            # Fallback to MIN/MAX if they are valid numerics
-            !is.na(T2M_MAX_num) & !is.na(T2M_MIN_num) ~ (T2M_MAX_num + T2M_MIN_num) / 2,
-            # Default if neither T2M_num nor MIN/MAX are usable
-            TRUE ~ NA_real_
-          )
-        )
-
-      # Step 3: Calculate GDD and FRUE using Tmed and numeric temps
-      df_out <- df_intermediate |>
-        dplyr::mutate(
-          # GDD Calculation (Ometto method, handling NAs and edge cases)
-          GDD = dplyr::case_when(
-            # Use pre-calculated numeric columns directly
-            is.na(T2M_MAX_num) | is.na(T2M_MIN_num) ~ NA_real_, # Cannot calculate if temps are NA
-
-            # Handle case where Tmin == Tmax first to avoid division by zero later
-            T2M_MAX_num == T2M_MIN_num & T2M_MAX_num >= Tb & T2M_MAX_num <= TB ~ T2M_MAX_num - Tb,
-            T2M_MAX_num == T2M_MIN_num & T2M_MAX_num < Tb ~ 0,
-            T2M_MAX_num == T2M_MIN_num & T2M_MAX_num > TB ~ TB - Tb,
-
-            # Ometto logic using Tmin/Tmax primarily (now safe from division by zero)
-            TB > T2M_MAX_num & T2M_MAX_num > T2M_MIN_num & T2M_MIN_num >= Tb ~ (T2M_MAX_num + T2M_MIN_num) / 2 - Tb,
-            TB > T2M_MAX_num & T2M_MAX_num > Tb & Tb > T2M_MIN_num ~ ((T2M_MAX_num - Tb)^2) / (2 * (T2M_MAX_num - T2M_MIN_num)),
-            TB > Tb & Tb >= T2M_MAX_num & T2M_MAX_num >= T2M_MIN_num ~ 0, # Tmax below Tbase
-            T2M_MAX_num > TB & TB > T2M_MIN_num & T2M_MIN_num >= Tb ~
-              ( (T2M_MAX_num + T2M_MIN_num)/2 - Tb ) - ( (T2M_MAX_num - TB)^2 / (2*(T2M_MAX_num - T2M_MIN_num)) ),
-            T2M_MAX_num > TB & TB > Tb & Tb > T2M_MIN_num ~
-              ( (T2M_MAX_num - Tb)^2 - (T2M_MAX_num - TB)^2 ) / (2 * (T2M_MAX_num - T2M_MIN_num)),
-            T2M_MAX_num >= Tb & T2M_MIN_num >= TB ~ TB - Tb, # Tmin above Tceil
-            T2M_MAX_num >= TB & T2M_MIN_num < Tb ~ # Added case: Max > Ceil, Min < Base
-                 ( (T2M_MAX_num - Tb)^2 - (T2M_MAX_num - TB)^2 ) / (2 * (T2M_MAX_num - T2M_MIN_num)), # Same as Tmax>TB>Tb>Tmin case
-
-            TRUE ~ 0 # Default case (should be rare if NA handled)
-          ),
-          # Ensure GDD is not negative
-          GDD = pmax(0, GDD),
-
-          # FRUE: based on Tmed (handle NAs)
-          FRUE = dplyr::case_when(
-            is.na(Tmed) | Tmed <= Tb | Tmed >= TB ~ 0, # No growth outside base/ceil
-            Tmed < Topt1 ~ (Tmed - Tb) / (Topt1 - Tb),
-            Tmed > Topt2 ~ (TB - Tmed) / (TB - Topt2),
-            TRUE ~ 1 # Optimal range Topt1 to Topt2
-          ),
-          # Clamp FRUE between 0 and 1
-          FRUE = pmax(0, pmin(FRUE, 1))
-        ) |>
-        # Remove temporary numeric columns
-        dplyr::select(-dplyr::any_of(c("T2M_MAX_num", "T2M_MIN_num", "T2M_num"))) # Remove T2M_num as well
-
-
-      # Add cumulative sums per environment if ENV exists
-      if ("ENV" %in% names(df_out) && "DATE" %in% names(df_out)) {
-        df_out <- df_out |>
-          dplyr::arrange(ENV, DATE) |> # Ensure order
-          dplyr::group_by(ENV) |>
-          dplyr::mutate(GDD_CUMSUM = cumsum(ifelse(is.na(GDD), 0, GDD))) |>
-          dplyr::ungroup()
-
-        if ("RTA" %in% names(df_out)) {
-          df_out <- df_out |>
-            dplyr::arrange(ENV, DATE) |> # Ensure order
-            dplyr::group_by(ENV) |>
-            dplyr::mutate(RTA_CUMSUM = cumsum(ifelse(is.na(RTA), 0, RTA))) |>
-            dplyr::ungroup()
-        }
-
-      } else if ("DATE" %in% names(df_out)) {
-         # Global cumulative sum if no ENV but DATE exists
-         df_out <-
-           df_out |>
-           dplyr::arrange(DATE) |> # Ensure order
-           dplyr::mutate(GDD_CUMSUM = cumsum(ifelse(is.na(GDD), 0, GDD)))
-         if ("RTA" %in% names(df_out)) {
-            df_out <- df_out |>
-              dplyr::arrange(DATE) |> # Ensure order
-              dplyr::mutate(RTA_CUMSUM = cumsum(ifelse(is.na(RTA), 0, RTA)))
-         }
-      } else {
-          warning("Cannot calculate cumulative sums without ENV and/or DATE columns.", call. = FALSE)
-      }
-
-      return(df_out)
+  # Ensure required columns exist
+  required_cols <- c("T2M_MAX", "T2M_MIN")
+  if (!all(required_cols %in% names(df))) {
+    # Try to derive from T2M if available (assuming aggregate_hourly_data was called)
+    if ("T2M" %in% names(df)) {
+      warning("T2M_MIN/T2M_MAX not found, attempting to use T2M assuming it represents daily mean.", call. = FALSE)
+      # This is a fallback, ideally aggregate_hourly_data should create T2M_MIN/MAX
+      df <- df |> dplyr::mutate(T2M_MAX = T2M, T2M_MIN = T2M)
+    } else {
+      stop("Required columns for GDD calculation are missing: T2M_MIN, T2M_MAX. ",
+           "Ensure they are selected or derived (e.g., from hourly T2M).")
     }
+  }
+
+
+  Tb <- Tbase
+  TB <- Tceil
+
+  # Step 1: Calculate intermediate numeric columns explicitly
+  df_intermediate <- df |>
+    dplyr::mutate(
+      # Ensure temps are numeric (use suppressWarnings for robustness)
+      T2M_MAX_num = suppressWarnings(as.numeric(T2M_MAX)),
+      T2M_MIN_num = suppressWarnings(as.numeric(T2M_MIN)),
+      # Also pre-calculate T2M_num if T2M exists, otherwise NA
+      T2M_num = if ("T2M" %in% names(df)) suppressWarnings(as.numeric(T2M)) else NA_real_
+    )
+
+  # Step 2: Calculate Tmed using pre-calculated numeric columns
+  df_intermediate <- df_intermediate |>
+    dplyr::mutate(
+      Tmed = dplyr::case_when(
+        # Use T2M_num if it's valid (not NA)
+        !is.na(T2M_num) ~ T2M_num,
+        # Fallback to MIN/MAX if they are valid numerics
+        !is.na(T2M_MAX_num) & !is.na(T2M_MIN_num) ~ (T2M_MAX_num + T2M_MIN_num) / 2,
+        # Default if neither T2M_num nor MIN/MAX are usable
+        TRUE ~ NA_real_
+      )
+    )
+
+  # Step 3: Calculate GDD and FRUE using Tmed and numeric temps
+  df_out <- df_intermediate |>
+    dplyr::mutate(
+      # GDD Calculation (Ometto method, handling NAs and edge cases)
+      GDD = dplyr::case_when(
+        # Use pre-calculated numeric columns directly
+        is.na(T2M_MAX_num) | is.na(T2M_MIN_num) ~ NA_real_, # Cannot calculate if temps are NA
+
+        # Handle case where Tmin == Tmax first to avoid division by zero later
+        T2M_MAX_num == T2M_MIN_num & T2M_MAX_num >= Tb & T2M_MAX_num <= TB ~ T2M_MAX_num - Tb,
+        T2M_MAX_num == T2M_MIN_num & T2M_MAX_num < Tb ~ 0,
+        T2M_MAX_num == T2M_MIN_num & T2M_MAX_num > TB ~ TB - Tb,
+
+        # Ometto logic using Tmin/Tmax primarily (now safe from division by zero)
+        TB > T2M_MAX_num & T2M_MAX_num > T2M_MIN_num & T2M_MIN_num >= Tb ~ (T2M_MAX_num + T2M_MIN_num) / 2 - Tb,
+        TB > T2M_MAX_num & T2M_MAX_num > Tb & Tb > T2M_MIN_num ~ ((T2M_MAX_num - Tb)^2) / (2 * (T2M_MAX_num - T2M_MIN_num)),
+        TB > Tb & Tb >= T2M_MAX_num & T2M_MAX_num >= T2M_MIN_num ~ 0, # Tmax below Tbase
+        T2M_MAX_num > TB & TB > T2M_MIN_num & T2M_MIN_num >= Tb ~
+          ( (T2M_MAX_num + T2M_MIN_num)/2 - Tb ) - ( (T2M_MAX_num - TB)^2 / (2*(T2M_MAX_num - T2M_MIN_num)) ),
+        T2M_MAX_num > TB & TB > Tb & Tb > T2M_MIN_num ~
+          ( (T2M_MAX_num - Tb)^2 - (T2M_MAX_num - TB)^2 ) / (2 * (T2M_MAX_num - T2M_MIN_num)),
+        T2M_MAX_num >= Tb & T2M_MIN_num >= TB ~ TB - Tb, # Tmin above Tceil
+        T2M_MAX_num >= TB & T2M_MIN_num < Tb ~ # Added case: Max > Ceil, Min < Base
+          ( (T2M_MAX_num - Tb)^2 - (T2M_MAX_num - TB)^2 ) / (2 * (T2M_MAX_num - T2M_MIN_num)), # Same as Tmax>TB>Tb>Tmin case
+
+        TRUE ~ 0 # Default case (should be rare if NA handled)
+      ),
+      # Ensure GDD is not negative
+      GDD = pmax(0, GDD),
+
+      # FRUE: based on Tmed (handle NAs)
+      FRUE = dplyr::case_when(
+        is.na(Tmed) | Tmed <= Tb | Tmed >= TB ~ 0, # No growth outside base/ceil
+        Tmed < Topt1 ~ (Tmed - Tb) / (Topt1 - Tb),
+        Tmed > Topt2 ~ (TB - Tmed) / (TB - Topt2),
+        TRUE ~ 1 # Optimal range Topt1 to Topt2
+      ),
+      # Clamp FRUE between 0 and 1
+      FRUE = pmax(0, pmin(FRUE, 1))
+    ) |>
+    # Remove temporary numeric columns
+    dplyr::select(-dplyr::any_of(c("T2M_MAX_num", "T2M_MIN_num", "T2M_num"))) # Remove T2M_num as well
+
+
+  # Add cumulative sums per environment if ENV exists
+  if ("ENV" %in% names(df_out) && "DATE" %in% names(df_out)) {
+    df_out <- df_out |>
+      dplyr::arrange(ENV, DATE) |> # Ensure order
+      dplyr::group_by(ENV) |>
+      dplyr::mutate(GDD_CUMSUM = cumsum(ifelse(is.na(GDD), 0, GDD))) |>
+      dplyr::ungroup()
+
+    if ("RTA" %in% names(df_out)) {
+      df_out <- df_out |>
+        dplyr::arrange(ENV, DATE) |> # Ensure order
+        dplyr::group_by(ENV) |>
+        dplyr::mutate(RTA_CUMSUM = cumsum(ifelse(is.na(RTA), 0, RTA))) |>
+        dplyr::ungroup()
+    }
+
+  } else if ("DATE" %in% names(df_out)) {
+    # Global cumulative sum if no ENV but DATE exists
+    df_out <-
+      df_out |>
+      dplyr::arrange(DATE) |> # Ensure order
+      dplyr::mutate(GDD_CUMSUM = cumsum(ifelse(is.na(GDD), 0, GDD)))
+    if ("RTA" %in% names(df_out)) {
+      df_out <- df_out |>
+        dplyr::arrange(DATE) |> # Ensure order
+        dplyr::mutate(RTA_CUMSUM = cumsum(ifelse(is.na(RTA), 0, RTA)))
+    }
+  } else {
+    warning("Cannot calculate cumulative sums without ENV and/or DATE columns.", call. = FALSE)
+  }
+
+  return(df_out)
+}
 
 
 envirotype <- function(data,
@@ -1229,8 +1229,8 @@ aggregate_hourly_data <- function(data) {
   # Assume que 'data' já possui colunas 'ENV' e 'YYYYMMDD'
   required_cols <- c("ENV", "YYYYMMDD", "T2M")
   if (!all(required_cols %in% colnames(data))) {
-     stop(paste("Colunas necessárias para agregação horária ausentes:",
-                paste(setdiff(required_cols, colnames(data)), collapse=", ")))
+    stop(paste("Colunas necessárias para agregação horária ausentes:",
+               paste(setdiff(required_cols, colnames(data)), collapse=", ")))
   }
 
   data |>
@@ -1242,18 +1242,18 @@ aggregate_hourly_data <- function(data) {
       # Calcula outras agregações necessárias para colunas numéricas
       # Use across() se precisar agregar muitas colunas da mesma forma
       dplyr::across(
-         dplyr::where(is.numeric) & !dplyr::all_of(c("T2M")), # Exclui T2M já processado
-         list(mean = mean, sum = sum), # Adicione outras funções se necessário
-         na.rm = TRUE,
-         .names = "{.col}_{.fn}" # Mantém o padrão para outras colunas
-       ),
+        dplyr::where(is.numeric) & !dplyr::all_of(c("T2M")), # Exclui T2M já processado
+        list(mean = mean, sum = sum), # Adicione outras funções se necessário
+        na.rm = TRUE,
+        .names = "{.col}_{.fn}" # Mantém o padrão para outras colunas
+      ),
       .groups = 'keep' # Mantém as colunas de agrupamento (ENV, YYYYMMDD)
     ) |>
     dplyr::ungroup() |> # Remove o agrupamento após summarise
     # Garante que Inf/-Inf de min/max em dias sem dados sejam NA
     dplyr::mutate(
-        T2M_MIN = ifelse(is.infinite(T2M_MIN), NA, T2M_MIN),
-        T2M_MAX = ifelse(is.infinite(T2M_MAX), NA, T2M_MAX)
+      T2M_MIN = ifelse(is.infinite(T2M_MIN), NA, T2M_MIN),
+      T2M_MAX = ifelse(is.infinite(T2M_MAX), NA, T2M_MAX)
     )
 }
 
@@ -1282,7 +1282,7 @@ is_duplicate_point <- function(new_lat, new_lon, points_data) {
     }
     # Ensure it has at least one row
     if (nrow(point_df) == 0) {
-        next
+      next
     }
 
     # Extract and validate coordinates from the existing point
@@ -1327,13 +1327,13 @@ calculate_weinberger_ch <- function(data) {
   if ("HR" %in% colnames(ch_data) || "HOUR" %in% colnames(ch_data)) {
     #Ensure a date column exists for grouping
     if (!"DATE" %in% colnames(ch_data)) {
-        if (all(c("YEAR", "MO", "DY") %in% colnames(ch_data))) {
-          date_str <- paste(ch_data$YEAR, formatC(as.numeric(ch_data$MO), width = 2, flag = "0"), formatC(as.numeric(ch_data$DY), width = 2, flag = "0"), sep = "-")
-          ch_data$DATE <- tryCatch(as.Date(date_str), error = function(e) NA)
-          if(any(is.na(ch_data$DATE))) warning("Could not create DATE column reliably for daily CH grouping.")
-        } else {
-          warning("Cannot group by day for daily CH sum (Weinberger): Missing YEAR, MO, DY or DATE columns.")
-        }
+      if (all(c("YEAR", "MO", "DY") %in% colnames(ch_data))) {
+        date_str <- paste(ch_data$YEAR, formatC(as.numeric(ch_data$MO), width = 2, flag = "0"), formatC(as.numeric(ch_data$DY), width = 2, flag = "0"), sep = "-")
+        ch_data$DATE <- tryCatch(as.Date(date_str), error = function(e) NA)
+        if(any(is.na(ch_data$DATE))) warning("Could not create DATE column reliably for daily CH grouping.")
+      } else {
+        warning("Cannot group by day for daily CH sum (Weinberger): Missing YEAR, MO, DY or DATE columns.")
+      }
     }
 
     if ("DATE" %in% colnames(ch_data) && !any(is.na(ch_data$DATE))) {
@@ -1347,11 +1347,11 @@ calculate_weinberger_ch <- function(data) {
 
   #Calculate accumulated chilling hours per environment
   if (has_env) {
-      ch_data <- ch_data |>
-        dplyr::arrange(ENV, DATE, HR) |> #Ensure correct order for cumsum
-        dplyr::group_by(ENV) |>
-        dplyr::mutate(ch_w_accum = cumsum(ch_w)) |>
-        dplyr::ungroup()
+    ch_data <- ch_data |>
+      dplyr::arrange(ENV, DATE, HR) |> #Ensure correct order for cumsum
+      dplyr::group_by(ENV) |>
+      dplyr::mutate(ch_w_accum = cumsum(ch_w)) |>
+      dplyr::ungroup()
   } else {
     #Calculate global accumulation if ENV is missing
     ch_data <- ch_data |>
@@ -1389,68 +1389,68 @@ calculate_utah_ch <- function(data) {
 
   #Optional: Calculate daily sums if hourly
   if ("HR" %in% colnames(ch_data) || "HOUR" %in% colnames(ch_data)) {
-      if (!"DATE" %in% colnames(ch_data)) {
-        if (all(c("YEAR", "MO", "DY") %in% colnames(ch_data))) {
-          date_str <- paste(ch_data$YEAR, formatC(as.numeric(ch_data$MO), width = 2, flag = "0"), formatC(as.numeric(ch_data$DY), width = 2, flag = "0"), sep = "-")
-          ch_data$DATE <- tryCatch(as.Date(date_str), error = function(e) NA)
-          if(any(is.na(ch_data$DATE))) warning("Could not create DATE column reliably for daily CH grouping (Utah).")
-        } else {
-          warning("Cannot group by day for daily CH sum (Utah): Missing YEAR, MO, DY or DATE columns.")
-        }
+    if (!"DATE" %in% colnames(ch_data)) {
+      if (all(c("YEAR", "MO", "DY") %in% colnames(ch_data))) {
+        date_str <- paste(ch_data$YEAR, formatC(as.numeric(ch_data$MO), width = 2, flag = "0"), formatC(as.numeric(ch_data$DY), width = 2, flag = "0"), sep = "-")
+        ch_data$DATE <- tryCatch(as.Date(date_str), error = function(e) NA)
+        if(any(is.na(ch_data$DATE))) warning("Could not create DATE column reliably for daily CH grouping (Utah).")
+      } else {
+        warning("Cannot group by day for daily CH sum (Utah): Missing YEAR, MO, DY or DATE columns.")
       }
-      if ("DATE" %in% colnames(ch_data) && !any(is.na(ch_data$DATE))) {
-        grouping_vars <- if(has_env) c("ENV", "DATE") else "DATE"
-        ch_data <- ch_data |>
-          dplyr::group_by(dplyr::across(dplyr::all_of(grouping_vars))) |>
-          dplyr::mutate(CH_Utah_daily = sum(CH_Utah, na.rm = TRUE)) |>
-          dplyr::ungroup()
-      }
+    }
+    if ("DATE" %in% colnames(ch_data) && !any(is.na(ch_data$DATE))) {
+      grouping_vars <- if(has_env) c("ENV", "DATE") else "DATE"
+      ch_data <- ch_data |>
+        dplyr::group_by(dplyr::across(dplyr::all_of(grouping_vars))) |>
+        dplyr::mutate(CH_Utah_daily = sum(CH_Utah, na.rm = TRUE)) |>
+        dplyr::ungroup()
+    }
   }
 
   #Calculate accumulated chilling units per environment (cannot go below 0)
   if (has_env) {
-      ch_data <- ch_data |>
-        dplyr::arrange(ENV, DATE, HR) |>
-        dplyr::group_by(ENV) |>
-        dplyr::mutate(CH_Utah_accum = cumsum(CH_Utah)) |>
-        dplyr::mutate(CH_Utah_accum = pmax(0, CH_Utah_accum)) |> #Ensure non-negative
-        dplyr::ungroup()
+    ch_data <- ch_data |>
+      dplyr::arrange(ENV, DATE, HR) |>
+      dplyr::group_by(ENV) |>
+      dplyr::mutate(CH_Utah_accum = cumsum(CH_Utah)) |>
+      dplyr::mutate(CH_Utah_accum = pmax(0, CH_Utah_accum)) |> #Ensure non-negative
+      dplyr::ungroup()
   } else {
-      ch_data <- ch_data |>
-        dplyr::arrange(DATE, HR) |> #Ensure correct order
-        dplyr::mutate(CH_Utah_accum = cumsum(CH_Utah)) |>
-        dplyr::mutate(CH_Utah_accum = pmax(0, CH_Utah_accum)) #Ensure non-negative
+    ch_data <- ch_data |>
+      dplyr::arrange(DATE, HR) |> #Ensure correct order
+      dplyr::mutate(CH_Utah_accum = cumsum(CH_Utah)) |>
+      dplyr::mutate(CH_Utah_accum = pmax(0, CH_Utah_accum)) #Ensure non-negative
   }
 
   return(ch_data)
 }
 calculate_nc_ch <- function(data) {
-# Calculation of Cold Units (CU) based on the North Carolina model:
-#
-# The North Carolina model is an adaptation of the Utah model, used in milder climates,
-# such as the southeastern United States. This model is specifically designed to account
-# for the impact of higher temperatures during winter, which can **reduce or even reverse**
-# part of the cold accumulation that occurred earlier. This is represented by negative
-# cold units (CU), which occur when temperatures exceed certain critical thresholds.
-#
-# The model formulation uses temperature ranges to assign positive and negative values
-# for Cold Units. For example, temperatures between 16.5°C and 19°C contribute negative
-# values (from -0.5 to -2.0 CU), because warmth can impair plant dormancy, which is
-# physiologically significant in warmer climates.
-#
-# The accumulation function is done using `cumsum(CH_NC)`, meaning the negative values
-# **are not constrained to zero**. This allows the total CU value over time to become negative,
-# reflecting the impact of higher temperatures on the cooling process. In other models,
-# accumulation is limited to positive values to avoid this, but in the North Carolina model,
-# this feature is intentional, as the model was developed to reflect mild climate conditions
-# and the effect of excessive heat during winter.
-#
-# Therefore, unlike models like Utah’s or more conservative methods that **stop at zero**,
-# the North Carolina model allows the accumulated Cold Units value to become negative,
-# **representing the actual loss of chilling**.
-#
-# This is crucial in environments where chilling periods are followed by warm days, which
-# is common in many subtropical and temperate regions, such as North Carolina in the USA.
+  # Calculation of Cold Units (CU) based on the North Carolina model:
+  #
+  # The North Carolina model is an adaptation of the Utah model, used in milder climates,
+  # such as the southeastern United States. This model is specifically designed to account
+  # for the impact of higher temperatures during winter, which can **reduce or even reverse**
+  # part of the cold accumulation that occurred earlier. This is represented by negative
+  # cold units (CU), which occur when temperatures exceed certain critical thresholds.
+  #
+  # The model formulation uses temperature ranges to assign positive and negative values
+  # for Cold Units. For example, temperatures between 16.5°C and 19°C contribute negative
+  # values (from -0.5 to -2.0 CU), because warmth can impair plant dormancy, which is
+  # physiologically significant in warmer climates.
+  #
+  # The accumulation function is done using `cumsum(CH_NC)`, meaning the negative values
+  # **are not constrained to zero**. This allows the total CU value over time to become negative,
+  # reflecting the impact of higher temperatures on the cooling process. In other models,
+  # accumulation is limited to positive values to avoid this, but in the North Carolina model,
+  # this feature is intentional, as the model was developed to reflect mild climate conditions
+  # and the effect of excessive heat during winter.
+  #
+  # Therefore, unlike models like Utah’s or more conservative methods that **stop at zero**,
+  # the North Carolina model allows the accumulated Cold Units value to become negative,
+  # **representing the actual loss of chilling**.
+  #
+  # This is crucial in environments where chilling periods are followed by warm days, which
+  # is common in many subtropical and temperate regions, such as North Carolina in the USA.
 
   if (!("T2M" %in% colnames(data))) {
     warning("T2M column is required for chilling hours calculation (North Carolina)")
@@ -1537,284 +1537,262 @@ get_climate <- function(env = NULL, lat, lon, start, end,
                         parallel = FALSE,
                         workers = 2,
                         environment = c("r", "shiny")) {
-      # Initial validations
-      stopifnot(length(lat) == length(lon))
-      if (is.null(env)) {
-        env <- paste0("ENV", seq_along(lat))
-      }
-      stopifnot(length(env) == length(lat))
-      scale <- match.arg(scale)
-      environment <- match.arg(environment)
 
-      # Validate parameters for selected scale
-      nasaparams_path <- system.file("app/www/nasaparams.csv", package = "plimanshiny", mustWork = FALSE)
-      if (nasaparams_path == "") stop("nasaparams.csv file not found")
-      nasaparams <- read.csv(nasaparams_path)
+  # --- helpers ----------------------------------------------------------------
+  deg2rad <- function(deg) (deg * pi) / 180
+  Ra_fun <- function(J, lat) {
+    rlat <- deg2rad(lat)
+    fi <- 0.409 * sin((2 * pi / 365) * J - 1.39)
+    dr <- 1 + 0.033 * cos(2 * pi / 365 * J)
+    ws <- acos(-tan(rlat) * tan(fi))
+    Ra <- (1440 / pi) * 0.082 * dr * (ws * sin(rlat) * sin(fi) + cos(rlat) * cos(fi) * sin(ws))
+    P <- asin(0.39795 * cos(0.2163108 + 2 * atan(0.9671396 * tan(0.0086 * (J - 186)))))
+    P_arg <- (sin(0.8333 * pi / 180) + sin(lat * pi / 180) * sin(P)) /
+      (cos(lat * pi / 180) * cos(P))
+    P_arg <- pmin(pmax(P_arg, -1), 1)
+    DL <- 24 - (24 / pi) * acos(P_arg)
+    data.frame(Ra = Ra, N = DL)
+  }
+  vpd <- function(temp, rh) {
+    es <- 0.61078 * exp((17.27 * temp) / (temp + 237.3))
+    ea <- es * (rh / 100)
+    data.frame(ES = es, EA = ea, VPD = es - ea)
+  }
+  slope_svp <- function(tmed) {
+    4098 * (0.6108 * exp((17.27 * tmed) / (tmed + 237.3))) / (tmed + 237.3)^2
+  }
 
-      # Internal function to fetch data for a single point
-      fetch_data_point <- function(lat_i, lon_i, env_i, start_i, end_i) {
-        tryCatch({
-          # Prepare scale and parameters
-          scale_lowercase <- tolower(scale)
-          api_scale <- scale_lowercase
-          if(scale_lowercase == "climatology") api_scale = "climatology"
+  # --- validations / defaults -------------------------------------------------
+  stopifnot(length(lat) == length(lon))
+  if (is.null(env)) env <- paste0("ENV", seq_along(lat))
+  stopifnot(length(env) == length(lat))
 
-          # Check for future dates and adjust if needed
-          current_date <- Sys.Date()
-          start_date <- as.Date(start_i)
-          end_date <- as.Date(end_i)
+  scale       <- match.arg(scale)
+  environment <- match.arg(environment)
+  n_points    <- length(lat)
+  start_vec   <- if (length(start) == 1) rep(start, n_points) else start
+  end_vec     <- if (length(end)   == 1) rep(end,   n_points) else end
 
-          if (start_date > current_date || end_date > current_date) {
-            warning(paste("Future dates detected for point", lat_i, lon_i,
-                         "- NASA POWER only provides historical data."))
+  nasaparams_path <- system.file("app/www/nasaparams.csv", package = "plimanshiny", mustWork = FALSE)
+  if (nasaparams_path == "") stop("nasaparams.csv file not found")
+  nasaparams <- utils::read.csv(nasaparams_path, stringsAsFactors = FALSE)
 
-            # For non-climatology requests, adjust dates to recent historical period
-            if (api_scale != "climatology") {
-              # Adjust to recent past (last 30 days up to yesterday)
-              new_end_date <- current_date - 1
-              new_start_date <- new_end_date - 30
+  # --- point fetcher ----------------------------------------------------------
+  fetch_data_point <- function(lat_i, lon_i, env_i, start_i, end_i) {
+    tryCatch({
+      scale_lowercase <- tolower(scale)
+      api_scale <- if (scale_lowercase == "climatology") "climatology" else scale_lowercase
 
-              warning(paste("Adjusting request dates to recent historical period:",
-                           format(new_start_date, "%Y-%m-%d"), "to",
-                           format(new_end_date, "%Y-%m-%d")))
+      current_date <- Sys.Date()
+      start_date <- as.Date(start_i)
+      end_date   <- as.Date(end_i)
 
-              start_date <- new_start_date
-              end_date <- new_end_date
-            }
-          }
-
-          # Validate parameters for the selected scale
-          suitableparams <- nasaparams[nasaparams$level == scale_lowercase, ]$abbreviation
-          valid_params <- intersect(params, suitableparams)
-          if(length(valid_params) == 0) {
-            warning(paste("No valid parameters for scale", scale_lowercase, "at point", lat_i, lon_i))
-            return(NULL)
-          }
-          params_str_i <- paste(valid_params, collapse = ",")
-
-            # Build API URL
-            base_url <- "https://power.larc.nasa.gov/api/temporal"
-            if (api_scale == "monthly") {
-            # For monthly, use only the YYYY format (year only)
-            start_fmt <- format(start_date, "%Y")
-            end_fmt <- format(end_date, "%Y")
-
-            # Ensure it does not exceed the current year for future data
-            current_year <- as.numeric(format(current_date, "%Y"))
-            if (as.numeric(end_fmt) > current_year) {
-              end_fmt <- format(current_date, "%Y")
-              warning(paste("End date adjusted to current year:", end_fmt))
-            }
-
-            url <- glue::glue("{base_url}/{api_scale}/point?parameters={params_str_i}&community=AG&longitude={lon_i}&latitude={lat_i}&start={start_fmt}&end={end_fmt}&format=CSV")
-            } else if (api_scale %in% c("hourly", "daily")) {
-            start_fmt <- format(start_date, "%Y%m%d")
-            end_fmt <- format(end_date, "%Y%m%d")
-            url <- glue::glue("{base_url}/{api_scale}/point?parameters={params_str_i}&community=AG&longitude={lon_i}&latitude={lat_i}&start={start_fmt}&end={end_fmt}&format=CSV")
-            } else {
-            url <- glue::glue("{base_url}/climatology/point?parameters={params_str_i}&community=AG&longitude={lon_i}&latitude={lat_i}&format=CSV")
-            }
-
-          req <- httr2::request(url) |> httr2::req_options(timeout = 60, ssl_verifypeer = 0)
-          resp <- tryCatch(httr2::req_perform(req), error = function(e) {
-            warning(paste("HTTP request error for point", lat_i, lon_i, ":", e$message))
-            return(NULL)
-          })
-
-          if (is.null(resp)) {
-            warning(paste("HTTP request failed for point", lat_i, lon_i))
-            return(NULL)
-          }
-
-          if (httr2::resp_status(resp) >= 400) {
-            warning(paste("Invalid API response for point", lat_i, lon_i, "status:",
-                         httr2::resp_status(resp),
-                         "- Reason:", httr2::resp_status_desc(resp)))
-
-            # Try to extract more error details from response body if possible
-            error_body <- tryCatch(httr2::resp_body_string(resp), error = function(e) NULL)
-            if (!is.null(error_body) && nchar(error_body) > 0) {
-              warning(paste("NASA POWER API error details:", substr(error_body, 1, 200), "..."))
-            }
-
-            return(NULL)
-          }
-
-          # Process response
-          file <- tempfile(fileext = ".csv")
-          on.exit(unlink(file), add = TRUE)
-          content <- httr2::resp_body_string(resp)
-
-          # Check if data exists
-          if (grepl("No data was found that matched your query", content, ignore.case = TRUE)) {
-            warning(paste("No data found for point", lat_i, lon_i))
-            return(NULL)
-          }
-
-          writeLines(content, file)
-
-          # Read CSV skipping NASA header
-          linhas <- readLines(file)
-          linha_inicio_dados <- which(grepl("-END HEADER-", linhas)) + 1
-
-          if(length(linha_inicio_dados) == 0) {
-            # Try reading without skipping header if marker not found
-            dados <- tryCatch(read.csv(file, check.names = FALSE), error = function(e) {
-              warning(paste("Error reading CSV for point", lat_i, lon_i, ":", e$message))
-              return(NULL)
-            })
-          } else {
-            dados <- tryCatch(read.csv(file, skip = linha_inicio_dados - 1, check.names = FALSE),
-                             error = function(e) {
-                               warning(paste("Error reading CSV with skip for point", lat_i, lon_i, ":", e$message))
-                               return(NULL)
-                             })
-          }
-
-          if (is.null(dados) || nrow(dados) == 0) {
-            warning(paste("Empty data for point", lat_i, lon_i))
-            return(NULL)
-          }
-
-          # Add metadata
-          dados$ENV <- env_i
-          dados$LAT <- lat_i
-          dados$LON <- lon_i
-
-          # Convert NASA fill values to NA
-          dados[dados == -999] <- NA
-          dados[dados == -99] <- NA
-
-          # Create DATE column if possible
-          if ("YEAR" %in% names(dados) && "DOY" %in% names(dados)) {
-            dados$DATE <- tryCatch(as.Date(paste0(dados$YEAR, "-", dados$DOY), format = "%Y-%j"),
-                                  error = function(e) NA)
-          } else if ("YYYYMMDD" %in% names(dados)) {
-            dados$DATE <- tryCatch(as.Date(as.character(dados$YYYYMMDD), format = "%Y%m%d"),
-                                  error = function(e) NA)
-          } else if (all(c("YEAR", "MO", "DY") %in% names(dados))) {
-            date_str <- paste(dados$YEAR,
-                             formatC(as.numeric(dados$MO), width = 2, flag = "0"),
-                             formatC(as.numeric(dados$DY), width = 2, flag = "0"), sep = "-")
-            dados$DATE <- tryCatch(as.Date(date_str), error = function(e) NA)
-          }
-
-          # Standardize common column names
-          if("PRECTOTCORR" %in% names(dados))
-            names(dados)[names(dados) == "PRECTOTCORR"] <- "PRECTOT"
-
-          return(dados)
-        }, error = function(e) {
-          warning(paste("General error processing point", lat_i, lon_i, ":", e$message))
-          return(NULL)
-        })
-      }
-
-      # Check cache first, if provided
-      if (!is.null(cache_service)) {
-        # The cache_service should implement getOrFetch()
-        request_params <- list(
-          coordinates = data.frame(env = env, lat = lat, lon = lon, start = start, end = end),
-          params = params,
-          scale = scale
-        )
-
-        # Use cache service
-        cache_result <- cache_service$getOrFetch(request_params)
-
-        # If no fetch needed, return cache data
-        if (!cache_result$needs_fetch) {
-          return(cache_result$data)
+      if (start_date > current_date || end_date > current_date) {
+        warning(sprintf("Future dates detected for point (%.4f, %.4f). Adjusting.", lat_i, lon_i))
+        if (api_scale != "climatology") {
+          end_date   <- current_date - 1
+          start_date <- end_date - 30
         }
-
-        # If fetch needed, store cache key for later use
-        cache_key <- cache_result$cache_key
       }
 
-      # Configure parallelism
-      if (parallel) {
-        future::plan(future::multisession, workers = workers)
+      suitable <- nasaparams[nasaparams$level == scale_lowercase, "abbreviation"]
+      valid_params <- intersect(params, suitable)
+      if (length(valid_params) == 0) return(NULL)
+      params_str_i <- paste(valid_params, collapse = ",")
+
+      base_url <- "https://power.larc.nasa.gov/api/temporal"
+      if (api_scale == "monthly") {
+        start_fmt <- format(start_date, "%Y")
+        end_fmt   <- format(end_date,   "%Y")
+        current_year <- as.numeric(format(current_date, "%Y"))
+        if (as.numeric(end_fmt) > current_year) end_fmt <- format(current_date, "%Y")
+        url <- glue::glue("{base_url}/{api_scale}/point?parameters={params_str_i}&community=AG&longitude={lon_i}&latitude={lat_i}&start={start_fmt}&end={end_fmt}&format=CSV")
+      } else if (api_scale %in% c("hourly", "daily")) {
+        start_fmt <- format(start_date, "%Y%m%d")
+        end_fmt   <- format(end_date,   "%Y%m%d")
+        url <- glue::glue("{base_url}/{api_scale}/point?parameters={params_str_i}&community=AG&longitude={lon_i}&latitude={lat_i}&start={start_fmt}&end={end_fmt}&format=CSV")
       } else {
-        future::plan(future::sequential)
+        url <- glue::glue("{base_url}/climatology/point?parameters={params_str_i}&community=AG&longitude={lon_i}&latitude={lat_i}&format=CSV")
       }
-      on.exit(future::plan(future::sequential), add = TRUE)
 
-      # Fetch data with progress (if needed)
-      if (progress && environment == "shiny") {
-        if(parallel){
-          progressr::withProgressShiny({
-            p <- progressr::progressor(steps = length(lat))
-            result_list <- furrr::future_map(seq_along(lat), function(i) {
-              p(message = sprintf("%s", env[i]))
-              fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
-            }, .options = furrr::furrr_options(seed = TRUE))
-          }, message = "Fetching climate data for")
-        } else{
-          progressr::withProgressShiny({
-            p <- progressr::progressor(steps = length(lat))
-            result_list <- furrr::future_map(seq_along(lat), function(i) {
-              p(message = sprintf("%s (%d/%d)", env[i], i, length(lat)))
-              fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
-            }, .options = furrr::furrr_options(seed = TRUE))
-          }, message = "Fetching climate data for")
-        }
-      } else if (progress && environment == "r") {
-        progressr::handlers(global = TRUE)
-        progressr::with_progress({
-          p <- progressr::progressor(steps = length(lat))
-          result_list <- furrr::future_map(seq_along(lat), function(i) {
-            p(message = sprintf("Fetching %s (%d/%d)", env[i], i, length(lat)))
-            fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
-          }, .options = furrr::furrr_options(seed = TRUE))
-        })
+      req  <- httr2::request(url) |> httr2::req_options(timeout = 60, ssl_verifypeer = 0)
+      resp <- tryCatch(httr2::req_perform(req), error = function(e) NULL)
+      if (is.null(resp) || httr2::resp_status(resp) >= 400) return(NULL)
+
+      content <- httr2::resp_body_string(resp)
+      if (grepl("No data was found that matched your query", content, ignore.case = TRUE)) return(NULL)
+
+      tf <- tempfile(fileext = ".csv")
+      on.exit(unlink(tf), add = TRUE)
+      writeLines(content, tf)
+
+      linhas <- readLines(tf)
+      linha_inicio_dados <- which(grepl("-END HEADER-", linhas)) + 1
+      dados <- if (length(linha_inicio_dados)) {
+        tryCatch(utils::read.csv(tf, skip = linha_inicio_dados - 1, check.names = FALSE), error = function(e) NULL)
       } else {
-        # No progress bar
-        result_list <- furrr::future_map(seq_along(lat), function(i) {
-          fetch_data_point(lat[i], lon[i], env[i], start[i], end[i])
-        }, .options = furrr::furrr_options(seed = TRUE))
+        tryCatch(utils::read.csv(tf, check.names = FALSE), error = function(e) NULL)
+      }
+      if (is.null(dados) || !nrow(dados)) return(NULL)
+
+      dados$ENV <- env_i; dados$LAT <- lat_i; dados$LON <- lon_i
+      dados[dados == -999] <- NA; dados[dados == -99] <- NA
+
+      if ("YEAR" %in% names(dados) && "DOY" %in% names(dados)) {
+        dados$DATE <- tryCatch(as.Date(paste0(dados$YEAR, "-", dados$DOY), format = "%Y-%j"), error = function(e) NA)
+      } else if ("YYYYMMDD" %in% names(dados)) {
+        dados$DATE <- tryCatch(as.Date(as.character(dados$YYYYMMDD), format = "%Y%m%d"), error = function(e) NA)
+      } else if (all(c("YEAR", "MO", "DY") %in% names(dados))) {
+        date_str <- paste(dados$YEAR,
+                          sprintf("%02d", as.integer(dados$MO)),
+                          sprintf("%02d", as.integer(dados$DY)), sep = "-")
+        dados$DATE <- tryCatch(as.Date(date_str), error = function(e) NA)
       }
 
-      # Remove null results
-      result_list <- result_list[!sapply(result_list, is.null)]
+      if ("PRECTOTCORR" %in% names(dados))
+        names(dados)[names(dados) == "PRECTOTCORR"] <- "PRECTOT"
 
-      if (length(result_list) == 0) {
-        warning("No data was obtained for the requested points")
-        return(NULL)
-      }
+      dados
+    }, error = function(e) NULL)
+  }
 
-      # Combine results
-      final_df <- tryCatch(
-        dplyr::bind_rows(result_list),
-        error = function(e) {
-          warning(paste("Error combining results:", e$message))
-          return(NULL)
-        }
+  # --- cache (optional) -------------------------------------------------------
+  if (!is.null(cache_service)) {
+    request_params <- list(
+      coordinates = data.frame(env = env, lat = lat, lon = lon, start = start_vec, end = end_vec),
+      params = params,
+      scale = scale
+    )
+    cache_result <- cache_service$getOrFetch(request_params)
+    if (!isTRUE(cache_result$needs_fetch)) return(cache_result$data)
+    cache_key <- cache_result$cache_key
+  }
+
+  # --- fetch: CHUNKED batches -------------------------------------------------
+  tasks <- data.frame(
+    env  = env,
+    lat  = lat,
+    lon  = lon,
+    start = start_vec,
+    end   = end_vec,
+    stringsAsFactors = FALSE
+  )
+
+  result_list <- NULL
+
+  if (isTRUE(parallel)) {
+    # number of workers and chunking like your mod_L3
+    ncores <- ifelse(is.null(workers), max(1, ceiling(parallel::detectCores() * 0.5)), max(1, workers))
+    # balanced chunking by index
+    tasks$index <- rep(seq_len(ncores), each = ceiling(nrow(tasks) / ncores))[seq_len(nrow(tasks))]
+    chunked <- split(tasks, tasks$index)
+
+    # show a spinner in shiny, if requested
+    if (isTRUE(progress) && identical(environment, "shiny") && requireNamespace("waiter", quietly = TRUE)) {
+      waiter_show(
+        html = tagList(
+          spin_google(),
+          h2("Fetching climate data in parallel. Please, wait...")
+        ),
+        color = "#228B227F"
       )
-
-      # Save to cache if provided
-      if (!is.null(cache_service) && !is.null(final_df) && nrow(final_df) > 0) {
-        cache_service$save(cache_key, final_df)
-      }
-      if(scale == "daily"){
-        final_df <-
-          final_df |>
-          dplyr::relocate(ENV, LAT, LON, DATE, .before = 1) |>
-          dplyr::select(-any_of(c("YEAR", "MO", "DY"))) |>
-          tidyr::separate_wider_delim(DATE, names = c("YEAR", "MO", "DY"), delim = "-") |>
-          dplyr::group_by(ENV) |>
-          dplyr::mutate(DFS = dplyr::row_number(), .after = DOY) |>
-          dplyr::ungroup() |>
-          tidyr::unite("DATE", YEAR, MO, DY, sep = "-", remove = FALSE)
-      }
-      if(scale == "hourly"){
-        final_df <-
-          final_df |>
-          dplyr::relocate(ENV, LAT, LON, DATE, .before = 1)
-      }
-      if(scale %in% c("monthly", "climatology")){
-        final_df <-
-          final_df |>
-          dplyr::relocate(ENV, LAT, LON, .before = 1)
-      }
-      return(final_df)
+      on.exit(try(waiter::waiter_hide(), silent = TRUE), add = TRUE)
     }
+
+    mirai::daemons(n = min(length(chunked), ncores))
+    on.exit(mirai::daemons(n = 0), add = TRUE)
+
+    res_chunks <- mirai::mirai_map(
+      .x = chunked,
+      .f = function(x, fetch_data_point) {
+        # x is a data.frame chunk with columns env, lat, lon, start, end
+        lapply(seq_len(nrow(x)), function(i) {
+          fetch_data_point(
+            lat_i   = x$lat[i],
+            lon_i   = x$lon[i],
+            env_i   = x$env[i],
+            start_i = x$start[i],
+            end_i   = x$end[i]
+          )
+        })
+      },
+      .args = list(fetch_data_point = fetch_data_point)
+    )[.progress]
+
+    result_list <- unlist(res_chunks, recursive = FALSE, use.names = FALSE)
+
+  } else {
+    # sequential with progress, chunking not needed here but we keep UX similar
+    if (isTRUE(progress) && identical(environment, "shiny")) {
+      progressr::withProgressShiny({
+        p <- progressr::progressor(steps = nrow(tasks))
+        result_list <- purrr::map(seq_len(nrow(tasks)), function(i) {
+          p(message = sprintf("%s (%d/%d)", tasks$env[i], i, nrow(tasks)))
+          fetch_data_point(tasks$lat[i], tasks$lon[i], tasks$env[i], tasks$start[i], tasks$end[i])
+        })
+      }, message = "Fetching climate data for")
+    } else if (isTRUE(progress) && identical(environment, "r")) {
+      progressr::handlers(global = TRUE)
+      progressr::with_progress({
+        p <- progressr::progressor(steps = nrow(tasks))
+        result_list <- purrr::map(seq_len(nrow(tasks)), function(i) {
+          p(message = sprintf("Fetching %s (%d/%d)", tasks$env[i], i, nrow(tasks)))
+          fetch_data_point(tasks$lat[i], tasks$lon[i], tasks$env[i], tasks$start[i], tasks$end[i])
+        })
+      })
+    } else {
+      result_list <- purrr::map(seq_len(nrow(tasks)), function(i) {
+        fetch_data_point(tasks$lat[i], tasks$lon[i], tasks$env[i], tasks$start[i], tasks$end[i])
+      })
+    }
+  }
+
+  # --- assemble ---------------------------------------------------------------
+  result_list <- result_list[!vapply(result_list, is.null, logical(1))]
+  if (!length(result_list)) {
+    warning("No data was obtained for the requested points")
+    return(NULL)
+  }
+
+  final_df <- tryCatch(dplyr::bind_rows(result_list), error = function(e) NULL)
+  if (is.null(final_df) || !nrow(final_df)) return(NULL)
+
+  if (!is.null(cache_service)) cache_service$save(cache_key, final_df)
+
+  # Post-processing per scale
+  if (identical(scale, "daily")) {
+    final_df <-
+      final_df |>
+      dplyr::relocate(ENV, LAT, LON, DATE, .before = 1) |>
+      dplyr::select(-dplyr::any_of(c("YEAR", "MO", "DY"))) |>
+      tidyr::separate_wider_delim(DATE, names = c("YEAR", "MO", "DY"), delim = "-") |>
+      dplyr::group_by(ENV) |>
+      dplyr::mutate(DFS = dplyr::row_number(), .after = DOY,
+                    RA = Ra_fun(DOY, LAT)$Ra,
+                    N  = Ra_fun(DOY, LAT)$N) |>
+      dplyr::ungroup() |>
+      tidyr::unite("DATE", YEAR, MO, DY, sep = "-", remove = FALSE)
+
+    temp_col <- if ("T2M" %in% names(final_df)) "T2M" else if ("T2M_MAX" %in% names(final_df)) "T2M_MAX" else NULL
+    rh_col   <- if ("RH2M" %in% names(final_df)) "RH2M" else NULL
+    if (!is.null(temp_col) && !is.null(rh_col)) {
+      vpd_results <- vpd(final_df[[temp_col]], final_df[[rh_col]])
+      final_df$ES <- vpd_results$ES; final_df$EA <- vpd_results$EA; final_df$VPD <- vpd_results$VPD
+    }
+    if (!is.null(temp_col)) final_df$SLOPE_SVP <- slope_svp(final_df[[temp_col]])
+  } else if (identical(scale, "hourly")) {
+    final_df <- final_df |> dplyr::relocate(ENV, LAT, LON, DATE, .before = 1)
+    temp_col <- if ("T2M" %in% names(final_df)) "T2M" else if ("T2M_MAX" %in% names(final_df)) "T2M_MAX" else NULL
+    rh_col   <- if ("RH2M" %in% names(final_df)) "RH2M" else NULL
+    if (!is.null(temp_col) && !is.null(rh_col)) {
+      vpd_results <- vpd(final_df[[temp_col]], final_df[[rh_col]])
+      final_df$ES <- vpd_results$ES; final_df$EA <- vpd_results$EA; final_df$VPD <- vpd_results$VPD
+    }
+    if (!is.null(temp_col)) final_df$SLOPE_SVP <- slope_svp(final_df[[temp_col]])
+  } else if (scale %in% c("monthly", "climatology")) {
+    final_df <- final_df |> dplyr::relocate(ENV, LAT, LON, .before = 1)
+  }
+
+  final_df
+}
+

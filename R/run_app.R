@@ -8,12 +8,10 @@
 #' @importFrom shiny shinyApp
 #' @importFrom tidyr unnest
 #' @importFrom graphics abline par title layout legend matplot
-#' @importFrom stats binomial glm reorder runif dist D coef integrate lm nls nls.control optimise setNames smooth approx loess
-#' @importFrom grDevices dev.off jpeg adjustcolor col2rgb colorRampPalette rgb png terrain.colors
-#' @importFrom utils data stack write.csv
-#' @importFrom future plan multisession
-#' @importFrom doFuture `%dofuture%`
-#' @import shinyWidgets mapview leaflet mapedit sf esquisse waiter ggplot2 shinyFiles foreach datamods reactable pak
+#' @importFrom stats binomial glm reorder runif dist D coef integrate lm nls nls.control optimise setNames smooth approx end fitted optimize rnorm smooth.spline start as.formula
+#' @importFrom grDevices dev.off jpeg adjustcolor col2rgb colorRampPalette rgb png terrain.colors hcl hcl.colors
+#' @importFrom utils data stack write.csv browseURL capture.output
+#' @import shinyWidgets mapview leaflet mapedit sf esquisse waiter ggplot2 shinyFiles datamods reactable pak mirai
 #' @rawNamespace import(bs4Dash, except = c(progressBar, insertTab, actionButton, updateTabsetPanel, column, tabsetPanel, tabPanel, navbarMenu))
 #' @rawNamespace import(terra, except = c(panel, shift, distance))
 #' @rawNamespace import(shinyjs, except = c(alert, runExample, click))
