@@ -3,7 +3,7 @@
   file <- readLines(system.file("app/www/version.json", package = "plimanshiny", mustWork = TRUE))
   versao <- sub('.*"version": *"(.*)".*', '\\1', grep('"version"', file, value = TRUE))
   packageStartupMessage("|============================================================|")
-  packageStartupMessage("| Welcome to the plimanShiny package!                        |")
+  packageStartupMessage("| Welcome to the plimanshiny!                                |")
   packageStartupMessage("| A Shiny App for the pliman package (version ", versao, ")        |")
   packageStartupMessage("| Developed collaboratively by NEPEM - nepemufsc.com         |")
   packageStartupMessage("| Group lead: Prof. Tiago Olivoto                            |")
