@@ -40,7 +40,7 @@ Imports:
     mirai,
     pak,
     parallel,
-    pliman (>= 3.0.0),
+    pliman (>= 3.1.1),
     plotly,
     progressr,
     purrr,
