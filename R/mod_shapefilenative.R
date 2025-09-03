@@ -570,7 +570,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                       x = centrs[, 1],
                       y = centrs[, 2],
                       labels = shapefile[[input$shapefiletoanalyze]]$data$plot_id,
-                      col = "black",
+                      col = "red",
                       cex = 1
                     )
                   }
@@ -606,7 +606,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                   # Add text labels at centroids if enabled
                   if (input$showplotid) {
                     centrs <- suppressMessages(sf::st_centroid(shptoplot) |> sf::st_coordinates())
-                    text(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col = "black", cex = 1)
+                    text(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col = "red", cex = 1)
                   }
                 }
               }
@@ -933,7 +933,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
             # Add text labels at centroids if enabled
             if (input$showplotid) {
               centrs <- suppressMessages(sf::st_centroid(shptoplot) |> sf::st_coordinates())
-              text(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col = "black", cex = 1)
+              text(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col = "red", cex = 1)
             }
 
           }, error = function(e) {
@@ -1052,7 +1052,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                     x = centrs[, 1],
                     y = centrs[, 2],
                     labels = shapefile[[input$shapefiletoanalyze]]$data$plot_id,
-                    col = "black",
+                    col = "red",
                     cex = 1
                   )
                 }
@@ -1083,7 +1083,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                 # Add text labels at centroids if enabled
                 if (input$showplotid) {
                   centrs <- suppressMessages(sf::st_centroid(shptoplot) |> sf::st_coordinates())
-                  text(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col = "black", cex = 1)
+                  text(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col = "red", cex = 1)
                 }
               }
               if (nrow(tmpshape$tmp) > 0) {
@@ -1111,7 +1111,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                 # Add text labels at centroids if enabled
                 if (input$showplotid) {
                   centrs <- suppressMessages(sf::st_centroid(shptoplot) |> sf::st_coordinates())
-                  text(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col = "black", cex = 1)
+                  text(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col = "red", cex = 1)
                 }
               }
 
