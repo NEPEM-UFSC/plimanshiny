@@ -253,7 +253,7 @@ mod_userinfo_server <- function(id){
         country = input$country,
         region = input$region,
         user_type = input$user_type,
-        token = pliman::uuid(1)
+        token = generate_uuid(input$user_name, input$user_email)
       )
 
       saveRDS(info, user_info_file)
@@ -269,7 +269,8 @@ mod_userinfo_server <- function(id){
       )
 
       tryCatch({
-        resp <- httr2::request("https://script.google.com/macros/s/AKfycbxcxHc6Kz-VfVRReiZJg_dypZpU3DlYx7MDJlWec0H7jauPctJFfTjCF6NtylLO3fQ-/exec") |>
+        resp <-
+          httr2::request("https://script.google.com/macros/s/AKfycbxSI5xxJVHY6hekiIiGNhE0WD4bic1g496P0cn_UqjJMFZZfzu2hYep4SyKySDhX5CF/exec") |>
           httr2::req_method("POST") |>
           httr2::req_headers(`Content-Type` = "application/json") |>
           httr2::req_body_json(info) |>
@@ -318,7 +319,6 @@ mod_userinfo_server <- function(id){
 
 
     })
-
     return(user_info)
   })
 }

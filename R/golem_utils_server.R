@@ -1796,3 +1796,61 @@ get_climate <- function(env = NULL, lat, lon, start, end,
   final_df
 }
 
+generate_uuid <- function(name, email) {
+  input <- paste0(name, email)
+  tmpfile <- tempfile()
+  writeLines(input, tmpfile)
+  md5 <- tools::md5sum(tmpfile)
+  print(md5)
+  unlink(tmpfile)
+  hex <- gsub("-", "", md5)
+  hex <- substr(hex, 1, 32)
+  hex_split <- strsplit(hex, "")[[1]]
+  hex_split[13] <- "5"  # versão 5
+  hex_split[17] <- c("8","9","a","b")[as.integer(hex_split[17],16) %% 4 + 1]
+  hex <- paste(hex_split, collapse = "")
+  uuid <- paste0(
+    substr(hex, 1, 8), "-",
+    substr(hex, 9, 12), "-",
+    substr(hex, 13, 16), "-",
+    substr(hex, 17, 20), "-",
+    substr(hex, 21, 32)
+  )
+  return(uuid)
+}
+
+check_token <- function() {
+  url <- "https://script.google.com/macros/s/AKfycbxSI5xxJVHY6hekiIiGNhE0WD4bic1g496P0cn_UqjJMFZZfzu2hYep4SyKySDhX5CF/exec"
+
+  # token salvo localmente
+  token <- tryCatch(
+    readRDS(file.path(tools::R_user_dir("plimanshiny", which = "config"), "user_info.rds"))$token,
+    error = function(e) return(NULL)
+  )
+  if (is.null(token)) {
+    return(invisible(TRUE)) # sem token -> segue a sessão normalmente
+  }
+  resp <-
+    httr2::request(url) |>
+    httr2::req_method("GET") |>
+    httr2::req_timeout(10) |>
+    httr2::req_perform()
+
+  httr2::resp_check_status(resp)
+  data <- httr2::resp_body_json(resp)[[1]]
+
+  if (!(token %in% data)) {
+    show_alert(
+      title = "Token Not Found",
+      text  = paste(
+        "Your token could not be located in our authorized user database. The app will close in 10 seconds.",
+        "For further assistance, please contact us at contato@nepemufsc.com."
+      ),
+      type = "warning"
+    )
+    Sys.sleep(10)
+    shiny::stopApp()
+
+  }
+}
+
