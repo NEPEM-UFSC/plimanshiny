@@ -11,11 +11,12 @@
 #' @importFrom stats binomial glm reorder runif dist D coef integrate lm nls nls.control optimise setNames smooth approx end fitted optimize rnorm smooth.spline start as.formula
 #' @importFrom grDevices dev.off jpeg adjustcolor col2rgb colorRampPalette rgb png terrain.colors hcl hcl.colors
 #' @importFrom utils data stack write.csv browseURL capture.output
-#' @import shinyWidgets mapview leaflet mapedit sf esquisse waiter ggplot2 shinyFiles datamods reactable pak mirai
+#' @import shinyWidgets mapview leaflet mapedit sf esquisse waiter ggplot2 shinyFiles datamods reactable pak
 #' @rawNamespace import(bs4Dash, except = c(progressBar, insertTab, actionButton, updateTabsetPanel, column, tabsetPanel, tabPanel, navbarMenu))
 #' @rawNamespace import(terra, except = c(panel, shift, distance))
 #' @rawNamespace import(shinyjs, except = c(alert, runExample, click))
 #' @rawNamespace import(purrr, except = c(accumulate, when))
+#' @rawNamespace import(mirai, except = c(info))
 #' @rawNamespace import(pliman, except = c(`%>%`))
 run_app <- function(upload_size = 10000,
                     ...) {

@@ -1822,35 +1822,50 @@ generate_uuid <- function(name, email) {
 check_token <- function() {
   url <- "https://script.google.com/macros/s/AKfycbxSI5xxJVHY6hekiIiGNhE0WD4bic1g496P0cn_UqjJMFZZfzu2hYep4SyKySDhX5CF/exec"
 
-  # token salvo localmente
+  # token saved locally
   token <- tryCatch(
-    readRDS(file.path(tools::R_user_dir("plimanshiny", which = "config"), "user_info.rds"))$token,
+    readRDS(file.path(tools::R_user_dir("plimanshiny", which = "config"), "user_info.rds")),
     error = function(e) return(NULL)
   )
+
   if (is.null(token)) {
-    return(invisible(TRUE)) # sem token -> segue a sessão normalmente
+    return(invisible(TRUE))
   }
-  resp <-
-    httr2::request(url) |>
-    httr2::req_method("GET") |>
-    httr2::req_timeout(10) |>
-    httr2::req_perform()
+  resp <- tryCatch(
+    {
+      httr2::request(url) |>
+        httr2::req_method("GET") |>
+        httr2::req_timeout(10) |>
+        httr2::req_perform()
+    },
+    error = function(e) return(NULL)  # network error or timeout
+  )
 
-  httr2::resp_check_status(resp)
-  data <- httr2::resp_body_json(resp)[[1]]
-
-  if (!(token %in% data)) {
+  # if request failed (timeout, connection error, etc.) → proceed session
+  if (is.null(resp)) {
+    return(invisible(TRUE))
+  }
+  data <- tryCatch(
+    httr2::resp_body_json(resp)[[1]],
+    error = function(e) return(NULL)
+  )
+  # if parsing failed → proceed session
+  if (is.null(data)) {
+    return(invisible(TRUE))
+  }
+  if (!(token$token %in% data)) {
     show_alert(
       title = "Token Not Found",
-      text  = paste(
-        "Your token could not be located in our authorized user database. The app will close in 10 seconds.",
+      text  = glue::glue(
+        "Hi {token$name}! Your token could not be located in our authorized user database. The app will close in 10 seconds.",
         "For further assistance, please contact us at contato@nepemufsc.com."
       ),
       type = "warning"
     )
     Sys.sleep(10)
     shiny::stopApp()
-
   }
+  invisible(TRUE)
 }
+
 

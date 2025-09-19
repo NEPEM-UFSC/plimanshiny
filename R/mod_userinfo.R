@@ -18,7 +18,6 @@ mod_userinfo_ui <- function(id) {
 mod_userinfo_server <- function(id){
   moduleServer(id, function(input, output, session){
     ns <- session$ns
-
     # Load country and region data
     country_path <- system.file("app/www/country_data.rds", package = "plimanshiny", mustWork = FALSE)
     mun_df <- readRDS(country_path)

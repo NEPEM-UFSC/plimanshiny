@@ -13,7 +13,7 @@ app_server <- function(input, output, session) {
     req(user_info())
     paste("Welcome,", user_info()$name)
   })
-
+  check_token()
   settings <- reactiveVal()
   mosaic_data <- reactiveValues()
   shapefile <- reactiveValues()
