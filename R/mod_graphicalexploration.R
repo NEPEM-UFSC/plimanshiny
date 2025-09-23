@@ -359,7 +359,6 @@ mod_graphicalexploration_server <- function(id, dfs, shapefile) {
       yvar <- vars()[1]
       xvar <- if (length(group_vars()) > 0) group_vars()[1] else NULL
       colorvar <- if (length(color_vars()) > 0) color_vars()[1] else NULL
-
       df <- dfactive$df
       plot_type <- input$plot_type
 
@@ -376,37 +375,57 @@ mod_graphicalexploration_server <- function(id, dfs, shapefile) {
           geom_point(size = 2, alpha = 0.7)
 
       } else if (plot_type == "boxplot") {
-        req(yvar)
         if (!is.null(xvar)) {
-          # Caso tradicional: boxplot y ~ x
-          aes_args <- list(x = as.name(xvar), y = as.name(yvar))
-          if (!is.null(colorvar)) aes_args$fill <- as.name(colorvar)
-          p <- p + do.call(aes, aes_args) +
-            geom_boxplot()
-        } else {
-          # Caso apenas y: um único boxplot
-          df$dummy <- "All"
-          aes_args <- list(x = as.name("dummy"), y = as.name(yvar))
-          if (!is.null(colorvar)) aes_args$fill <- as.name(colorvar)
+          aes_args <- list(x = as.name(xvar), y = "")
+          if (!is.null(colorvar)){
+            aes_args$fill <- as.name(colorvar)
+            aes_args$group <- as.name(colorvar)
+          }
           p <- p + do.call(aes, aes_args) +
             geom_boxplot()
         }
+        if(!is.null(yvar)){
+          aes_args <- list(x = "", y = as.name(yvar))
+          if (!is.null(colorvar)){
+            aes_args$fill <- as.name(colorvar)
+            aes_args$group <- as.name(colorvar)
+          }
+          p <- p + do.call(aes, aes_args) +
+            geom_boxplot()
+        }
+        if(!is.null(yvar) && !is.null(xvar)){
+          print(xvar)
+          print(yvar)
+          aes_args <- list(x = as.name(xvar), y = as.name(yvar))
+          if (!is.null(colorvar)){
+            aes_args$fill <- as.name(colorvar)
+            aes_args$group <- as.name(colorvar)
+          }
+          p <- p + do.call(aes, aes_args) +
+            geom_boxplot()
+        }
+
 
       } else if (plot_type == "density") {
         if (!is.null(xvar)) {
           aes_args <- list(x = as.name(xvar))
-          if (!is.null(colorvar)) aes_args$color <- as.name(colorvar)
         } else {
-          aes_args <- list(x = as.name(yvar))
-          if (!is.null(colorvar)) aes_args$color <- as.name(colorvar)
+          aes_args <- list(y = as.name(yvar))
+        }
+        if (!is.null(colorvar)){
+          aes_args$fill <- as.name(colorvar)
+          aes_args$group <- as.name(colorvar)
         }
         p <- p + do.call(aes, aes_args) +
-          geom_density()
+          geom_density(alpha = 0.7)
 
       } else if (plot_type == "bar") {
         req(xvar)
         aes_args <- list(x = as.name(xvar))
-        if (!is.null(colorvar)) aes_args$fill <- as.name(colorvar)
+        if (!is.null(colorvar)){
+          aes_args$fill <- as.name(colorvar)
+          aes_args$group <- as.name(colorvar)
+        }
         p <- p + do.call(aes, aes_args) +
           geom_bar()
       }
