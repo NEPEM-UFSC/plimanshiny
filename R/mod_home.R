@@ -312,7 +312,7 @@ mod_home_server <- function(id, settings){
     observeEvent(input$about, {
       showModal(
         modalDialog(
-          title = "About plimanshiny",
+          title = glue::glue("Version: {packageVersion('plimanshiny')}"),
           fluidRow(
             col_7(
               img(src = "www/help_logo.png", width = "100%", height = "100%"),
