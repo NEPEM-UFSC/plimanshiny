@@ -451,7 +451,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
             }
           })
           if(terra::nlyr(mosaitoshape()) < 3){
-            cropped_ras <- crop(mosaitoshape(), ext(xmin, xmax, ymin, ymax))
+            cropped_ras <- mosaic_crop(mosaitoshape(), shapefile = sf::st_as_sf(terra::vect(terra::ext(xmin, xmax, ymin, ymax))))
             sizes <- adjust_canvas(cropped_ras)
             wid(sizes[[1]])
             hei(sizes[[2]])
@@ -491,7 +491,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                   )
                 )
               if(inherits(trycrop, "try-error")){
-                cropped_ras <- crop(mosaitoshape(), ext(xmin, xmax, ymin, ymax))
+                cropped_ras <- mosaic_crop(mosaitoshape(), shapefile = sf::st_as_sf(terra::vect(terra::ext(xmin, xmax, ymin, ymax))))
                 sizes <- adjust_canvas(cropped_ras)
                 wid(sizes[[1]])
                 hei(sizes[[2]])
@@ -513,7 +513,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
             } else {
               # Handle case when zlim is not NULL
-              cropped_ras <- crop(mosaitoshape(), ext(xmin, xmax, ymin, ymax))
+              cropped_ras <- mosaic_crop(mosaitoshape(), shapefile = sf::st_as_sf(terra::vect(terra::ext(xmin, xmax, ymin, ymax))))
               sizes <- adjust_canvas(cropped_ras)
               wid(sizes[[1]])
               hei(sizes[[2]])
