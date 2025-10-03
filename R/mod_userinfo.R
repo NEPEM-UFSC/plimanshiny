@@ -255,9 +255,6 @@ mod_userinfo_server <- function(id){
         token = generate_uuid(input$user_name, input$user_email)
       )
 
-      saveRDS(info, user_info_file)
-      user_info(info)
-
       # Mostrar mensagem de progresso
       sendSweetAlert(
         session = session,
@@ -286,6 +283,35 @@ mod_userinfo_server <- function(id){
             type = "warning"
           )
         }
+
+        closeSweetAlert(session = session)
+        removeModal()
+
+        saveRDS(info, user_info_file)
+        user_info(info)
+
+        if (grepl("\\(Commercial\\)", input$user_type)) {
+          show_alert(
+            title = "Information saved",
+            text = paste(
+              "Your information has been successfully saved.",
+              "Please note that plimanshiny is free for non-commercial use only.",
+              "If you intend to use it commercially, please contact us at:",
+              "contato@nepemufsc.com"
+            ),
+            type = "warning"
+          )
+        } else {
+          show_alert(
+            title = "All set!",
+            text = "Your information has been successfully saved. Enjoy using plimanshiny!",
+            type = "success"
+          )
+        }
+
+
+
+
       }, error = function(e) {
         show_alert(
           title = "Connection error",
@@ -294,27 +320,7 @@ mod_userinfo_server <- function(id){
         )
       })
 
-      closeSweetAlert(session = session)
-      removeModal()
 
-      if (grepl("\\(Commercial\\)", input$user_type)) {
-        show_alert(
-          title = "Information saved",
-          text = paste(
-            "Your information has been successfully saved.",
-            "Please note that plimanshiny is free for non-commercial use only.",
-            "If you intend to use it commercially, please contact us at:",
-            "contato@nepemufsc.com"
-          ),
-          type = "warning"
-        )
-      } else {
-        show_alert(
-          title = "All set!",
-          text = "Your information has been successfully saved. Enjoy using plimanshiny!",
-          type = "success"
-        )
-      }
 
 
     })
