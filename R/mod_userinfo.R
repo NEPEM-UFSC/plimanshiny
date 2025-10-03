@@ -266,10 +266,11 @@ mod_userinfo_server <- function(id){
 
       tryCatch({
         resp <-
-          httr2::request("https://script.google.com/macros/s/AKfycbxSI5xxJVHY6hekiIiGNhE0WD4bic1g496P0cn_UqjJMFZZfzu2hYep4SyKySDhX5CF/exec") |>
+          httr2::request("https://script.google.com/macros/s/AKfycbxM-sBOQ_sMcAjjY-zL-s2fiUYnh-36FMqvl2EodNaELF4uD60ybW75GT-Mt4q-LOA/exec") |>
           httr2::req_method("POST") |>
           httr2::req_headers(`Content-Type` = "application/json") |>
           httr2::req_body_json(info) |>
+          httr2::req_options(followlocation = FALSE) |>
           httr2::req_perform()
 
         status <- httr2::resp_status(resp)
@@ -308,10 +309,6 @@ mod_userinfo_server <- function(id){
             type = "success"
           )
         }
-
-
-
-
       }, error = function(e) {
         show_alert(
           title = "Connection error",
@@ -319,9 +316,6 @@ mod_userinfo_server <- function(id){
           type = "error"
         )
       })
-
-
-
 
     })
     return(user_info)

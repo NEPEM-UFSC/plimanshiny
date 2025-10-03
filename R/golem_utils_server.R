@@ -871,7 +871,7 @@ round_cols <- function(df, digits = 2) {
 
   return(df)
 }
-adjust_canvas <- function(raster, max_width = 1200, max_height = 800){
+adjust_canvas <- function(raster, max_width = 1180, max_height = 800){
   nrows <- nrow(raster)
   ncols <- ncol(raster)
   aspect_ratio <- ncols / nrows
@@ -1820,7 +1820,7 @@ generate_uuid <- function(name, email) {
 }
 
 check_token <- function() {
-  url <- "https://script.google.com/macros/s/AKfycbxSI5xxJVHY6hekiIiGNhE0WD4bic1g496P0cn_UqjJMFZZfzu2hYep4SyKySDhX5CF/exec"
+  url <- "https://script.google.com/macros/s/AKfycbxM-sBOQ_sMcAjjY-zL-s2fiUYnh-36FMqvl2EodNaELF4uD60ybW75GT-Mt4q-LOA/exec"
 
   # token saved locally
   token <- tryCatch(
