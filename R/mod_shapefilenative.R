@@ -327,7 +327,19 @@ mod_shapefilenative_ui <- function(id) {
                    DT::dataTableOutput(ns("points_table")),
                    conditionalPanel(
                      condition = sprintf("output['%s']", ns("show_panel")),
-                     actionBttn(ns("editiondone"), "Edition Done", style = "pill", color = "success"),
+                     fluidRow(
+                       col_6(
+                         actionBttn(ns("editiondone"), "Edition Done", style = "pill", color = "success")
+                       ),
+                       col_6(
+                         sliderInput(ns("bufferpoint"),
+                                     label = "Buffer around point",
+                                     value = 5,
+                                     min = 1,
+                                     max = 20,
+                                     step = 1)
+                       )
+                     )
                    ),
                    conditionalPanel(
                      condition = sprintf("output['%s']", ns("show_panel2")),
@@ -357,6 +369,7 @@ mod_shapefilenative_ui <- function(id) {
 
 #' shapefilenative Server Functions
 #'
+#' @noRd
 mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, shapefile, zlim) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -378,8 +391,8 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
         })
         req(mosaitoshape())
         ############################################# BUILD A SHAPEFILE ##########################################################
-        original_image_path <- file.path(tempdir(), "originalimage.png")
-        basepolygon <- file.path(tempdir(), "imagewithpolygon.png")
+        original_image_path <- file.path(tempdir(), "originalimage_shp.png")
+        basepolygon <- file.path(tempdir(), "imagewithpolygon_shp.png")
         original_ext <- reactiveVal(ext(mosaitoshape()))
         polygeom <- reactiveVal()
         createdshape <- reactiveValues()
@@ -444,7 +457,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           xrange <- abs(xmax - xmin)
           originalres <- res(mosaitoshape())[[1]]
           newres <- max(c(xrange / 720, originalres))
-          tfc <- file.path(tempdir(), "tempcropped.png")
+          tfc <- file.path(tempdir(), "croppedshape_shp.png")
           session$onSessionEnded(function() {
             if (file.exists(tfc)) {
               file.remove(tfc)
@@ -566,12 +579,12 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                     centrs <- suppressWarnings(
                       suppressMessages(suppressWarnings(sf::st_centroid(shapefile[[input$shapefiletoanalyze]]$data) |> sf::st_coordinates()))
                     )
-                    text(
+                    boxtext(
                       x = centrs[, 1],
                       y = centrs[, 2],
                       labels = shapefile[[input$shapefiletoanalyze]]$data$plot_id,
-                      col = "red",
-                      cex = 1
+                      col.bg = "salmon",
+                      cex = 1.5
                     )
                   }
                 }
@@ -606,7 +619,13 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                   # Add text labels at centroids if enabled
                   if (input$showplotid) {
                     centrs <- suppressMessages(sf::st_centroid(shptoplot) |> sf::st_coordinates())
-                    text(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col = "red", cex = 1)
+                    boxtext(
+                      x = centrs[, 1],
+                      y = centrs[, 2],
+                      labels = shptoplot$plot_id,
+                      col.bg = "salmon",
+                      cex = 1.5
+                    )
                   }
                 }
               }
@@ -615,7 +634,6 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
             }
 
           }
-
           session$sendCustomMessage("updateTiles_shp", list(
             img = base64enc::base64encode(tfc)
           ))
@@ -714,59 +732,60 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
         row_id <- reactiveVal()
         observeEvent(input$edit_point_click, {
-          btn_info <- input$edit_point_click
-          row_id(as.numeric(strsplit(btn_info$id, "_")[[1]][3]))
-          points$data[[row_id()]]["edited"] <- TRUE
-          editedpoint <- points$data[[row_id()]]
-          output$show_panel <- reactive({
-            TRUE
+          observeEvent(input$bufferpoint, {
+            btn_info <- input$edit_point_click
+            row_id(as.numeric(strsplit(btn_info$id, "_")[[1]][3]))
+            points$data[[row_id()]]["edited"] <- TRUE
+            editedpoint <- points$data[[row_id()]]
+            output$show_panel <- reactive({
+              TRUE
+            })
+
+            # Ensure the reactive output is available to the UI
+            outputOptions(output, "show_panel", suspendWhenHidden = FALSE)
+
+            x <- editedpoint[[1]]
+            y <- editedpoint[[2]]
+            extedit <- ext(x - input$bufferpoint, x + input$bufferpoint, y - input$bufferpoint, y + input$bufferpoint)
+            current_extent(extedit)
+            cropped_ras <- crop(mosaitoshape(), extedit)
+            # Create an extent with a 2 m buffer around the point
+            sizes <- adjust_canvas(cropped_ras)
+            wid(sizes[[1]])
+            hei(sizes[[2]])
+            # Generate the cropped image
+            cropped_image_path <- paste(tempdir(), "croppedimage_shp.png")
+            png(cropped_image_path, width = wid(), height = hei())
+
+            tryCatch({
+              check_and_plot(cropped_ras, ifelse(is.na(r$r), 1, r$r), ifelse(is.na(g$g), 2, g$g), ifelse(is.na(b$b), 3, b$b), zlim = zlim$zlim)
+
+              points(x = x, y = y, col = "red", cex = 5, pch = 13)
+
+              text(
+                x = x,
+                y = y,  # Apply dynamic offset if needed
+                labels = row_id(),
+                col = "black",
+                cex = 2,
+                pos = 3
+              )
+            }, error = function(e) {
+              message("An error occurred during plotting2: ", e$message)
+            }, finally = {
+              dev.off()
+            })
+
+            # Send the cropped image to the client
+            session$sendCustomMessage("updateTiles_shp", list(
+              img = base64enc::base64encode(cropped_image_path)
+            ))
+            # Send the adjusted canvas size to the client
+            session$sendCustomMessage("adjustcanvas_shpSize", list(
+              width = as.integer(wid()),
+              height = as.integer(hei())
+            ))
           })
-
-          # Ensure the reactive output is available to the UI
-          outputOptions(output, "show_panel", suspendWhenHidden = FALSE)
-
-          x <- editedpoint[[1]]
-          y <- editedpoint[[2]]
-          extedit <- ext(x - 4, x + 4, y - 4, y + 4)
-          current_extent(extedit)
-          cropped_ras <- crop(mosaitoshape(), extedit)
-          # Create an extent with a 2 m buffer around the point
-          sizes <- adjust_canvas(cropped_ras)
-          wid(sizes[[1]])
-          hei(sizes[[2]])
-          # Generate the cropped image
-          cropped_image_path <- paste(tempdir(), "croppedimage.png")
-          png(cropped_image_path, width = wid(), height = hei())
-
-          tryCatch({
-            check_and_plot(cropped_ras, ifelse(is.na(r$r), 1, r$r), ifelse(is.na(g$g), 2, g$g), ifelse(is.na(b$b), 3, b$b), zlim = zlim$zlim)
-
-            points(x = x, y = y, col = "red", cex = 5, pch = 13)
-
-            text(
-              x = x,
-              y = y,  # Apply dynamic offset if needed
-              labels = row_id(),
-              col = "black",
-              cex = 2,
-              pos = 3
-            )
-          }, error = function(e) {
-            message("An error occurred during plotting2: ", e$message)
-          }, finally = {
-            dev.off()
-          })
-
-
-          # Send the cropped image to the client
-          session$sendCustomMessage("updateTiles_shp", list(
-            img = base64enc::base64encode(cropped_image_path)
-          ))
-          # Send the adjusted canvas size to the client
-          session$sendCustomMessage("adjustcanvas_shpSize", list(
-            width = as.integer(wid()),
-            height = as.integer(hei())
-          ))
         })
 
 
@@ -933,7 +952,13 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
             # Add text labels at centroids if enabled
             if (input$showplotid) {
               centrs <- suppressMessages(sf::st_centroid(shptoplot) |> sf::st_coordinates())
-              text(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col = "red", cex = 1)
+              boxtext(
+                x = centrs[, 1],
+                y = centrs[, 2],
+                labels = shptoplot$plot_id,
+                col.bg = "salmon",
+                cex = 1.5
+              )
             }
 
           }, error = function(e) {
@@ -1048,12 +1073,12 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                   centrs <- suppressMessages(
                     sf::st_centroid(shapefile[[input$shapefiletoanalyze]]$data) |> sf::st_coordinates()
                   )
-                  text(
+                  boxtext(
                     x = centrs[, 1],
                     y = centrs[, 2],
                     labels = shapefile[[input$shapefiletoanalyze]]$data$plot_id,
-                    col = "red",
-                    cex = 1
+                    col.bg = "salmon",
+                    cex = 1.5
                   )
                 }
               }
@@ -1083,7 +1108,13 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                 # Add text labels at centroids if enabled
                 if (input$showplotid) {
                   centrs <- suppressMessages(sf::st_centroid(shptoplot) |> sf::st_coordinates())
-                  text(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col = "red", cex = 1)
+                  boxtext(
+                    x = centrs[, 1],
+                    y = centrs[, 2],
+                    labels = shptoplot$plot_id,
+                    col.bg = "salmon",
+                    cex = 1.5
+                  )
                 }
               }
               if (nrow(tmpshape$tmp) > 0) {
@@ -1111,7 +1142,13 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                 # Add text labels at centroids if enabled
                 if (input$showplotid) {
                   centrs <- suppressMessages(sf::st_centroid(shptoplot) |> sf::st_coordinates())
-                  text(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col = "red", cex = 1)
+                  boxtext(
+                    x = centrs[, 1],
+                    y = centrs[, 2],
+                    labels = shptoplot$plot_id,
+                    col.bg = "salmon",
+                    cex = 1.5
+                  )
                 }
               }
 
@@ -1400,15 +1437,18 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
       wid <- reactiveValues()
       hei <- reactiveValues()
       req(shapefile$shapefileplot)
+      choices <-
+        shapefile$shapefileplot |>
+        dplyr::mutate(choices = paste0(block, "_", plot_id))
       if(input$plotinfonat | input$plotinfo2nat){
         updateSelectizeInput(session, "uniqueidinfo",
-                             choices = 1:nrow(shapefile$shapefileplot),
+                             choices = sort(choices$choices),
                              server = TRUE)
         output$plotinfop <- renderPlot({
-          shpinfo <- shapefile$shapefileplot[input$uniqueidinfo, ]
+          shpinfo <- choices[choices$choices == input$uniqueidinfo, ]
           npoints <- sf::st_coordinates(shpinfo) |> nrow()
           coords <- sf::st_coordinates(shpinfo)[, 1:2]
-          buff <- diff(range(coords[, 1])) * 0.15
+          buff <- diff(range(coords[, 1])) * input$buffershapeinfo
           measures <- shapefile_measures(shpinfo, n = 1)
           dists <-  suppressWarnings(as.matrix(sf::st_distance(sf::st_cast(shpinfo, "POINT")$geometry)))
           seq_dists <- c()
@@ -1533,11 +1573,23 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                 )
               ),
               col_7(
-                selectizeInput(ns("uniqueidinfo"),
-                               label = "Unique id",
-                               choices = NULL,
-                               options = list(maxOptions = 50000),
-                               width = "100%"),
+                fluidRow(
+                  col_6(
+                    selectizeInput(ns("uniqueidinfo"),
+                                   label = "Unique id",
+                                   choices = NULL,
+                                   options = list(maxOptions = 50000),
+                                   width = "100%")
+                  ),
+                  col_6(
+                    sliderInput(ns("buffershapeinfo"),
+                                label = "Buffer around plot",
+                                value = 0.15,
+                                min = 0,
+                                max = 3,
+                                step = 0.05)
+                  )
+                ),
                 plotOutput(ns("plotinfop"), height = "600px")
               )
             ),

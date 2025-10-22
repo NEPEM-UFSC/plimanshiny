@@ -7,6 +7,8 @@
 #' @noRd
 #'
 #' @importFrom shiny NS tagList
+#' @importFrom bs4Dash bs4Card valueBox
+#' @importFrom shinyWidgets actionBttn
 mod_home_ui <- function(id){
   ns <- NS(id)
   tagList(
@@ -24,7 +26,7 @@ mod_home_ui <- function(id){
         width = 2,
         bs4Dash::valueBox(
           value = "MAIN REFERENCE",
-          subtitle = "Olivoto, T. 2022. Lights, camera, pliman! An R package for plant image analysis. Methods in Ecology and Evolution 13(4): 789\u20137898. doi: 10.1111/2041-210X.13803.",
+          subtitle = "Olivoto, T. 2022. Lights, camera, pliman! An R package for plant image analysis. Methods in Ecology and Evolution 13(4): 789–7898. doi: 10.1111/2041-210X.13803.",
           width = 12,
           color = "success",
           elevation = 3,
@@ -33,7 +35,7 @@ mod_home_ui <- function(id){
         ),
         bs4Dash::valueBox(
           value = "PAPER TROPICAL PLANT PATHOLOGY",
-          subtitle = "Olivoto, T., S.M.P. Andrade, and E.M. Del Ponte. 2022. Measuring plant disease severity in R: introducing and evaluating the pliman package. Tropical Plant Pathology 1: 1\u2013710. doi: 10.1007/S40858-021-00487-5.",
+          subtitle = "Olivoto, T., S.M.P. Andrade, and E.M. Del Ponte. 2022. Measuring plant disease severity in R: introducing and evaluating the pliman package. Tropical Plant Pathology 1: 1–710. doi: 10.1007/S40858-021-00487-5.",
           width = 12,
           color = "success",
           elevation = 3,
@@ -50,7 +52,7 @@ mod_home_ui <- function(id){
         ),
         fluidRow(
           actionBttn(
-            inputId = NS("example", "checkupdate"),  # Ensure proper namespacing
+            inputId = ns("checkupdate"),
             label = "Check for updates",
             color = "success",
             icon = icon("code-compare")
@@ -66,7 +68,7 @@ mod_home_ui <- function(id){
         ),
         fluidRow(
           actionBttn(
-            inputId = ns("reload"),  # Ensure proper namespacing
+            inputId = ns("reload"),
             label = "Reload",
             color = "warning",
             icon = icon("rotate-right")
@@ -82,40 +84,25 @@ mod_home_ui <- function(id){
         ),
 
         tags$head(
-          # Include Font Awesome for icons and additional CSS for shadow effects
           tags$link(rel = "stylesheet", href = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css"),
           tags$style(HTML("
-    .modal-content {
-      box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
-    }
-    .icon-center {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      font-size: 4em; /* Icon size */
-      color: orange;  /* Icon color */
-      margin-top: -20px; /* Positioning adjustment */
-    }
-    .modal-header .close {
-      color: #28A745; /* Close button color */
-    }
-    .modal-header .close:hover {
-      color: #1e7e34; /* Hover color for close button */
-    }
-    .btn-secondary {
-      background-color: #28A745; /* Button color */
-      border-color: #28A745; /* Button border color */
-    }
-    .btn-secondary:hover {
-      background-color: #218838; /* Hover color for button */
-      border-color: #1e7e34; /* Hover border color for button */
-    }
-  "))
+            .modal-content {
+              box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+            }
+            .icon-center {
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              font-size: 4em; /* Icon size */
+              color: orange;  /* Icon color */
+              margin-top: -20px; /* Positioning adjustment */
+            }
+          "))
         ),
 
-        # Bootstrap modal for popup message
+        # Bootstrap modal for update message
         tags$div(
-          class = "modal fade", id = NS("example", "messageModal"), tabindex = "-1", role = "dialog",
+          class = "modal fade", id = ns("messageModal"), tabindex = "-1", role = "dialog",
           tags$div(
             class = "modal-dialog", role = "document",
             tags$div(
@@ -129,151 +116,126 @@ mod_home_ui <- function(id){
               ),
               tags$div(
                 class = "modal-body",
-                # Center the icon at the top and allow its class to change
                 tags$div(class = "icon-center",
-                         tags$i(id = "example-icon", class = "fas fa-exclamation-triangle")  # Initial icon class with correct ID
+                         tags$i(id = ns("icon"), class = "") # Icon class will be set by JS
                 ),
-                # Message text below the icon
-                p(id = NS("example", "popupMessage"),
-                  ""
-                )
+                tags$p(id = ns("popupMessage"), "") # Message text will be set by JS
               ),
               tags$div(
                 class = "modal-footer",
-                tags$button(type = "button", class = "btn btn-secondary", `data-dismiss` = "modal", "Close")
+                # New buttons for the update prompt
+                tags$button(type = "button", class = "btn btn-secondary", `data-dismiss` = "modal", id = ns("remind-btn"), "Remind Me Later"),
+                tags$button(type = "button", class = "btn btn-success", id = ns("install-btn"), "Install Now"),
+                tags$button(type = "button", class = "btn btn-primary", `data-dismiss` = "modal", id = ns("ok-btn"), "OK")
               )
             )
           )
         ),
 
-
         # Include custom JavaScript
-        tags$script(HTML("
-    const fetchCurrentVersion = async () => {
-      try {
-        const response = await fetch('/myjson/version.json');
-        const data = await response.json();
-        return data.version;
-      } catch (error) {
-        console.error('Error fetching the current version:', error);
-        return null;
-      }
-    };
+        tags$script(HTML(paste0("
+          // Pass the shiny module namespace to JavaScript
+          const nsPrefix = '", ns(""), "';
 
-    const fetchLatestVersion = async () => {
-      try {
-        const response = await fetch('https://nepemufsc.com/.netlify/functions/verser?project=plimanshiny');
-        const data = await response.json();
-        return data.latest_version;
-      } catch (error) {
-        console.error('Error fetching the latest version:', error);
-        return null;
-      }
-    };
-
-    // Function to update the icon based on the result
-    const updateIcon = (iconClass) => {
-      const iconElement = document.getElementById('example-icon');
-      if (iconElement) {
-        iconElement.className = iconClass;
-      } else {
-        console.error('Icon element not found');
-      }
-    };
-
-    // Function to copy text to clipboard
-    const copyToClipboard = (text) => {
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(text).then(() => {
-          alert('GitHub installation command copied to clipboard!');
-        }).catch(err => {
-          console.error('Error copying text via clipboard API:', err);
-        });
-      } else {
-        // Fallback method for older browsers
-        const tempInput = document.createElement('textarea');
-        tempInput.value = text;
-        document.body.appendChild(tempInput);
-        tempInput.select();
-        try {
-          document.execCommand('copy');
-          alert('GitHub installation command copied to clipboard!');
-        } catch (err) {
-          console.error('Error copying text via execCommand:', err);
-        }
-        document.body.removeChild(tempInput);
-      }
-    };
-
-    // Attach event listener for dynamically generated copy button
-    $(document).on('click', '#copy-button', function() {
-      const textToCopy = document.getElementById('install-command').textContent;
-      copyToClipboard(textToCopy);
-    });
-
-    const CheckUpdates = async (is_start) => {
-      try {
-        const latestVersion = await fetchLatestVersion();
-        const currentVersion = await fetchCurrentVersion();
-        console.log('Latest version:', latestVersion);
-        console.log('Current version:', currentVersion);
-        let message = '';
-        let iconClass = '';
-
-        if (is_start) {
-          if (latestVersion && currentVersion && latestVersion != currentVersion) {
-            message = `The application is outdated. You have version '${currentVersion}', but version '${latestVersion}' is now available.<br/><br/>
-                       Use the package {pak} to install the latest version from GitHub:<br/>
-                       <code id='install-command'>pak::pkg_install(\"NEPEM-UFSC/plimanshiny\")</code>
-                       <button id='copy-button' class='btn btn-sm btn-primary'>Copy</button>`;
-            iconClass = 'fas fa-exclamation-triangle text-warning';
-
-            document.getElementById('example-popupMessage').innerHTML = message;
-            updateIcon(iconClass);
-            $('#example-messageModal').modal('show');
-          }
-        } else {
-          if (latestVersion && currentVersion) {
-            if (latestVersion === currentVersion) {
-              message = 'Congratulations! You are using the latest version of plimanshiny!';
-              iconClass = 'fas fa-check-circle text-success';
-            } else {
-              message = `The application is outdated. You have version '${currentVersion}', but version '${latestVersion}' is now available.<br/><br/>
-                         Use the package {pak} to install the latest version from GitHub:<br/>
-                         <code id='install-command'>pak::pkg_install(\"NEPEM-UFSC/plimanshiny\")</code>
-                         <button id='copy-button' class='btn btn-sm btn-primary'>Copy</button>`;
-              iconClass = 'fas fa-exclamation-triangle text-warning';
+          const fetchCurrentVersion = async () => {
+            try {
+              const response = await fetch('/myjson/version.json');
+              const data = await response.json();
+              return data.version;
+            } catch (error) {
+              console.error('Error fetching the current version:', error);
+              return null;
             }
-          } else {
-            message = 'Error while checking for updates';
-            iconClass = 'fas fa-times-circle text-danger';
-          }
+          };
 
-          document.getElementById('example-popupMessage').innerHTML = message;
-          updateIcon(iconClass);
-          $('#example-messageModal').modal('show');
-        }
-      } catch (error) {
-        console.error('Error checking for updates:', error);
-        document.getElementById('example-popupMessage').innerHTML = 'Error while checking for updates';
-        updateIcon('fas fa-times-circle text-danger');
-        $('#example-messageModal').modal('show');
-      }
-    };
+          const fetchLatestVersion = async () => {
+            try {
+              const response = await fetch('https://nepemufsc.com/.netlify/functions/verser?project=plimanshiny');
+              const data = await response.json();
+              return data.latest_version;
+            } catch (error) {
+              console.error('Error fetching the latest version:', error);
+              return null;
+            }
+          };
 
-    $(document).on('click', '#example-checkupdate', function() {
-      CheckUpdates();
-    });
+          // Function to configure and show the modal
+          const showUpdateModal = (config) => {
+            document.getElementById(nsPrefix + 'icon').className = config.iconClass;
+            document.getElementById(nsPrefix + 'popupMessage').innerHTML = config.message;
 
-    document.addEventListener('DOMContentLoaded', function() {
-      CheckUpdates(true);
-    });
-"))
+            // Show/hide buttons based on the context
+            $('#' + nsPrefix + 'install-btn').toggle(config.showInstall);
+            $('#' + nsPrefix + 'remind-btn').toggle(config.showRemind);
+            $('#' + nsPrefix + 'ok-btn').toggle(config.showOk);
 
-
+            $('#' + nsPrefix + 'messageModal').modal('show');
+          };
 
 
+          const CheckUpdates = async (is_start = false) => {
+            try {
+              const latestVersion = await fetchLatestVersion();
+              const currentVersion = await fetchCurrentVersion();
+              console.log('Latest version:', latestVersion);
+              console.log('Current version:', currentVersion);
 
+              if (!latestVersion || !currentVersion) {
+                 if (!is_start) { // Only show error on manual check
+                    showUpdateModal({
+                      message: 'Error while checking for updates. Could not fetch version information.',
+                      iconClass: 'fas fa-times-circle text-danger',
+                      showInstall: false, showRemind: false, showOk: true
+                    });
+                 }
+                 return;
+              }
+
+              if (latestVersion !== currentVersion) {
+                // Update is available
+                showUpdateModal({
+                  message: `An update is available! You have version <strong>${currentVersion}</strong>, but version <strong>${latestVersion}</strong> is available. Do you want to install it now?`,
+                  iconClass: 'fas fa-exclamation-triangle text-warning',
+                  showInstall: true, showRemind: true, showOk: false
+                });
+              } else if (!is_start) {
+                // App is up-to-date, only notify on manual check
+                showUpdateModal({
+                  message: 'Congratulations! You are using the latest version of plimanshiny!',
+                  iconClass: 'fas fa-check-circle text-success',
+                  showInstall: false, showRemind: false, showOk: true
+                });
+              }
+
+            } catch (error) {
+              console.error('Error checking for updates:', error);
+              if (!is_start) {
+                 showUpdateModal({
+                   message: 'An error occurred while checking for updates.',
+                   iconClass: 'fas fa-times-circle text-danger',
+                   showInstall: false, showRemind: false, showOk: true
+                 });
+              }
+            }
+          };
+
+          // Event listener for the manual 'Check for updates' button
+          $(document).on('click', '#' + nsPrefix + 'checkupdate', function() {
+            CheckUpdates(false); // is_start = false for manual check
+          });
+
+          // Event listener for the 'Install Now' button
+          $(document).on('click', '#' + nsPrefix + 'install-btn', function() {
+            $('#' + nsPrefix + 'messageModal').modal('hide');
+            // Send a message to the R server to start the installation
+            Shiny.setInputValue(nsPrefix + 'start_install', Math.random());
+          });
+
+          // Automatically check for updates when the app loads
+          document.addEventListener('DOMContentLoaded', function() {
+            CheckUpdates(true); // is_start = true for automatic check
+          });
+        ")))
       )
     )
   )
@@ -282,6 +244,9 @@ mod_home_ui <- function(id){
 #' home Server Functions
 #'
 #' @noRd
+#' @import shiny
+#' @import waiter
+#' @importFrom utils packageVersion browseURL
 mod_home_server <- function(id, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
@@ -289,8 +254,66 @@ mod_home_server <- function(id, settings){
     json_file_path <- system.file("app/www/version.json", package = "plimanshiny", mustWork = TRUE)
     addResourcePath('myjson', dirname(json_file_path))
 
+    # Observer to trigger the installation process
+    observeEvent(input$start_install, {
+      # Show a waiter screen to inform the user
+      waiter_show(
+        html = tagList(
+          spin_solar(),
+          h3("Installing update..."),
+          p("This may take a few moments. The app will be unresponsive during the installation.")
+        ),
+        color = "#228B22" # ForestGreen
+      )
+
+      # Use a future to run installation asynchronously and avoid freezing the UI feedback
+      # In practice, the R session is still blocked by pak, but this is a good pattern.
+      result <- tryCatch({
+        # Ensure pak is installed
+        if (!requireNamespace("pak", quietly = TRUE)) {
+          utils::install.packages("pak", repos = "https://r-lib.github.io/p/pak/dev/")
+        }
+        # Run the installation
+        pak::pkg_install("NEPEM-UFSC/plimanshiny", ask = FALSE)
+        list(success = TRUE, message = "Update installed successfully!")
+      }, error = function(e) {
+        list(success = FALSE, message = paste("An error occurred during installation:", e$message))
+      })
+
+      # Hide the waiter
+      waiter_hide()
+
+      # Show a confirmation modal
+      if (result$success) {
+        showModal(
+          modalDialog(
+            title = tagList(icon("check-circle"), "Update Successful"),
+            "The new version has been installed. Please reload the application to apply the changes.",
+            footer = tagList(
+              actionButton(ns("reload_app"), "Reload Now", icon = icon("rotate-right"), class = "btn-success")
+            ),
+            easyClose = FALSE
+          )
+        )
+      } else {
+        showModal(
+          modalDialog(
+            title = tagList(icon("times-circle"), " Update Failed"),
+            result$message,
+            easyClose = TRUE,
+            footer = modalButton("Close")
+          )
+        )
+      }
+    })
+
     # Reload app when reload button is clicked
     observeEvent(input$reload, {
+      session$reload()
+    })
+
+    # Reload the app after successful installation
+    observeEvent(input$reload_app, {
       session$reload()
     })
 
@@ -304,7 +327,7 @@ mod_home_server <- function(id, settings){
       saveRDS(list(licenseread = TRUE), licenseread)
       removeModal()
     })
-    #
+
     observeEvent(input$license, {
       show_licence(ns)
     })
@@ -325,11 +348,11 @@ mod_home_server <- function(id, settings){
                 closable = TRUE,
                 h2("About"),
                 "{plimanshiny} provides an interactive Shiny-based graphical user interface for the pliman package,
-                facilitating user-friendly access to advanced plant image analysis tools without the need
-                for extensive programming knowledge. This package integrates a variety of functionalities
-                for high-throughput phenotyping, including but not limited to orthomosaic analysis from drone
-                and satellite imagery, shapefile creation and handling, time series analysis, image analysis,
-                and phytopathometry, into a cohesive and intuitive application.", br(),br(),
+                 facilitating user-friendly access to advanced plant image analysis tools without the need
+                 for extensive programming knowledge. This package integrates a variety of functionalities
+                 for high-throughput phenotyping, including but not limited to orthomosaic analysis from drone
+                 and satellite imagery, shapefile creation and handling, time series analysis, image analysis,
+                 and phytopathometry, into a cohesive and intuitive application.", br(),br(),
                 h2("Developer"),
                 a("Prof. Dr. Tiago Olivoto", href = "https://olivoto.netlify.app/", target = "_blank"), br(),
                 "Department of Plant Science", br(),
@@ -365,7 +388,7 @@ mod_home_server <- function(id, settings){
 
     })
 
-   })
+  })
 }
 
 ## To be copied in the UI

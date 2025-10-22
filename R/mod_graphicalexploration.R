@@ -394,8 +394,6 @@ mod_graphicalexploration_server <- function(id, dfs, shapefile) {
             geom_boxplot()
         }
         if(!is.null(yvar) && !is.null(xvar)){
-          print(xvar)
-          print(yvar)
           aes_args <- list(x = as.name(xvar), y = as.name(yvar))
           if (!is.null(colorvar)){
             aes_args$fill <- as.name(colorvar)

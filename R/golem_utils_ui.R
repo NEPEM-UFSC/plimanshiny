@@ -521,10 +521,6 @@ make_action_button <- function(tag, inputId = NULL) {
 }
 
 
-
-
-
-
 plimanshiny_canvas_output <- function(prefix = "geor", ns = identity) {
   # Create namespaced IDs
   ids <- function(x) ns(paste0(x, "_", prefix))
@@ -672,4 +668,154 @@ Shiny.setInputValue('drawn_rectangle_geor', {
   )
 }
 
+plimanshiny_canvas_ui <- function(id, width = 1280, height = 720) {
+  # Standard module namespacing
+  ns <- NS(id)
 
+  # A unique prefix for JavaScript variables, sanitized to be a valid JS identifier
+  js_prefix <- gsub("-", "_", ns(""))
+
+  # JavaScript template with a placeholder for the unique prefix
+  js_template <- "
+    let canvas_{{PREFIX}}, ctx_{{PREFIX}}, drawing_{{PREFIX}} = false;
+    let rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}}, rectEndX_{{PREFIX}}, rectEndY_{{PREFIX}};
+    let rasterImage_{{PREFIX}} = null;
+    let canvasWidth_{{PREFIX}}, canvasHeight_{{PREFIX}};
+    let timeoutID_{{PREFIX}};
+
+    function initcanvas_{{PREFIX}}() {
+      canvas_{{PREFIX}} = document.getElementById('%s');
+      if (!canvas_{{PREFIX}}) return;
+      ctx_{{PREFIX}} = canvas_{{PREFIX}}.getContext('2d');
+      canvasWidth_{{PREFIX}} = canvas_{{PREFIX}}.width;
+      canvasHeight_{{PREFIX}} = canvas_{{PREFIX}}.height;
+
+      canvas_{{PREFIX}}.addEventListener('mousedown', handleMouseDown_{{PREFIX}});
+      canvas_{{PREFIX}}.addEventListener('mousemove', handleMouseMove_{{PREFIX}});
+      canvas_{{PREFIX}}.addEventListener('mouseup', handleMouseUp_{{PREFIX}});
+      canvas_{{PREFIX}}.addEventListener('dblclick', handleDoubleClick_{{PREFIX}});
+    }
+
+    function adjustcanvas_{{PREFIX}}Size(width, height) {
+      canvasWidth_{{PREFIX}} = width;
+      canvasHeight_{{PREFIX}} = height;
+      canvas_{{PREFIX}}.width = canvasWidth_{{PREFIX}};
+      canvas_{{PREFIX}}.height = canvasHeight_{{PREFIX}};
+      Shiny.setInputValue('%s', { width: canvasWidth_{{PREFIX}}, height: canvasHeight_{{PREFIX}} }, { priority: 'event' });
+      drawcanvas_{{PREFIX}}();
+    }
+
+    function handleMouseDown_{{PREFIX}}(e) {
+      const rect = canvas_{{PREFIX}}.getBoundingClientRect();
+      rectStartX_{{PREFIX}} = e.clientX - rect.left;
+      rectStartY_{{PREFIX}} = e.clientY - rect.top;
+      rectEndX_{{PREFIX}} = rectStartX_{{PREFIX}};
+      rectEndY_{{PREFIX}} = rectStartY_{{PREFIX}};
+      timeoutID_{{PREFIX}} = setTimeout(() => {
+        if (rectStartX_{{PREFIX}} === rectEndX_{{PREFIX}} && rectStartY_{{PREFIX}} === rectEndY_{{PREFIX}}) {
+          drawPoint_{{PREFIX}}(rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}});
+          Shiny.setInputValue('%s', [rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}}], { priority: 'event' });
+        }
+      }, 1000);
+      drawing_{{PREFIX}} = true;
+    }
+
+    function handleMouseMove_{{PREFIX}}(e) {
+      if (!drawing_{{PREFIX}}) return;
+      clearTimeout(timeoutID_{{PREFIX}});
+      const rect = canvas_{{PREFIX}}.getBoundingClientRect();
+      rectEndX_{{PREFIX}} = e.clientX - rect.left;
+      rectEndY_{{PREFIX}} = e.clientY - rect.top;
+      drawcanvas_{{PREFIX}}();
+      drawRectangle_{{PREFIX}}(rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}}, rectEndX_{{PREFIX}}, rectEndY_{{PREFIX}});
+    }
+
+    function handleMouseUp_{{PREFIX}}() {
+      clearTimeout(timeoutID_{{PREFIX}});
+      if (!drawing_{{PREFIX}}) return;
+      drawing_{{PREFIX}} = false;
+      if (Math.abs(rectEndX_{{PREFIX}} - rectStartX_{{PREFIX}}) > 5 || Math.abs(rectEndY_{{PREFIX}} - rectStartY_{{PREFIX}}) > 5) {
+        Shiny.setInputValue('%s', {
+          startX: Math.min(rectStartX_{{PREFIX}}, rectEndX_{{PREFIX}}),
+          startY: Math.min(rectStartY_{{PREFIX}}, rectEndY_{{PREFIX}}),
+          endX: Math.max(rectStartX_{{PREFIX}}, rectEndX_{{PREFIX}}),
+          endY: Math.max(rectStartY_{{PREFIX}}, rectEndY_{{PREFIX}}),
+          width: Math.abs(rectEndX_{{PREFIX}} - rectStartX_{{PREFIX}}),
+          height: Math.abs(rectEndY_{{PREFIX}} - rectStartY_{{PREFIX}})
+        }, { priority: 'event' });
+      }
+      rectStartX_{{PREFIX}} = rectStartY_{{PREFIX}} = rectEndX_{{PREFIX}} = rectEndY_{{PREFIX}} = undefined;
+    }
+
+    function drawPoint_{{PREFIX}}(x, y) {
+      if (!ctx_{{PREFIX}}) return;
+      ctx_{{PREFIX}}.strokeStyle = 'red';
+      ctx_{{PREFIX}}.lineWidth = 2;
+      ctx_{{PREFIX}}.beginPath();
+      ctx_{{PREFIX}}.arc(x, y, 10, 0, 2 * Math.PI);
+      ctx_{{PREFIX}}.stroke();
+      ctx_{{PREFIX}}.beginPath();
+      ctx_{{PREFIX}}.moveTo(x - 10, y);
+      ctx_{{PREFIX}}.lineTo(x + 10, y);
+      ctx_{{PREFIX}}.moveTo(x, y - 10);
+      ctx_{{PREFIX}}.lineTo(x, y + 10);
+      ctx_{{PREFIX}}.stroke();
+    }
+
+    function drawRectangle_{{PREFIX}}(x1, y1, x2, y2) {
+      if (!ctx_{{PREFIX}}) return;
+      ctx_{{PREFIX}}.strokeStyle = 'red';
+      ctx_{{PREFIX}}.lineWidth = 2;
+      ctx_{{PREFIX}}.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    }
+
+    function drawcanvas_{{PREFIX}}() {
+      if (!ctx_{{PREFIX}} || !canvas_{{PREFIX}}) return;
+      ctx_{{PREFIX}}.clearRect(0, 0, canvas_{{PREFIX}}.width, canvas_{{PREFIX}}.height);
+      if (rasterImage_{{PREFIX}}) {
+        ctx_{{PREFIX}}.drawImage(rasterImage_{{PREFIX}}, 0, 0, canvas_{{PREFIX}}.width, canvas_{{PREFIX}}.height);
+      }
+    }
+
+    Shiny.addCustomMessageHandler('updateTiles_{{PREFIX}}', function(data) {
+      rasterImage_{{PREFIX}} = new Image();
+      rasterImage_{{PREFIX}}.src = 'data:image/png;base64,' + data.img;
+      rasterImage_{{PREFIX}}.onload = drawcanvas_{{PREFIX}};
+    });
+
+    Shiny.addCustomMessageHandler('adjustcanvas_{{PREFIX}}Size', function(data) {
+      adjustcanvas_{{PREFIX}}Size(data.width, data.height);
+    });
+
+    function handleDoubleClick_{{PREFIX}}() {
+      Shiny.setInputValue('%s', new Date().getTime(), { priority: 'event' });
+    }
+
+    if (document.readyState === 'loading') {
+      window.addEventListener('DOMContentLoaded', initcanvas_{{PREFIX}});
+    } else {
+      initcanvas_{{PREFIX}}();
+    }
+  "
+
+  # Replace placeholder with the unique JS prefix
+  js_code <- gsub("\\{\\{PREFIX\\}\\}", js_prefix, js_template)
+
+  tagList(
+    tags$head(
+      tags$style(HTML(sprintf(
+        "#%s { border: 1px solid #ddd; box-shadow: 3px 3px 8px rgba(40, 167,69, 0.3); }",
+        ns("rastercanvas")
+      ))),
+      tags$script(HTML(sprintf(
+        js_code,
+        ns("rastercanvas"),
+        ns("canvas_size"),
+        ns("picked_point"),
+        ns("drawn_rectangle"),
+        ns("reset_view")
+      )))
+    ),
+    tags$canvas(id = ns("rastercanvas"), width = width, height = height)
+  )
+}

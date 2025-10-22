@@ -111,129 +111,119 @@ mod_dfjoin_server <- function(id, dfs, shapefile, settings){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
 
+    # These observers are fine, as they only update UI elements
     observe({
+      df_choices <- Filter(Negate(is.null), reactiveValuesToList(dfs))
       updatePickerInput(session, "dftojoin",
-                        choices = names(dfs))
+                        choices = names(df_choices))
     })
     observe({
+      df_choices <- Filter(Negate(is.null), reactiveValuesToList(dfs))
       updatePickerInput(session, "dftojoinshp",
-                        choices = names(dfs),
+                        choices = names(df_choices),
                         selected = NA)
     })
     observe({
+      shp_choices <- Filter(Negate(is.null), reactiveValuesToList(shapefile))
       updatePickerInput(session, "shapetojoin",
-                        choices = setdiff(names(shapefile), c("shapefile", "shapefileplot")),
+                        choices = setdiff(names(shp_choices), c("shapefile", "shapefileplot")),
                         selected = NA)
     })
     observe({
+      shp_choices <- Filter(Negate(is.null), reactiveValuesToList(shapefile))
       updatePickerInput(session, "shapetojoin2",
-                        choices = setdiff(names(shapefile), c("shapefile", "shapefileplot")),
+                        choices = setdiff(names(shp_choices), c("shapefile", "shapefileplot")),
                         selected = NA)
     })
 
 
-    result <- reactiveValues()
-    dfstojoin <- reactiveValues()
+    # This observer is for updating the join variable choices and is also fine
     observe({
-      req(dfstojoin)
-      commvar <- Reduce(base::intersect, lapply(dfstojoin$vals, colnames))
+      req(input$dforshape == "data.frames", input$dftojoin)
+      df_list <- lapply(input$dftojoin, function(x) dfs[[x]]$data)
+      req(length(df_list) > 1)
+      commvar <- Reduce(base::intersect, lapply(df_list, colnames))
       updatePickerInput(session, "varstojoin",
                         choices = commvar)
     })
     observe({
-      req(input$dftojoinshp)
-      req(input$shapetojoin2)
+      req(input$dforshape == "data.frames with a shapefile", input$dftojoinshp, input$shapetojoin2)
       commvar <- intersect(colnames(shapefile[[input$shapetojoin2]]$data), colnames(dfs[[input$dftojoinshp]]$data))
       updatePickerInput(session, "varstojoin",
                         choices = commvar)
     })
 
-    observe({
-      if(input$dforshape == "data.frames"){
-        req(input$dftojoin)
-        dfstojoin$vals <- lapply(input$dftojoin, function(x){
-          dfs[[x]]$data
-        })
 
-        # observeEvent(input$startjoining, {
-        req(dfstojoin$vals)
-        req(input$varstojoin)
-        join_expr <- dplyr::join_by(!!!rlang::syms(input$varstojoin))
-        if(input$type == "left"){
-          result$res <- purrr::reduce(dfstojoin$vals, dplyr::left_join,  by = join_expr)
-        } else if(input$type == "right"){
-          result$res <- purrr::reduce(dfstojoin$vals, dplyr::right_join,  by = join_expr)
-        } else{
-          result$res <- purrr::reduce(dfstojoin$vals, dplyr::full_join,  by = join_expr)
-        }
+    # STEP 1: Create a reactive expression for the join preview
+    # This will automatically re-calculate when inputs change, but only for the preview table.
+    joined_data <- reactive({
+      # Use a switch for cleaner logic
+      switch(input$dforshape,
+             "data.frames" = {
+               req(input$dftojoin, length(input$dftojoin) > 1, input$varstojoin)
+               df_list <- lapply(input$dftojoin, function(x) dfs[[x]]$data)
+               join_expr <- dplyr::join_by(!!!rlang::syms(input$varstojoin))
 
-      } else if(input$dforshape == "shapefiles"){
-        shpstojoin <- reactiveValues()
-        observe({
-          req(input$shapetojoin)
-          shpstojoin$vals <- lapply(input$shapetojoin, function(x){
-            shapefile[[x]]$data
-          })
-        })
-        observe({
-          req(input$shapetojoin)
-          result$res <- result$res <- purrr::reduce(shpstojoin$vals, sf::st_join)
-        })
-      } else{
-        observe({
-          req(input$dftojoinshp)
-          req(input$shapetojoin2)
-          req(input$varstojoin)
-          join_expr <- dplyr::join_by(!!!rlang::syms(input$varstojoin))
-          if(input$type == "left"){
-            result$res <- dplyr::left_join(shapefile[[input$shapetojoin2]]$data |> convert_numeric_cols(),
-                                           dfs[[input$dftojoinshp]]$data |> convert_numeric_cols(),
-                                           by = join_expr)
-          } else if(input$type == "right"){
-            result$res <- dplyr::right_join(shapefile[[input$shapetojoin2]]$data |> convert_numeric_cols(),
-                                            dfs[[input$dftojoinshp]]$data |> convert_numeric_cols(),
-                                            by = join_expr)
-          } else{
-            result$res <- dplyr::full_join(shapefile[[input$shapetojoin2]]$data |> convert_numeric_cols(),
-                                           dfs[[input$dftojoinshp]]$data |> convert_numeric_cols(),
-                                           by = join_expr)
-          }
-        })
-      }
+               join_func <- switch(input$type,
+                                   "left" = dplyr::left_join,
+                                   "right" = dplyr::right_join,
+                                   "full" = dplyr::full_join)
 
+               purrr::reduce(df_list, join_func, by = join_expr)
+             },
+             "shapefiles" = {
+               req(input$shapetojoin, length(input$shapetojoin) > 1)
+               shp_list <- lapply(input$shapetojoin, function(x) shapefile[[x]]$data)
 
+               purrr::reduce(shp_list, sf::st_join)
+             },
+             "data.frames with a shapefile" = {
+               req(input$dftojoinshp, input$shapetojoin2, input$varstojoin)
+               join_expr <- dplyr::join_by(!!!rlang::syms(input$varstojoin))
 
-      output$joined <- reactable::renderReactable({
-        req(result$res)
-        reactable::reactable(
-          result$res |> roundcols(),
-          filterable = TRUE,
-          searchable = TRUE,
-          striped = TRUE,
-          pagination = TRUE,
-          defaultPageSize = 13
-        )
-      })
+               join_func <- switch(input$type,
+                                   "left" = dplyr::left_join,
+                                   "right" = dplyr::right_join,
+                                   "full" = dplyr::full_join)
 
-      observeEvent(input$donejoining, {
-        if(input$dforshape %in% c("data.frames", "data.frames with a shapefile")){
-          dfs[[input$newset]] <- create_reactval(input$newset, result$res)
-        } else{
-          shapefile[[input$newset]] <- create_reactval(input$newset, result$res)
-        }
-
-        sendSweetAlert(
-          session = session,
-          title = "Data merged!",
-          text = "The data has been successfully merged and is now available for further processing.",
-          type = "success"
-        )
-      })
-
+               join_func(shapefile[[input$shapetojoin2]]$data |> convert_numeric_cols(),
+                         dfs[[input$dftojoinshp]]$data |> convert_numeric_cols(),
+                         by = join_expr)
+             })
     })
 
+    # STEP 2: The table output simply renders the reactive data
+    output$joined <- reactable::renderReactable({
+      req(joined_data())
+      reactable::reactable(
+        joined_data() |> roundcols(),
+        filterable = TRUE,
+        searchable = TRUE,
+        striped = TRUE,
+        pagination = TRUE,
+        defaultPageSize = 13
+      )
+    })
 
+    # STEP 3: The button action is now completely isolated.
+    # It only runs when clicked.
+    observeEvent(input$donejoining, {
+      # Use the result from the reactive expression
+      req(joined_data(), input$newset)
 
+      if(input$dforshape %in% c("data.frames", "data.frames with a shapefile")){
+        dfs[[input$newset]] <- create_reactval(input$newset, joined_data())
+      } else{
+        shapefile[[input$newset]] <- create_reactval(input$newset, joined_data())
+      }
+
+      sendSweetAlert(
+        session = session,
+        title = "Data merged!",
+        text = "The new dataset is now available.",
+        type = "success"
+      )
+    })
   })
 }
 

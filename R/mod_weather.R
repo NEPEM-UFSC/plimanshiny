@@ -928,7 +928,6 @@ FetchWeatherCommand <- R6::R6Class("FetchWeatherCommand",
 
             # Assign the final combined data back
             all_weather_data <- combined_data
-            # print(str(all_weather_data)) # Debug final combined data
 
           } else {
              # This 'else' corresponds to the main 'if' checking if GDD or CH calculation is needed.
@@ -1117,7 +1116,6 @@ mod_weather_server <- function(id, dfs) {
       # Process each selected municipality
       for(i in 1:nrow(selected_mun)) {
         mun_row <- selected_mun[i, ]
-        # print(mun_row)
 
         # Explicit conversion to numeric with check
         new_lat <- suppressWarnings(as.numeric(as.character(mun_row$lat))) # Use lat
@@ -1152,7 +1150,6 @@ mod_weather_server <- function(id, dfs) {
             end = as.Date(end_date),     # Ensure it's Date
             stringsAsFactors = FALSE
           )
-          # print(new_point)
 
           # Add to temporary list
           points_to_add[[length(points_to_add) + 1]] <- new_point

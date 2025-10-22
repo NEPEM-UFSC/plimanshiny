@@ -7,7 +7,7 @@
 #' @noRd
 #'
 #' @importFrom shiny NS tagList
-plimanshiny_viewer_ui <- function(id, prefix = "mainviewer") {
+plimanshiny_viewer_ui <- function(id, prefix = "mainviewer", width = 1080, height = 608) {
   ns <- NS(id)
 
   # Helper to create namespaced and prefixed IDs
@@ -19,14 +19,15 @@ plimanshiny_viewer_ui <- function(id, prefix = "mainviewer") {
     let rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}}, rectEndX_{{PREFIX}}, rectEndY_{{PREFIX}};
     let selectedPoints_{{PREFIX}} = [];
     let rasterImage_{{PREFIX}} = null;
-    let canvasWidth_{{PREFIX}} = 1080;
-    let canvasHeight_{{PREFIX}} = 608;
+    let canvasWidth_{{PREFIX}}, canvasHeight_{{PREFIX}}; // DELETED: Hardcoded values
 
     function initCanvas_{{PREFIX}}() {
       canvas_{{PREFIX}} = document.getElementById('%s');
       ctx_{{PREFIX}} = canvas_{{PREFIX}}.getContext('2d');
-      canvas_{{PREFIX}}.width = canvasWidth_{{PREFIX}};
-      canvas_{{PREFIX}}.height = canvasHeight_{{PREFIX}};
+
+      // NEW: Read the initial width and height from the canvas element's attributes
+      canvasWidth_{{PREFIX}} = canvas_{{PREFIX}}.width;
+      canvasHeight_{{PREFIX}} = canvas_{{PREFIX}}.height;
 
       canvas_{{PREFIX}}.addEventListener('mousedown', handleMouseDown_{{PREFIX}});
       canvas_{{PREFIX}}.addEventListener('mousemove', handleMouseMove_{{PREFIX}});
@@ -122,7 +123,8 @@ plimanshiny_viewer_ui <- function(id, prefix = "mainviewer") {
       ))),
       tags$script(HTML(js_code))
     ),
-    tags$canvas(id = ids("rasterCanvas"))
+    # NEW: Pass the width and height arguments directly to the canvas tag
+    tags$canvas(id = ids("rasterCanvas"), width = width, height = height)
   )
 }
 
@@ -133,8 +135,10 @@ plimanshiny_viewer_server <- function(id, mosaic,
                                       g = reactiveVal(2),
                                       b = reactiveVal(3),
                                       usemargin = reactiveVal(TRUE),
-                                      zlim = NULL) {
-
+                                      zlim = NULL,
+                                      prefix = "mainviewer",
+                                      max_width = 1180,
+                                      max_height = 800) {
   if(is.na(r())){
     r <- reactiveVal(1)
   }
@@ -152,7 +156,7 @@ plimanshiny_viewer_server <- function(id, mosaic,
   moduleServer(id, function(input, output, session) {
 
     needstretch <- reactiveVal(FALSE)
-    original_image_path <- file.path(tempdir(), "originalimage.png")
+    original_image_path <- file.path(tempdir(), paste0(id, "_originalimage.png"))
 
     # Cleanup when the session ends
     session$onSessionEnded(function() {
@@ -171,11 +175,11 @@ plimanshiny_viewer_server <- function(id, mosaic,
 
     # Adjust the canvas size based on the mosaic
     observe({
-      sizes <- adjust_canvas(mosaic)
+      sizes <- adjust_canvas(mosaic, max_width = max_width, max_height = max_height)
       widori(sizes[[1]])
       heiori(sizes[[2]])
       # Send the adjusted canvas size to the client
-      session$sendCustomMessage("adjustCanvasSize_mainviewer", list(
+      session$sendCustomMessage(paste0("adjustCanvasSize_", prefix), list(
         width = as.integer(widori()),
         height = as.integer(heiori())
       ))
@@ -189,7 +193,7 @@ plimanshiny_viewer_server <- function(id, mosaic,
       req(b())
       req(mosaic)
       # Register reactive dependencies on the colors:
-      sizes <- adjust_canvas(mosaic)
+      sizes <- adjust_canvas(mosaic, max_width = max_width, max_height = max_height)
       tryCatch({
         png(original_image_path, width = sizes[[1]], height = sizes[[2]])
         check_and_plot(mosaic, r = as.numeric(r()), g = as.numeric(g()), b = as.numeric(b()), zlim = zlim())
@@ -200,51 +204,54 @@ plimanshiny_viewer_server <- function(id, mosaic,
       })
 
       current_extent(ext(mosaic))
-      session$sendCustomMessage("updateTiles_mainviewer", list(
+      session$sendCustomMessage(paste0("updateTiles_", prefix), list(
         img = base64enc::base64encode(original_image_path)
       ))
     })
 
     # Reset view to the original raster on button click
-    observeEvent(input$reset_view_mainviewer, {
+    observeEvent(input[[paste0("reset_view_", prefix)]], {
       wid(widori())
       hei(heiori())
       current_extent(ext(mosaic))  # Reset extent to the full raster
-      session$sendCustomMessage("updateTiles_mainviewer", list(
+      session$sendCustomMessage(paste0("updateTiles_", prefix), list(
         img = base64enc::base64encode(original_image_path)
       ))
-      session$sendCustomMessage("adjustCanvasSize_mainviewer", list(
+      session$sendCustomMessage(paste0("adjustCanvasSize_", prefix), list(
         width = as.integer(widori()),
         height = as.integer(heiori())
       ))
     })
 
     # Handle rectangle drawing and cropping
-    observeEvent(input$drawn_rectangle_mainviewer, {
-      rect <- input$drawn_rectangle_mainviewer
+    observeEvent(input[[paste0("drawn_rectangle_", prefix)]], {
+      rect <- input[[paste0("drawn_rectangle_", prefix)]]
       req(rect$startX)
       if (rect$startX == rect$endX || rect$startY == rect$endY) {
         return(NULL)
       }
-      # Convert canvas coordinates to raster spatial extent using terra accessors:
+
+      # FIX: Get canvas size from the dynamic input
+      canvas_size <- input[[paste0("canvas_size_", prefix)]]
+
+      # Convert canvas coordinates to raster spatial extent
       xmin_val <- terra::xmin(current_extent())
       xmax_val <- terra::xmax(current_extent())
       ymin_val <- terra::ymin(current_extent())
       ymax_val <- terra::ymax(current_extent())
-      fact_canva_rast_x <- input$canvas_size_mainviewer$width / (xmax_val - xmin_val)
-      fact_canva_rast_y <- input$canvas_size_mainviewer$height / (ymax_val - ymin_val)
+      fact_canva_rast_x <- canvas_size$width / (xmax_val - xmin_val)
+      fact_canva_rast_y <- canvas_size$height / (ymax_val - ymin_val)
       xmin <- xmin_val + rect$startX / fact_canva_rast_x
       xmax <- xmin_val + rect$endX / fact_canva_rast_x
-      ymin <- ymin_val + (input$canvas_size_mainviewer$height - rect$endY) / fact_canva_rast_y
-      ymax <- ymin_val + (input$canvas_size_mainviewer$height - rect$startY) / fact_canva_rast_y
+      ymin <- ymin_val + (canvas_size$height - rect$endY) / fact_canva_rast_y
+      ymax <- ymin_val + (canvas_size$height - rect$startY) / fact_canva_rast_y
 
-      # Update the current extent using terra::ext()
       current_extent(ext(c(xmin, xmax, ymin, ymax)))
       xrange <- abs(xmax - xmin)
       originalres <- res(mosaic)[[1]]
       newres <- max(c(xrange / 720, originalres))
 
-      tfc <- file.path(tempdir(), "tempcropped.png")
+      tfc <- file.path(tempdir(), paste0(id, "_", prefix, "_tempcropped.png"))
       session$onSessionEnded(function() {
         if (file.exists(tfc)) {
           file.remove(tfc)
@@ -252,7 +259,7 @@ plimanshiny_viewer_server <- function(id, mosaic,
       })
       if(nlyrs() < 3){
         cropped_ras <- crop(mosaic, ext(xmin, xmax, ymin, ymax))
-        sizes <- adjust_canvas(cropped_ras)
+        sizes <- adjust_canvas(cropped_ras, max_width = max_width, max_height = max_height)
         wid(sizes[[1]])
         hei(sizes[[2]])
         tryCatch({
@@ -303,7 +310,7 @@ plimanshiny_viewer_server <- function(id, mosaic,
           if (inherits(trycrop, "try-error")) {
             # Fallback if gdal_utils fails
             cropped_ras <- crop(mosaic, ext(xmin, xmax, ymin, ymax))
-            sizes <- adjust_canvas(cropped_ras)
+            sizes <- adjust_canvas(cropped_ras, max_width = max_width, max_height = max_height)
             wid(sizes[[1]])
             hei(sizes[[2]])
             tryCatch({
@@ -318,7 +325,7 @@ plimanshiny_viewer_server <- function(id, mosaic,
           } else {
             # Successfully processed by gdal_utils
             cropped_ras <- rast(tfc)
-            sizes <- adjust_canvas(cropped_ras)
+            sizes <- adjust_canvas(cropped_ras, max_width = max_width, max_height = max_height)
             wid(sizes[[1]])
             hei(sizes[[2]])
           }
@@ -326,7 +333,7 @@ plimanshiny_viewer_server <- function(id, mosaic,
         } else {
           # Handle case when zlim is not NULL
           cropped_ras <- crop(mosaic, ext(xmin, xmax, ymin, ymax))
-          sizes <- adjust_canvas(cropped_ras)
+          sizes <- adjust_canvas(cropped_ras, max_width = max_width, max_height = max_height)
           wid(sizes[[1]])
           hei(sizes[[2]])
           tryCatch({
@@ -340,10 +347,10 @@ plimanshiny_viewer_server <- function(id, mosaic,
         }
       }
 
-      session$sendCustomMessage("updateTiles_mainviewer", list(
+      session$sendCustomMessage(paste0("updateTiles_", prefix), list(
         img = base64enc::base64encode(tfc)
       ))
-      session$sendCustomMessage("adjustCanvasSize_mainviewer", list(
+      session$sendCustomMessage(paste0("adjustCanvasSize_", prefix), list(
         width = as.integer(wid()),
         height = as.integer(hei())
       ))

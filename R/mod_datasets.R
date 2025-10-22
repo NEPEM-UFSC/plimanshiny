@@ -21,6 +21,26 @@ mod_datasets_ui <- function(id){
             label = "Import dataset",
             icon = icon("file-import")
           ),
+          # New removal buttons
+          hl(),
+          strong("Manage datasets"),
+          fluidRow(
+              actionBttn(
+                ns("removeone"),
+                label = "Remove active",
+                icon = icon("trash-can"),
+                style = "material-flat",
+                color = "danger"
+              ),
+              actionBttn(
+                ns("removeall"),
+                label = "Remove all",
+                icon = icon("trash"),
+                style = "material-flat",
+                color = "danger"
+              )
+          ),
+          hl(),
           pickerInput(
             ns("activedf"),
             label = "Active dataset",
@@ -71,9 +91,65 @@ mod_datasets_server <- function(id, dfs, settings){
     })
 
     observe({
-      updatePickerInput(session, "activedf",
-                        choices = names(dfs))
+      current_dfs <- Filter(Negate(is.null), reactiveValuesToList(dfs))
+      updatePickerInput(session,
+                        "activedf",
+                        choices = names(current_dfs))
     })
+
+
+    # >> New: Remove the active dataset ----
+    observeEvent(input$removeone, {
+      # Require a dataset to be selected
+      req(input$activedf)
+      confirmSweetAlert(
+        session = session,
+        inputId = ns("confirm_remove_one"),
+        title = "Remove active dataset?",
+        text = paste0("Are you sure you want to remove the '", input$activedf, "' dataset? This action cannot be undone."),
+        type = "warning",
+        btn_labels = c("Cancel", "Yes, remove it!"),
+        btn_colors = c("#d33", "#3085d6")
+      )
+    })
+    # Observer for the confirmation callback
+    observeEvent(input$confirm_remove_one, {
+      if (isTRUE(input$confirm_remove_one)) {
+        dfs[[input$activedf]] <- NULL
+        # updatePickerInput(session, "activedf",
+        #                   choices = names(dfs))
+        show_toast("success", "Dataset removed", timer = 3000)
+      }
+    }, ignoreNULL = TRUE)
+
+
+    # >> New: Remove all datasets ----
+    observeEvent(input$removeall, {
+      # Require at least one dataset to exist
+      req(names(dfs))
+      confirmSweetAlert(
+        session = session,
+        inputId = ns("confirm_remove_all"),
+        title = "Remove all datasets?",
+        text = "Are you sure you want to remove all datasets? This action cannot be undone.",
+        type = "error",
+        btn_labels = c("Cancel", "Yes, remove all!"),
+        btn_colors = c("#d33", "#3085d6")
+      )
+    })
+    # Observer for the confirmation callback
+    observeEvent(input$confirm_remove_all, {
+      if (isTRUE(input$confirm_remove_all)) {
+        # Loop through names and NULL them out
+        for(name in names(dfs)){
+          dfs[[name]] <- NULL
+        }
+        show_toast("success", "All datasets have been removed", timer = 3000)
+      }
+    }, ignoreNULL = TRUE)
+
+
+    # Display and edit the active dataset
 
     dfactive <- reactiveValues()
     observe({

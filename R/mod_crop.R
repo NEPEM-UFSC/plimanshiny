@@ -16,9 +16,7 @@ mod_crop_ui <- function(id){
           title = "Crop Settings",
           collapsible = FALSE,
           width = 12,
-          footer = "To start cropping a mosaic, click on 'Start!' and use the
-          'Draw Polygon, or 'Draw Rectangle' tools. To crop the mosaic,
-          click on 'Crop'",
+          footer = "Draw points that defines the cropping area pressing the left-mouse button for 1 second.'",
           h3("Input"),
           selectInput(ns("mosaic_to_crop"),
                       label = "Mosaic to be cropped",
@@ -39,8 +37,8 @@ mod_crop_ui <- function(id){
           awesomeRadio(
             inputId = ns("cropormask"),
             label = "Type",
-            choices = c("Crop", "Mask"),
-            selected = "Crop",
+            choices = c("crop", "mask"),
+            selected = "crop",
             inline = FALSE,
             status = "success"
           ),
@@ -50,22 +48,12 @@ mod_crop_ui <- function(id){
                     label = "New object",
                     value = NULL),
 
-          fluidRow(
-            col_6(
-              actionBttn(ns("startcrop"),
-                         label = "Start cropping!",
-                         style = "pill",
-                         color = "success")
-            ),
-            col_6(
-              actionBttn(ns("cropmosaic"),
-                         label = "Crop!",
-                         style = "pill",
-                         no_outline = FALSE,
-                         icon = icon("scissors"),
-                         color = "success")
-            )
-          )
+          actionBttn(ns("cropmosaic"),
+                     label = "Crop!",
+                     style = "pill",
+                     no_outline = FALSE,
+                     icon = icon("scissors"),
+                     color = "success")
         )
       ),
       col_9(
@@ -73,21 +61,18 @@ mod_crop_ui <- function(id){
           id = "tabs",
           status = "success",
           width = 12,
-          height = "720px",
           title = "Cropping a mosaic",
           selected = "Original mosaic",
           solidHeader = FALSE,
           type = "tabs",
           tabPanel(
             title = "Original mosaic",
-            conditionalPanel("input.shapemanipula != true",  ns = ns,
-                             h3("Original mosaic"),
-                             editModUI(ns("mosaic_crop"), height = "640px") |> add_spinner()
-            ),
             conditionalPanel("input.shapemanipula == true",  ns = ns,
-                             h3("Original mosaic and shapefile"),
-                             leafletOutput(ns("mosaic_cropshp"), height = "640px") |> add_spinner()
-            )
+                             plotOutput(ns("plotoriginalraster"), height = "640px")
+            ),
+            conditionalPanel("input.shapemanipula == false",  ns = ns,
+                             plimanshiny_canvas_ui(ns("cropmos"))
+            ),
           ),
           tabPanel(
             title = "Cropped mosaic",
@@ -102,104 +87,123 @@ mod_crop_ui <- function(id){
 #' crop Server Functions
 #'
 #' @noRd
-mod_crop_server <- function(id, mosaic_data, shapefile, r, g, b, basemap, settings){
-  moduleServer( id, function(input, output, session){
+mod_crop_server <- function(id, mosaic_data, shapefile, r, g, b, basemap, settings, zlim){
+  moduleServer(id, function(input, output, session){
     ns <- session$ns
+
     observe({
-      req(shapefile)
       req(mosaic_data)
-      updateSelectInput(session, "mosaic_to_crop", choices = c("Active mosaic", setdiff(names(mosaic_data), "mosaic")), selected = "Active mosaic")
+      updateSelectInput(session, "mosaic_to_crop", choices = setdiff(names(mosaic_data), "mosaic"))
       updateSelectInput(session, "shape_to_crop", choices = setdiff(names(shapefile), c("shapefile", "shapefileplot")))
     })
+
     observe({
       updateTextInput(session, "new_cropped", value = paste0(input$mosaic_to_crop, "_cropped"))
     })
 
+    # --- MODE 1: Crop by drawing (canvas) ---
+    observe({
+      req(!input$shapemanipula)
+      req(input$mosaic_to_crop)
+      req(mosaic_data[[input$mosaic_to_crop]]$data)
 
-    # Observe event for mosaic crop action
-    observeEvent(input$startcrop, {
+      mosaic_to_plot <- reactive({
+        mosaic_data[[input$mosaic_to_crop]]$data
+      })
 
-      cropped_mosaic <- reactiveVal(NULL)
-      if(input$shapemanipula){
-        shptocrop <- shapefile[[input$shape_to_crop]]$data
-        output$mosaic_cropshp <- renderLeaflet({
-          if(input$mosaic_to_crop == "Active mosaic" && !is.null(basemap$map)){
-            bcrop <- basemap$map
-          } else{
-            bcrop <-
-              mosaic_view(
-                mosaic_data[[input$mosaic_to_crop]]$data,
+      pointsvals <- plimanshiny_canvas_server(
+        id = "cropmos",
+        mosaic_to_plot(),
+        r = suppressWarnings(as.numeric(r$r)),
+        g = suppressWarnings(as.numeric(g$g)),
+        b = suppressWarnings(as.numeric(b$b)),
+        zlim = zlim$zlim,
+        max_width = 1000
+      )
+
+      observeEvent(input$cropmosaic, {
+        if(!input$shapemanipula){
+          points_df <- pointsvals()
+          if (!is.null(points_df) && nrow(points_df) > 2) {
+            coords_matrix <- as.matrix(points_df[, c("x", "y")])
+            if (!all(coords_matrix[1, ] == coords_matrix[nrow(coords_matrix), ])) {
+              coords_matrix <- rbind(coords_matrix, coords_matrix[1, ])
+            }
+            points_vector <- terra::vect(
+              x = list(coords_matrix),
+              type = "polygon",
+              crs = terra::crs(mosaic_to_plot())
+            )
+            cropped_mosaic <- mosaic_crop(
+              mosaic_to_plot(),
+              shapefile = sf::st_as_sf(points_vector),
+              type = input$cropormask
+            )
+
+            output$mosaiccropped <- renderPlot({
+              check_and_plot(
+                cropped_mosaic,
                 r = suppressWarnings(as.numeric(r$r)),
                 g = suppressWarnings(as.numeric(g$g)),
                 b = suppressWarnings(as.numeric(b$b)),
-                max_pixels = 500000
+                zlim = zlim$zlim
               )
+            })
+            mosaic_data[[input$new_cropped]] <- create_reactval(input$new_cropped, cropped_mosaic)
+            show_alert("Done",
+                       text = "The mosaic has been cropped and is now available for use in the 'Raster file(s)' tab.",
+                       type = "success")
+          } else {
+            showNotification("No points have been drawn yet. Make sure you draw at least 3 points.", type = "warning")
           }
+        }
+      })
+    })
 
-          (bcrop + shapefile_view(shptocrop))@map
-        })
+    # --- MODE 2: Crop using shapefile ---
+    observe({
+      req(input$shapemanipula)
+      req(input$mosaic_to_crop)
+      req(input$shape_to_crop)
+      req(mosaic_data[[input$mosaic_to_crop]]$data)
 
-        mosaiccr <- terra::crop(mosaic_data$mosaic$data, terra::ext(shapefile_input(shptocrop, as_sf = FALSE, info = FALSE)))
-        cropped_mosaic(mosaiccr)
-
-      } else{
-        sendSweetAlert(
-          session = session,
-          title = "Cropping a mosaic",
-          text = "Use the 'Draw Rectangle' or 'Draw Polygon' tools to crop the mosaic. The mosaic will be cropped to the extend of the created shapes.",
-          type = "info"
+      output$plotoriginalraster <- renderPlot({
+        check_and_plot(
+          mosaic_data[[input$mosaic_to_crop]]$data,
+          r = suppressWarnings(as.numeric(r$r)),
+          g = suppressWarnings(as.numeric(g$g)),
+          b = suppressWarnings(as.numeric(b$b)),
+          zlim = zlim$zlim
         )
-        # Reactive expression to store the cropped mosaic
-        if(input$mosaic_to_crop == "Active mosaic" && !is.null(basemap$map)){
-          mapcrop <- basemap$map@map
-        } else{
-          mapcrop <-
-            mosaic_view(
-              mosaic_data[[input$mosaic_to_crop]]$data,
+        shapefile_plot(shapefile[[input$shape_to_crop]]$data, add = TRUE)
+      })
+
+      observeEvent(input$cropmosaic, {
+        if(input$shapemanipula){
+          cropped_mosaic <- mosaic_crop(
+            mosaic_data[[input$mosaic_to_crop]]$data,
+            shapefile = shapefile[[input$shape_to_crop]]$data,
+            type = input$cropormask
+          )
+          output$mosaiccropped <- renderPlot({
+            check_and_plot(
+              cropped_mosaic,
               r = suppressWarnings(as.numeric(r$r)),
               g = suppressWarnings(as.numeric(g$g)),
               b = suppressWarnings(as.numeric(b$b)),
-              max_pixels = 300000
-            )@map
+              zlim = zlim$zlim
+            )
+          })
+          mosaic_data[[input$new_cropped]] <- create_reactval(input$new_cropped, cropped_mosaic)
+          show_alert("Done",
+                     text = "The mosaic has been cropped and is now available for use in the 'Raster file(s)' tab.",
+                     type = "success")
         }
-        # # Attempt to get edits
-        edits <- callModule(editMod, "mosaic_crop", mapcrop, editor = "leafpm")
-        #
-        observe({
-          # Check if edits()$finished is not NULL
-          if (!is.null(edits()$finished)) {
-            grids <-
-              edits()$finished |>
-              sf::st_transform(sf::st_crs(mosaic_data$mosaic$data)) |>
-              terra::vect()
-              mosaiccr <- terra::crop(mosaic_data$mosaic$data, grids |> terra::ext())
-            if(input$cropormask == "Mask"){
-              mosaiccr <- terra::mask(mosaiccr, grids)
-            }
-            cropped_mosaic(mosaiccr)
-          }
-        })
-      }
-
-      output$mosaiccropped <- renderPlot({
-        req(cropped_mosaic())  # Ensure cropped_mosaic is not NULL
-        terra::plotRGB(cropped_mosaic())
-      })
-
-      # Observe event for mosaic crop action
-      observeEvent(input$cropmosaic, {
-        # Update mosaic_data$mosaic$data when input$cropmosaic is clicked
-        mosaic_data[[input$new_cropped]] <- create_reactval(name = input$new_cropped, data = cropped_mosaic())
-        sendSweetAlert(
-          session = session,
-          title = "Mosaic successfully cropped!!",
-          text = "The mosaic has been successfully cropped and is now available for further analysis.",
-          type = "success"
-        )
       })
     })
   })
 }
+
 
 ## To be copied in the UI
 # mod_crop_ui("crop_1")

@@ -203,6 +203,24 @@ mod_mosaic_prepare_ui <- function(id){
             )
           ),
           hl(),
+          strong("Manage Rasters"),
+          fluidRow(
+            actionBttn(
+              ns("removeone"),
+              label = "Remove active",
+              icon = icon("trash-can"),
+              style = "material-flat",
+              color = "danger"
+            ),
+            actionBttn(
+              ns("removeall"),
+              label = "Remove all",
+              icon = icon("trash"),
+              style = "material-flat",
+              color = "danger"
+            )
+          ),
+          hl(),
           selectInput(ns("mosaictoanalyze"),
                       label = "Active Mosaic",
                       choices = NULL) |>
@@ -278,7 +296,7 @@ mod_mosaic_prepare_ui <- function(id){
     col_9(
       conditionalPanel(
         condition = "input.showmosaic == 'rgb' & input.intmap == false", ns = ns,
-        plimanshiny_viewer_ui(ns("mosaic_viewer"))
+        plimanshiny_viewer_ui(ns("mosaic_viewer")),
       ),
       conditionalPanel(
         condition = "(input.showmosaic == 'bands' | input.showmosaic == 'hist') & input.intmap == false", ns = ns,
@@ -426,19 +444,74 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
       }
     })
 
-    observeEvent(names(mosaic_data), {
-      req(mosaic_data)
-      mosaicnames <- setdiff(names(mosaic_data), "mosaic")
-      current <- isolate(input$mosaictoanalyze)
-      new_sel <- if (current %in% mosaicnames) current else mosaicnames[[1]]
-      updateSelectInput(session, "mosaictoanalyze",
-                        choices  = mosaicnames,
-                        selected = new_sel)
-    }, ignoreInit = TRUE)
+    observe({
+      current_names <- names(Filter(Negate(is.null), reactiveValuesToList(mosaic_data)))
+      mosaicnames <- setdiff(current_names, "mosaic")
+      if (length(mosaicnames) == 0) {
+        updateSelectInput(session, "mosaictoanalyze", choices = "")
+        return()
+      } else{
+        current <- isolate(input$mosaictoanalyze)
+        new_sel <- if (current %in% mosaicnames) current else mosaicnames[[1]]
+        updateSelectInput(session, "mosaictoanalyze",
+                          choices  = mosaicnames,
+                          selected = new_sel
+        )
+      }
+    })
+
+    observeEvent(input$removeone, {
+      req(input$mosaictoanalyze)
+      confirmSweetAlert(
+        session = session,
+        inputId = ns("confirm_remove_one"),
+        title = "Remove active raster?",
+        text = paste0("Are you sure you want to remove the '", input$mosaictoanalyze, "' raster? This action cannot be undone."),
+        type = "warning",
+        btn_labels = c("Cancel", "Yes, remove it!"),
+        btn_colors = c("#d33", "#3085d6")
+      )
+    })
+    # Observer for the confirmation callback
+    observeEvent(input$confirm_remove_one, {
+      if (isTRUE(input$confirm_remove_one)) {
+        mosaic_data[[input$mosaictoanalyze]] <- NULL
+        show_toast("Success", "Raster removed", timer = 3000)
+      }
+    }, ignoreNULL = TRUE)
+
+
+    # >> New: Remove all datasets ----
+    observeEvent(input$removeall, {
+      # Require at least one dataset to exist
+      req(names(mosaic_data))
+      confirmSweetAlert(
+        session = session,
+        inputId = ns("confirm_remove_all"),
+        title = "Remove all rasters?",
+        text = "Are you sure you want to remove all raster files? This action cannot be undone.",
+        type = "error",
+        btn_labels = c("Cancel", "Yes, remove all!"),
+        btn_colors = c("#d33", "#3085d6")
+      )
+    })
+    # Observer for the confirmation callback
+    observeEvent(input$confirm_remove_all, {
+      if (isTRUE(input$confirm_remove_all)) {
+        # Loop through names and NULL them out
+        for(name in names(mosaic_data)){
+          mosaic_data[[name]] <- NULL
+        }
+        show_toast("Success", "All rasters have been removed", timer = 3000)
+      }
+    }, ignoreNULL = TRUE)
+
+
 
 
     observe({
       req(input$mosaictoanalyze)
+      req(mosaic_data[[input$mosaictoanalyze]])
       activemosaic$name <- input$mosaictoanalyze
       mosaic_data[["mosaic"]] <- create_reactval("mosaic", mosaic_data[[input$mosaictoanalyze]]$data)
       nl <- terra::nlyr(mosaic_data[[input$mosaictoanalyze]]$data)
@@ -475,6 +548,7 @@ mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, t
     })
     observe({
       req(input$mosaictoanalyze)
+      req(mosaic_data[[input$mosaictoanalyze]])
       crsmo <- terra::crs(mosaic_data[[input$mosaictoanalyze]]$data) != ""
       if(crsmo && terra::is.lonlat(mosaic_data[[input$mosaictoanalyze]]$data)){
         eps <- mosaic_epsg(mosaic_data[[input$mosaictoanalyze]]$data)

@@ -185,6 +185,7 @@ mod_histo_slider_ui <- function(id, data, width = "100%", height = "400px", n_bi
 }
 
 #' Histo Slider Server Module
+#' @noRd
 mod_histo_slider_server <- function(id, data_reactive) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns

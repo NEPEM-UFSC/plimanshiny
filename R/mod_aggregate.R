@@ -33,40 +33,26 @@ mod_aggregate_ui <- function(id){
           textInput(ns("new_aggr"),
                     label = "New object",
                     value = NULL),
-          fluidRow(
-            col_6(
-              actionBttn(ns("startaggr"),
-                         label = "Start Aggregation!",
-                         style = "pill",
-                         color = "success")
-            ),
-            col_6(
-              actionBttn(ns("aggregate"),
-                         label = "Aggregate!",
-                         style = "pill",
-                         no_outline = FALSE,
-                         icon = icon("scissors"),
-                         color = "success")
-            )
+          col_6(
+            actionBttn(ns("aggregate"),
+                       label = "Aggregate!",
+                       style = "pill",
+                       no_outline = FALSE,
+                       icon = icon("scissors"),
+                       color = "success")
           )
         )
       ),
       col_9(
-        bs4Card(
-          title = "Aggregation Results",
-          collapsible = FALSE,
-          width = 12,
-          height = "710px",
-          fluidRow(
-            col_6(
-              h3("Original mosaic"),
-              leafletOutput(ns("mosaicori"), height = "640px") |> add_spinner()
+        fluidRow(
+          col_6(
+            h2("Original raster"),
+            plimanshiny_viewer_ui(ns("mosori"), prefix = "mosori", width = 540)
+          ),
+          col_6(
+            h2("Aggregated raster"),
+            plimanshiny_viewer_ui(ns("mosagg"), prefix = "mosagg", width = 540)
 
-            ),
-            col_6(
-              h3("Aggregated mosaic"),
-              leafletOutput(ns("mosaicaggr"), height = "640px") |> add_spinner()
-            )
           )
         )
       )
@@ -77,60 +63,71 @@ mod_aggregate_ui <- function(id){
 #' aggregate Server Functions
 #'
 #' @noRd
-mod_aggregate_server <- function(id, mosaic_data, r, g, b, basemap, settings){
+mod_aggregate_server <- function(id, mosaic_data, r, g, b, settings, zlim){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
 
+    # This observer correctly updates the choices for the dropdown
     observe({
       req(mosaic_data)
-      updateSelectInput(session, "mosaic_to_aggr", choices = c("Active mosaic", setdiff(names(mosaic_data), "mosaic")), selected = "Active mosaic")
+      # Filter out any NULL mosaic data before populating choices
+      valid_mosaics <- Filter(Negate(is.null), reactiveValuesToList(mosaic_data))
+      updateSelectInput(session, "mosaic_to_aggr", choices = setdiff(names(valid_mosaics), "mosaic"))
     })
+
+    # This observer updates the default name for the new object
     observe({
+      req(input$mosaic_to_aggr)
       updateTextInput(session, "new_aggr", value = paste0(input$mosaic_to_aggr, "_aggregated"))
     })
-    observeEvent(input$startaggr, {
-      output$mosaicori <- renderLeaflet({
-        if(input$mosaic_to_aggr == "Active mosaic" && !is.null(basemap$map)){
-          bcrop <- basemap$map
-        } else{
-          bcrop <-
-            mosaic_view(
-              mosaic_data[[input$mosaic_to_aggr]]$data,
-              r = suppressWarnings(as.numeric(r$r)),
-              g = suppressWarnings(as.numeric(g$g)),
-              b = suppressWarnings(as.numeric(b$b)),
-              max_pixels = 500000
-            )
-        }
-        bcrop@map
-      })
+
+    # NEW: This code is now wrapped in an observe block.
+    # It will now re-run every time input$mosaic_to_aggr changes.
+    observe({
+      req(input$mosaic_to_aggr)
+      req(mosaic_data[[input$mosaic_to_aggr]]$data)
+      plimanshiny_viewer_server("mosori",
+                                mosaic_data[[input$mosaic_to_aggr]]$data,
+                                r = reactive({ suppressWarnings(as.numeric(r$r)) }),
+                                g = reactive({ suppressWarnings(as.numeric(g$g)) }),
+                                b = reactive({ suppressWarnings(as.numeric(b$b)) }),
+                                usemargin = reactive({TRUE}),
+                                zlim = reactive(zlim$zlim),
+                                prefix = "mosori",
+                                max_width = 540
+      )
     })
+
+    # The action button logic is separate and remains unchanged.
     observeEvent(input$aggregate, {
+      req(input$mosaic_to_aggr, input$new_aggr)
+
+      # Show a notification that the process has started
+      show_toast("Aggregating...", "Aggregation can take a moment.", "info",  timer = 2500)
+
       myaggr <- mosaic_aggregate(mosaic_data[[input$mosaic_to_aggr]]$data,
                                  pct = chrv2numv(input$aggregatefct),
                                  fun = input$aggregatefun)
-      output$mosaicaggr <- renderLeaflet({
-        bcrop2 <-
-          mosaic_view(
-            myaggr,
-            r = suppressWarnings(as.numeric(r$r)),
-            g = suppressWarnings(as.numeric(g$g)),
-            b = suppressWarnings(as.numeric(b$b))
-          )
 
-        bcrop2@map
-      })
+      plimanshiny_viewer_server("mosagg",
+                                myaggr,
+                                r = reactive({ suppressWarnings(as.numeric(r$r)) }),
+                                g = reactive({ suppressWarnings(as.numeric(g$g)) }),
+                                b = reactive({ suppressWarnings(as.numeric(b$b)) }),
+                                usemargin = reactiveVal(TRUE),
+                                zlim = reactive(zlim$zlim),
+                                prefix = "mosagg",
+                                max_width = 540
+      )
 
-        # Update mosaic_data$mosaic$data when input$cropmosaic is clicked
-        mosaic_data[[input$new_aggr]] <- create_reactval(name = input$new_aggr, data = myaggr)
-        sendSweetAlert(
-          session = session,
-          title = "Mosaic successfully aggregated!!",
-          text = "The mosaic has been successfully aggregated and is now available for further analysis.",
-          type = "success"
-        )
+      mosaic_data[[input$new_aggr]] <- create_reactval(name = input$new_aggr, data = myaggr)
 
-
+      sendSweetAlert(
+        session = session,
+        title = "Mosaic successfully aggregated!",
+        text = "The new aggregated mosaic is now available.",
+        type = "success"
+      )
     })
   })
 }

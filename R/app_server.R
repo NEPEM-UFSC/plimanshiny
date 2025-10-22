@@ -95,13 +95,13 @@ app_server <- function(input, output, session) {
     # Manipulation
     if(input$tabshome == "mosaicmanipula" && is.null(module_loaded$mosaicmanipula)){
       module_loaded$mosaicmanipula <- TRUE
-      mod_crop_server("crop_1", mosaic_data, shapefile, r, g, b, basemap, settings)
+      mod_crop_server("crop_1", mosaic_data, shapefile, r, g, b, basemap, settings, zlim)
       mod_plotclip_server("plotclip_1", mosaic_data, shapefile, r, g, b, basemap, settings)
       mod_bindlayer_server("bindlayer_1", mosaic_data, settings)
       mod_interpolate_server("interpolate_1", mosaic_data, r, g, b, basemap, settings)
-      mod_aggregate_server("aggregate_1", mosaic_data, r, g, b, basemap, settings)
+      mod_aggregate_server("aggregate_1", mosaic_data, r, g, b, settings, zlim)
       mod_resample_server("resample_1", mosaic_data, settings)
-      mod_segment_server("segment_1", mosaic_data, r, g, b, re, nir, swir, tir, settings, basemap)
+      mod_segment_server("segment_1", mosaic_data, r, g, b, re, nir, swir, tir, settings, basemap, zlim)
       mod_sentinel_server("sentinel_1", mosaic_data, settings)
       mod_spatjoin_server("spatjoin_1", shapefile, settings)
       mod_vectorize_server("vectorize_1", mosaic_data, shapefile, basemap)

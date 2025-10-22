@@ -107,7 +107,7 @@ mod_segment_ui <- function(id){
 #' segment Server Functions
 #'
 #' @noRd
-mod_segment_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, settings, basemap){
+mod_segment_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, settings, basemap, zlim){
   moduleServer( id, function(input, output, session){
     ns <- session$ns
     output$uiseg <- renderUI({
@@ -151,35 +151,16 @@ mod_segment_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, set
 
     # Observe event for mosaic crop action
     observeEvent(input$startsegment, {
-      # Reactive expression to store the cropped mosaic
-      segmented_mosaic <- reactiveVal(NULL)
-      if(input$mosaic_to_segment == "Active mosaic" && !is.null(basemap$map)){
-        mtemp <- mosaic_data$mosaic$data
-        basemap <- basemap$map
-      } else{
-        mtemp <- mosaic_data[[input$mosaic_to_segment]]$data
-        basemap <-
-          mosaic_view(
-            mtemp,
-            r = ifelse(is.na(r$r), 1, suppressWarnings(as.numeric(r$r))),
-            g = ifelse(is.na(g$g), 2, suppressWarnings(as.numeric(g$g))),
-            b = ifelse(is.na(b$b), 3, suppressWarnings(as.numeric(b$b)))
-          )
-      }
-      req(mtemp)
+      mtemp <- mosaic_data[[input$mosaic_to_segment]]$data
       if(input$usemaskorind){
         output$orimosaic <- renderPlot({
-          if(terra::nlyr(mtemp) > 2){
-            terra::plotRGB(
-              mtemp,
-              r = suppressWarnings(as.numeric(r$r)),
-              g = suppressWarnings(as.numeric(g$g)),
-              b = suppressWarnings(as.numeric(b$b)),
-              stretch = "hist"
-            )
-          } else{
-            terra::plot(mtemp)
-          }
+          check_and_plot(
+            mtemp,
+            r = suppressWarnings(as.numeric(r$r)),
+            g = suppressWarnings(as.numeric(g$g)),
+            b = suppressWarnings(as.numeric(b$b)),
+            zlim = zlim$zlim
+          )
         })
         segmented_mosaic <- reactiveVal(NULL)
         finalmask <- reactiveVal(NULL)
@@ -224,21 +205,35 @@ mod_segment_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, set
          }
          req(seg)
          output$mosaicsegmentedind <- renderPlot({
-           if(terra::nlyr(seg) > 2){
-             mosaic_plot_rgb(
-               seg,
-               r = suppressWarnings(as.numeric(r$r)),
-               g = suppressWarnings(as.numeric(g$g)),
-               b = suppressWarnings(as.numeric(b$b))
-             )
-           } else{
-             terra::plot(seg)
-           }
+           check_and_plot(
+             seg,
+             r = suppressWarnings(as.numeric(r$r)),
+             g = suppressWarnings(as.numeric(g$g)),
+             b = suppressWarnings(as.numeric(b$b)),
+             zlim = zlim$zlim
+           )
          })
+
          finalmask(seg)
        })
-
       } else{
+        # Reactive expression to store the cropped mosaic
+        segmented_mosaic <- reactiveVal(NULL)
+        if(input$mosaic_to_segment == "Active mosaic" && !is.null(basemap$map)){
+          mtemp <- mosaic_data$mosaic$data
+          basemap <- basemap$map
+        } else{
+          mtemp <- mosaic_data[[input$mosaic_to_segment]]$data
+          basemap <-
+            mosaic_view(
+              mtemp,
+              r = ifelse(is.na(r$r), 1, suppressWarnings(as.numeric(r$r))),
+              g = ifelse(is.na(g$g), 2, suppressWarnings(as.numeric(g$g))),
+              b = ifelse(is.na(b$b), 3, suppressWarnings(as.numeric(b$b)))
+            )
+        }
+        req(mtemp)
+
         req(basemap)
         backpoints <- reactiveValues(back = NULL)
         forepoints <- reactiveValues(fore = NULL)

@@ -875,8 +875,6 @@ adjust_canvas <- function(raster, max_width = 1180, max_height = 800){
   nrows <- nrow(raster)
   ncols <- ncol(raster)
   aspect_ratio <- ncols / nrows
-  # Limit canvas width and height
-
   if (aspect_ratio > 1) {
     # Width is the limiting factor
     width <- min(max_width, max_height * aspect_ratio)
@@ -1801,7 +1799,6 @@ generate_uuid <- function(name, email) {
   tmpfile <- tempfile()
   writeLines(input, tmpfile)
   md5 <- tools::md5sum(tmpfile)
-  print(md5)
   unlink(tmpfile)
   hex <- gsub("-", "", md5)
   hex <- substr(hex, 1, 32)
@@ -1869,3 +1866,162 @@ check_token <- function() {
 }
 
 
+plimanshiny_canvas_server <- function(id,
+                                      mosaitoshape,
+                                      r, g, b,
+                                      zlim,
+                                      max_width = 1180,
+                                      max_height = 800) {
+
+  moduleServer(id, function(input, output, session) {
+    # The module's own namespace, used for sending custom messages
+    ns <- session$ns
+
+    # A unique ID for JavaScript functions, sanitized to remove hyphens
+    js_prefix <- gsub("-", "_", ns(""))
+
+    # Define temp file paths with a unique name to avoid conflicts
+    original_image_path <- file.path(tempdir(), paste0(js_prefix, "_originalimage.png"))
+
+    # Reactive values for internal state
+    current_extent <- reactiveVal()
+    points <- reactiveValues(data = list())
+    wid <- reactiveVal()
+    hei <- reactiveVal()
+    widori <- reactiveVal()
+    heiori <- reactiveVal()
+
+    # Initialize the canvas with the full extent of the raster
+    observe({
+      req(mosaitoshape)
+      current_extent(terra::ext(mosaitoshape))
+    })
+
+    # Adjust canvas size based on raster dimensions
+    observe({
+      req(mosaitoshape)
+      # This assumes you have an `adjust_canvas` helper function
+      sizes <- adjust_canvas(mosaitoshape, max_width = max_width, max_height = max_height)
+      widori(sizes[[1]])
+      heiori(sizes[[2]])
+      session$sendCustomMessage(paste0("adjustcanvas_", js_prefix, "Size"), list(
+        width = as.integer(widori()),
+        height = as.integer(heiori())
+      ))
+    })
+
+    # Generate and send the initial raster image to the UI
+    observe({
+      req(mosaitoshape)
+
+      # Safely get band numbers and provide sensible defaults
+      num_layers <- terra::nlyr(mosaitoshape)
+      r_val <- r
+      g_val <- g
+      b_val <- b
+
+      if (is.na(r_val)) r_val <- 1
+      if (is.na(g_val)) g_val <- if (num_layers >= 2) 2 else 1
+      if (is.na(b_val)) b_val <- if (num_layers >= 3) 3 else 1
+
+      sizes <- adjust_canvas(mosaitoshape, max_width = max_width, max_height = max_height)
+      png(original_image_path, width = sizes[[1]], height = sizes[[2]])
+      tryCatch({
+        check_and_plot(mosaitoshape, r = r_val, g = g_val, b = b_val, zlim = zlim)
+      }, error = function(e) {
+        message("An error occurred during plotting: ", e$message)
+      }, finally = {
+        dev.off()
+      })
+
+      current_extent(terra::ext(mosaitoshape))
+      session$sendCustomMessage(paste0("updateTiles_", js_prefix), list(
+        img = base64enc::base64encode(original_image_path)
+      ))
+    })
+
+    # Handle rectangle drawing (zoom-in)
+    # This now listens to the simple ID `input$drawn_rectangle`
+    observeEvent(input$drawn_rectangle, {
+      rect <- input$drawn_rectangle
+      canvas_size <- input$canvas_size
+
+      req(rect$width, canvas_size, mosaitoshape)
+      if(rect$width < 2 || rect$height < 2) return(NULL)
+
+      ext_vals <- as.vector(current_extent())
+      xmin_val <- ext_vals[1]; xmax_val <- ext_vals[2]; ymin_val <- ext_vals[3]; ymax_val <- ext_vals[4]
+
+      fact_canva_rast_x <- canvas_size$width / (xmax_val - xmin_val)
+      fact_canva_rast_y <- canvas_size$height / (ymax_val - ymin_val)
+
+      xmin <- xmin_val + rect$startX / fact_canva_rast_x
+      xmax <- xmin_val + rect$endX / fact_canva_rast_x
+      ymin <- ymin_val + (canvas_size$height - rect$endY) / fact_canva_rast_y
+      ymax <- ymin_val + (canvas_size$height - rect$startY) / fact_canva_rast_y
+
+      new_extent <- terra::ext(c(xmin, xmax, ymin, ymax))
+      current_extent(new_extent)
+
+      cropped_ras <- mosaic_crop(mosaitoshape, shapefile = sf::st_as_sf(terra::vect(new_extent)))
+      cropped_image_path <- file.path(tempdir(), paste0(js_prefix, "_cropped.png"))
+      new_sizes <- adjust_canvas(cropped_ras, max_width = max_width, max_height = max_height)
+      wid(new_sizes[[1]])
+      hei(new_sizes[[2]])
+
+      png(cropped_image_path, width = wid(), height = hei())
+      tryCatch({
+        num_layers <- terra::nlyr(cropped_ras)
+        check_and_plot(cropped_ras, r = r, g = g, b = b, zlim = zlim)
+      }, error = function(e) {
+        message("Error plotting cropped raster: ", e$message)
+      }, finally = {
+        dev.off()
+      })
+
+      session$sendCustomMessage(paste0("updateTiles_", js_prefix), list(img = base64enc::base64encode(cropped_image_path)))
+      session$sendCustomMessage(paste0("adjustcanvas_", js_prefix, "Size"), list(width = as.integer(wid()), height = as.integer(hei())))
+    })
+
+    # Handle point selection (long press)
+    observeEvent(input$picked_point, {
+      point <- input$picked_point
+      canvas_size <- input$canvas_size
+      req(point, canvas_size)
+
+      ext_vals <- as.vector(current_extent())
+      xmin_val <- ext_vals[1]; xmax_val <- ext_vals[2]; ymin_val <- ext_vals[3]; ymax_val <- ext_vals[4]
+
+      x_raster <- xmin_val + (point[1] / canvas_size$width) * (xmax_val - xmin_val)
+      y_raster <- ymin_val + ((canvas_size$height - point[2]) / canvas_size$height) * (ymax_val - ymin_val)
+
+      coords <- data.frame(x = x_raster, y = y_raster)
+      points$data <- append(points$data, list(coords))
+    })
+
+    # Handle view reset (double-click)
+    observeEvent(input$reset_view, {
+      req(mosaitoshape)
+      session$sendCustomMessage(paste0("updateTiles_", js_prefix), list(
+        img = base64enc::base64encode(original_image_path)
+      ))
+      session$sendCustomMessage(paste0("adjustcanvas_", js_prefix, "Size"), list(
+        width = as.integer(widori()),
+        height = as.integer(heiori())
+      ))
+      current_extent(terra::ext(mosaitoshape))
+    })
+
+    # Return a reactive that contains the list of drawn points
+    # FIX: Return a reactive expression that combines points into a single data frame
+    return(reactive({
+      if (length(points$data) > 0) {
+        do.call(rbind, points$data)
+      } else {
+        # Return NULL or an empty data frame if no points are drawn
+        NULL
+      }
+    }))
+
+  })
+}

@@ -319,9 +319,10 @@ mod_compslider_server <- function(id, mosaic_data, index) {
             xmax <- xmin_val + rect$endX / fact_canva_rast_x
             ymin <- ymin_val + (servervals()$canvas_size$height - rect$endY) / fact_canva_rast_y
             ymax <- ymin_val + (servervals()$canvas_size$height - rect$startY) / fact_canva_rast_y
-
-            img1cropped <- terra::crop(imgleft(), terra::ext(xmin, xmax, ymin, ymax))
-            img2cropped <- terra::crop(imgright(), terra::ext(xmin, xmax, ymin, ymax))
+            img1cropped <- mosaic_crop(imgleft(), shapefile = sf::st_as_sf(terra::vect(terra::ext(xmin, xmax, ymin, ymax))))
+            img2cropped <- mosaic_crop(imgright(), shapefile = sf::st_as_sf(terra::vect(terra::ext(xmin, xmax, ymin, ymax))))
+            # img1cropped <- terra::crop(imgleft(), terra::ext(xmin, xmax, ymin, ymax))
+            # img2cropped <- terra::crop(imgright(), terra::ext(xmin, xmax, ymin, ymax))
 
             mod_slider_zoom_server("sliderui",
                                    img1 = img1cropped,
