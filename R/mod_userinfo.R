@@ -274,49 +274,104 @@ mod_userinfo_server <- function(id){
           httr2::req_perform()
 
         status <- httr2::resp_status(resp)
-        if (status >= 200 && status < 300) {
-          # Success (silent)
-          invisible(TRUE)
+        if (status >= 200 && status < 400) {
+          closeSweetAlert(session = session)
+          removeModal()
+          saveRDS(info, user_info_file)
+          user_info(info)
+          if (grepl("\\(Commercial\\)", input$user_type)) {
+            content <- tags$span(
+              tags$h1(icon("triangle-exclamation"), "Information Saved (License Warning)", style = "color: darkorange;"),
+              tags$p(
+                icon("circle-check", style = "color: green;"),
+                tags$b("Your information has been successfully saved."),
+                " Enjoy using plimanshiny!"
+              ),
+              tags$p(
+                icon("lock"), tags$b("IMPORTANT:"),
+                " Please note that ", tags$span("{plimanshiny}"), " is provided exclusively for ",
+                tags$span(style = "font-weight: bold; color: darkred;", "non-commercial use only.")
+              ),
+              tags$p(
+                "If you intend to use this software for commercial purposes or business gain, explicit permission and a commercial license are required. Please contact us at:"
+              ),
+              tags$p(
+                icon("envelope"), tags$b("E-mail:"),
+                tags$a(href="mailto:contato@nepemufsc.com", "contato@nepemufsc.com")
+              )
+            )
+            show_alert(
+              title = NULL,
+              text = div(content, style = "text-align: left; line-height: 1.5"),
+              html = TRUE,
+              type = "warning", # Mantém a cor de fundo do alerta como Warning (Laranja)
+              width = 1080
+            )
+          } else {
+            show_alert(
+              title = "All set!",
+              text = "Your information has been successfully saved. Enjoy using plimanshiny!",
+              type = "success"
+            )
+          }
         } else {
-          show_alert(
-            title = "Warning",
-            text = sprintf("The request was made but returned status code: %s", status),
-            type = "warning"
+          closeSweetAlert(session = session)
+          title_alert <- "Registration Failure (Unexpected Server Status)"
+          technical_detail <- sprintf("The server returned HTTP Status Code: %s.", status)
+
+          # 3. Construir o conteúdo HTML formatado
+          content <- tags$span(
+            tags$h1(icon("server"), "Server Status Error", style = "color: darkorange;"),
+            tags$p("The server processed the request but returned an unexpected status code. This prevents the application from confirming your successful registration."),
+            tags$h4("Details & Suggested Actions:", style = "color: #333; margin-top: 15px;"),
+            icon("circle-exclamation"), tags$b("Status Returned:"), tags$span(technical_detail), tags$br(),
+            icon("bug"), tags$b("Possible Cause:"), tags$span("internal server error, or an unexpected network response."), tags$br(),
+            tags$h4("Next Steps:", style = "color: #333; margin-top: 15px;"),
+            tags$ul(
+              tags$li(
+                tags$b("Check Firewall/Proxy:"),
+                " Ensure that your network is not interfering with the server's response path."
+              ),
+              tags$li(tags$b("Try Again:"), "If the status is a temporary error (like 500), try submitting your information again in a few minutes.")
+            )
           )
-        }
 
-        closeSweetAlert(session = session)
-        removeModal()
-
-        saveRDS(info, user_info_file)
-        user_info(info)
-
-        if (grepl("\\(Commercial\\)", input$user_type)) {
           show_alert(
-            title = "Information saved",
-            text = paste(
-              "Your information has been successfully saved.",
-              "Please note that plimanshiny is free for non-commercial use only.",
-              "If you intend to use it commercially, please contact us at:",
-              "contato@nepemufsc.com"
-            ),
-            type = "warning"
-          )
-        } else {
-          show_alert(
-            title = "All set!",
-            text = "Your information has been successfully saved. Enjoy using plimanshiny!",
-            type = "success"
+            title = NULL,
+            text = div(content, style = "text-align: left; line-height: 1.2"),
+            html = TRUE,
+            width = 1080
           )
         }
       }, error = function(e) {
+        closeSweetAlert(session = session)
+        technical_error_raw <- conditionMessage(e)
+        technical_error_clean <- gsub("\033\\[[0-9;]*m", "", technical_error_raw)
+
+        content <- tags$span(
+          tags$h1(icon("unlink"), "Connection Failure", style = "color: firebrick;"),
+          tags$p("Failed to send data to the registration server. This indicates a low-level network failure."),
+          tags$h4("Possible Causes & Details:", style = "color: #333; margin-top: 15px;"),
+          icon("circle-exclamation"), tags$b("Technical Error:"), tags$span(technical_error_clean), tags$br(),
+          icon("triangle-exclamation"), tags$b("Status:"), tags$span(" Network failure, Timeout, or Host Unresolved."), tags$br(),
+          tags$h4("Suggested Actions to Resolve:", style = "color: #333; margin-top: 15px;"),
+          tags$ul(
+            tags$li(tags$b("Check Connection:"), " Ensure your internet connection is stable."),
+            tags$li(
+              tags$b("Proxy/Firewall Block:"),
+              " If you are on a restricted network (corporate/university), a firewall or proxy server might be blocking ",
+              tags$code("POST"), " requests.",
+            ),
+            tags$li(tags$b("Try Later:"), " The server might be temporarily unavailable. Please try submitting again in a few minutes.")
+          )
+        )
         show_alert(
-          title = "Connection error",
-          text = paste("Failed to send data to the server:", conditionMessage(e)),
-          type = "error"
+          title = NULL,
+          text = div(content, style = "text-align: left; line-height: 1.2"),
+          html = TRUE,
+          width = 1080
         )
       })
-
     })
     return(user_info)
   })
