@@ -76,6 +76,9 @@ golem::add_module(name = "hyperspectral")
 golem::add_module(name = "classify")
 golem::add_module(name = "wheater")
 golem::add_module(name = "userinfo")
+golem::add_module(name = "geojson")
+golem::add_module(name = "geeapps")
+golem::add_module(name = "mgrs")
 
 ## Add packages
 usethis::use_package("shiny")

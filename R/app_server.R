@@ -222,6 +222,18 @@ app_server <- function(input, output, session) {
       module_loaded$utmzonesel <- TRUE
       mod_utmzonesel_server("utmzonesel_1", settings)
     }
+    if(input$tabshome == "geojson" && is.null(module_loaded$geojson)){
+      module_loaded$geojson <- TRUE
+      mod_geojson_server("geojson_1", shapefile)
+    }
+    if(input$tabshome == "ggeapps" && is.null(module_loaded$ggeapps)){
+      module_loaded$ggeapps <- TRUE
+      mod_geeapps_server("geeapps_1")
+    }
+    if(input$tabshome == "mgrs" && is.null(module_loaded$mgrs)){
+      module_loaded$mgrs <- TRUE
+      mod_mgrs_server("mgrs_1")
+    }
     if(input$tabshome == "geometricmeasures" && is.null(module_loaded$geometricmeasures)){
       module_loaded$geometricmeasures <- TRUE
       mod_geometricmeasures_server("geometricmeasures_1", shapefile, settings)

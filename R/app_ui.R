@@ -277,6 +277,21 @@ app_ui <- function(request) {
               icon = shiny::icon("globe", verify_fa = FALSE)
             ),
             bs4SidebarMenuSubItem(
+              text = "GeoJSON",
+              tabName = "geojson",
+              icon = shiny::icon("draw-polygon", verify_fa = FALSE)
+            ),
+            bs4SidebarMenuSubItem(
+              text = "GEE Apps",
+              tabName = "ggeapps",
+              icon = shiny::icon("earth-americas", verify_fa = FALSE)
+            ),
+            bs4SidebarMenuSubItem(
+              text = "Military Grid Reference System",
+              tabName = "mgrs",
+              icon = shiny::icon("earth-americas", verify_fa = FALSE)
+            ),
+            bs4SidebarMenuSubItem(
               text = "Ground Control Points",
               tabName = "gcp",
               icon = shiny::icon("map-location-dot", verify_fa = FALSE)
@@ -469,6 +484,18 @@ app_ui <- function(request) {
           bs4TabItem(
             tabName = "utmzonesel",
             mod_utmzonesel_ui("utmzonesel_1")
+          ),
+          bs4TabItem(
+            tabName = "geojson",
+            mod_geojson_ui("geojson_1")
+          ),
+          bs4TabItem(
+            tabName = "ggeapps",
+            mod_geeapps_ui("geeapps_1")
+          ),
+          bs4TabItem(
+            tabName = "mgrs",
+            mod_mgrs_ui("mgrs_1")
           ),
           bs4TabItem(
             tabName = "gcp",

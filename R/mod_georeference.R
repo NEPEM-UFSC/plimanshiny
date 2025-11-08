@@ -345,7 +345,7 @@ mod_georeference_server <- function(id, mosaic_data, r, g, b, dfs, zlim){
         tfc <- file.path(tempdir(), "tempcropped.png")
         session$onSessionEnded(function() {
           if (file.exists(tfc)) {
-            file.remove(tfc)
+            resultado_remocao <- try(file.remove(tfc), silent = TRUE)
           }
         })
 

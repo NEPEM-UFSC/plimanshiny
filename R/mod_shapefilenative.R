@@ -169,7 +169,6 @@ mod_shapefilenative_ui <- function(id) {
                 ),
                 hl(),
                 fluidRow(
-                  style = "margin-top: -10px;",
                   col_7(
                     actionBttn(
                       ns("createupdate2"),
@@ -210,40 +209,42 @@ mod_shapefilenative_ui <- function(id) {
                   )
                 ),
                 fluidRow(
-                  col_3(
+                  col_4(
                     textInput(ns("ncols"),
                               label = "Columns",
                               value = 1)
                   ),
-                  col_3(
-                    textInput(ns("nrows"),
-                              label = "Rows",
-                              value = 1)
-                  ),
-                  col_3(
+                  col_4(
                     textInput(ns("plot_width"),
                               label = "Width",
                               value = NA)
                   ),
-                  col_3(
-                    textInput(ns("plot_height"),
-                              label = "Height",
+                  col_4(
+                    textInput(ns("buffercol"),
+                              label = "Col buffer",
                               value = NA)
                   )
                 ),
                 fluidRow(
-                  style = "margin-top: -10px;",
-                  col_6(
-                    textInput(ns("buffercol"),
-                              label = "Plot buffer",
-                              value = 0)
+                  col_4(
+                    textInput(ns("nrows"),
+                              label = "Rows",
+                              value = 1)
                   ),
-                  col_6(
-                    textInput(ns("numplots"),
-                              label = "Number of plots",
-                              value = "")
+                  col_4(
+                    textInput(ns("plot_height"),
+                              label = "Height",
+                              value = NA)
+                  ),
+                  col_4(
+                    textInput(ns("bufferrow"),
+                              label = "Row buffer",
+                              value = NA)
                   )
                 ),
+                textInput(ns("numplots"),
+                          label = "No. of plots",
+                          value = ""),
                 prettyCheckbox(
                   inputId = ns("showplotid"),
                   label = "Show plot ID?",
@@ -460,7 +461,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           tfc <- file.path(tempdir(), "croppedshape_shp.png")
           session$onSessionEnded(function() {
             if (file.exists(tfc)) {
-              file.remove(tfc)
+              resultado_remocao <- try(file.remove(tfc), silent = TRUE)
             }
           })
           if(terra::nlyr(mosaitoshape()) < 3){
@@ -860,6 +861,16 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           if(length(pw) == 0 | ps){
             pw <- NULL
           }
+          if(input$buffercol == ""){
+            buffercol <- 0
+          } else{
+            buffercol <- chrv2numv(input$buffercol)
+          }
+          if(input$bufferrow == ""){
+            bufferrow <- 0
+          } else{
+            bufferrow <- chrv2numv(input$bufferrow)
+          }
           # Build shape and store it temporarily
           shpt <-
             shapefile_build(
@@ -870,8 +881,8 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
               ncol = nc,
               layout = input$plotlayout,
               serpentine = input$serpentine,
-              buffer_col = input$buffercol |> chrv2numv(),
-              buffer_row = input$buffercol |> chrv2numv(),
+              buffer_col = buffercol,
+              buffer_row = bufferrow,
               plot_width = pw,
               plot_height = ph,
               crop_to_shape_ext = FALSE,
@@ -1259,7 +1270,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
         observe({
           shinyFileChoose(input, "shapefileinput",
                           root = getVolumes()(),
-                          filetypes = c("rds",  "shp",  "json", "kml",  "gml",  "dbf",  "sbn",  "sbx",  "shx",  "prj", "cpg"),
+                          filetypes = c("rds",  "shp",  "json", "geojson", "kml",  "gml",  "dbf",  "sbn",  "sbx",  "shx",  "prj", "cpg"),
                           session = session)
           if(!is.null(input$shapefileinput)){
             pathshape$file <- parseFilePaths(getVolumes()(), input$shapefileinput)
@@ -1363,13 +1374,15 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
         observe({
           req(input$shapefiletoanalyze)
           req(shapefile[[input$shapefiletoanalyze]]$data)
-          req(activemosaic$name)
-          req(mosaic_data[[activemosaic$name]]$data)
-          sizes <- adjust_canvas(mosaic_data[[activemosaic$name]]$data)
-
+          if(is.null(activemosaic$name)){
+            sizes <- c(980, 720)
+          } else{
+            req(activemosaic$name)
+            req(mosaic_data[[activemosaic$name]]$data)
+            sizes <- adjust_canvas(mosaic_data[[activemosaic$name]]$data)
+          }
           original_image_path <- file.path(tempdir(), "originalimage.png")
           png(original_image_path, width = sizes[[1]], height = sizes[[2]])
-
           tryCatch({
             if (!is.null(mosaitoshape())) {
               check_and_plot(mosaitoshape(), ifelse(is.na(r$r), 1, r$r), ifelse(is.na(g$g), 2, g$g), ifelse(is.na(b$b), 3, b$b), zlim = zlim$zlim)

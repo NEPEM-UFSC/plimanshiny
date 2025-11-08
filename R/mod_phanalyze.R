@@ -35,6 +35,17 @@ mod_phanalyze_ui <- function(id){
             status = "info",
             animation = "jelly"
           ),
+          conditionalPanel(
+            condition = "input.strategy != 'I have DSM and DTM'", ns = ns,
+            sliderInput(
+              ns("ground_quantile"),
+              label = "Ground quantile",
+              min = 0,
+              max = 1,
+              value = 0,
+              step = 0.05
+            ),
+          ),
           pickerInput(
             ns("dsm"),
             label = "Digital Surface Model",
@@ -679,15 +690,23 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
                 ),
                 color = "#228B227F"
               )
-
+              interpmethod <- switch(input$interpmethod,
+                                     "Thin Plate Spline" = "Tps",
+                                     "Kriging" = "Kriging")
               if(input$masktype == "none" | input$masktype == "threshold"){
-                chmres <- mosaic_chm(dsm, points = cpo,
+
+                chmres <- mosaic_chm(dsm,
+                                     points = cpo,
+                                     interpolation = interpmethod,
+                                     ground_quantile = input$ground_quantile,
                                      verbose = FALSE)
               } else if (input$masktype == "raster"){
                 chmres <- mosaic_chm(dsm = dsm,
                                      points = cpo,
                                      mask = mosaic_data[[input$maskfile]]$data,
                                      mask_soil = input$masksoil,
+                                     interpolation = interpmethod,
+                                     ground_quantile = input$ground_quantile,
                                      verbose = FALSE)
               }
               chmreact$rast <- chmres$chm
@@ -716,16 +735,23 @@ mod_phanalyze_server <- function(id, mosaic_data, shapefile, basemap, dfs, setti
             ),
             color = "#228B227F"
           )
+          interpmethod <- switch(input$interpmethod,
+                                 "Thin Plate Spline" = "Tps",
+                                 "Kriging" = "Kriging")
           dsm <- terra::crop(dsm, shapefile[[input$shapefile]]$data |> terra::vect() |> terra::buffer(5))
           if(input$masktype == "none" | input$masktype == "threshold"){
             chmres <- mosaic_chm(dsm,
                                  window_size = input$windowsize |> chrv2numv(),
+                                 interpolation = interpmethod,
+                                 ground_quantile = input$ground_quantile,
                                  verbose = FALSE)
           } else if(input$masktype == "raster"){
             chmres <- mosaic_chm(dsm = dsm,
                                  window_size = input$windowsize |> chrv2numv(),
                                  mask = mosaic_data[[input$maskfile]]$data,
                                  mask_soil = input$masksoil,
+                                 interpolation = interpmethod,
+                                 ground_quantile = input$ground_quantile,
                                  verbose = FALSE)
           }
           chmreact$rast <- chmres$chm

@@ -2025,3 +2025,53 @@ plimanshiny_canvas_server <- function(id,
 
   })
 }
+sf_geom_to_geojson_string <- function(sf_object, row_index = 1) {
+  geom_sfc <- st_geometry(sf_object[row_index, ])
+  temp_file <- tempfile(fileext = ".geojson")
+  tryCatch({
+    sf::st_write(geom_sfc, dsn = temp_file, driver = "GeoJSON", quiet = TRUE,
+                 # Adicionado para evitar que GDAL adicione "id"
+                 layer_options = "WRITE_NAME=NO")
+    json_string <- readChar(temp_file, nchars = file.info(temp_file)$size)
+  }, error = function(e) {
+    stop(paste("Falha ao escrever ou ler o GeoJSON:", e$message))
+  }, finally = {
+    # 5. Garantir que o arquivo temporário seja excluído
+    if (file.exists(temp_file)) {
+      unlink(temp_file)
+    }
+  })
+  return(json_string)
+}
+extract_geometry_string <- function(fc_string) {
+  start_match <- regexpr("\"geometry\":\\s*\\{", fc_string)
+  if (start_match == -1) {
+    stop("Não foi possível encontrar 'geometry' na string.")
+  }
+
+  start_pos <- start_match + attr(start_match, "match.length") - 1
+  substr_from_geom <- substr(fc_string, start_pos, nchar(fc_string))
+  balance <- 0
+  end_pos <- -1
+  chars <- strsplit(substr_from_geom, "")[[1]]
+
+  for (i in 1:length(chars)) {
+    char <- chars[i]
+    if (char == "{") {
+      balance <- balance + 1
+    } else if (char == "}") {
+      balance <- balance - 1
+    }
+
+    if (balance == 0) {
+      end_pos <- i
+      break
+    }
+  }
+  if (end_pos == -1) {
+    stop("Não foi possível encontrar o '}' de fechamento da geometria.")
+  }
+  return(substr(substr_from_geom, 1, end_pos))
+}
+
+
