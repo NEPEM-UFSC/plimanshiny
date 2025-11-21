@@ -1796,16 +1796,27 @@ get_climate <- function(env = NULL, lat, lon, start, end,
 
 generate_uuid <- function(name, email) {
   input <- paste0(name, email)
+
+  # Gera o MD5 (mantendo seu método via arquivo temporário)
   tmpfile <- tempfile()
   writeLines(input, tmpfile)
   md5 <- tools::md5sum(tmpfile)
   unlink(tmpfile)
+
   hex <- gsub("-", "", md5)
   hex <- substr(hex, 1, 32)
   hex_split <- strsplit(hex, "")[[1]]
-  hex_split[13] <- "5"  # versão 5
-  hex_split[17] <- c("8","9","a","b")[as.integer(hex_split[17],16) %% 4 + 1]
+
+  # Ajuste para Versão 4/5 (Variant 1)
+  hex_split[13] <- "5"  # Versão
+
+  # CORREÇÃO AQUI: usar strtoi com base 16
+  # O caractere original hex (0-f) é convertido para int, fazemos o módulo e pegamos o sufixo correto
+  val_int <- strtoi(hex_split[17], base = 16)
+  hex_split[17] <- c("8","9","a","b")[val_int %% 4 + 1]
+
   hex <- paste(hex_split, collapse = "")
+
   uuid <- paste0(
     substr(hex, 1, 8), "-",
     substr(hex, 9, 12), "-",
@@ -1815,6 +1826,9 @@ generate_uuid <- function(name, email) {
   )
   return(uuid)
 }
+
+# Teste
+generate_uuid_fixed("Eduardo Torres", "edufilipe11@gmail.com")
 
 check_token <- function() {
   url <- "https://script.google.com/macros/s/AKfycbxM-sBOQ_sMcAjjY-zL-s2fiUYnh-36FMqvl2EodNaELF4uD60ybW75GT-Mt4q-LOA/exec"
