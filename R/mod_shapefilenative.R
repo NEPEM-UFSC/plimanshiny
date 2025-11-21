@@ -134,7 +134,7 @@ mod_shapefilenative_ui <- function(id) {
                           value = "field_shape"),
                 hl(),
                 fluidRow(
-                  col_4(
+                  col_6(
                     selectInput(
                       ns("plotlayout"),
                       label = "Layout",
@@ -142,7 +142,7 @@ mod_shapefilenative_ui <- function(id) {
                       selected = "lrtb",
                     )
                   ),
-                  col_4(
+                  col_6(
                     prettyCheckbox(
                       inputId = ns("serpentine"),
                       label = "Serpentine?",
@@ -152,9 +152,17 @@ mod_shapefilenative_ui <- function(id) {
                       plain = TRUE,
                       outline = TRUE,
                       animation = "rotate"
-                    )
-                  ),
-                  col_4(
+                    ),
+                    prettyCheckbox(
+                      inputId = ns("grid"),
+                      label = "Grid layout?",
+                      value = TRUE,
+                      status = "info",
+                      icon = icon("thumbs-up"),
+                      plain = TRUE,
+                      outline = TRUE,
+                      animation = "rotate"
+                    ),
                     prettyCheckbox(
                       inputId = ns("buildblocks"),
                       label = "Blocks?",
@@ -847,6 +855,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           pdata <- isolate(do.call(rbind, points$data))
           contrpoints <- sf::st_as_sf(vect(as.matrix(rbind(pdata, pdata[1, ])[, 1:2]), type = "polygon"))
           sf::st_crs(contrpoints) <- sf::st_crs(mosaitoshape())
+          contrpoints <- list(finished = contrpoints)
           # # create the shapes
           nr <- input$nrows |> chrv2numv()
           nc <- input$ncols |> chrv2numv()
@@ -875,6 +884,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           shpt <-
             shapefile_build(
               basemap = FALSE,
+              grid = input$grid,
               mosaitoshape(),
               controlpoints = contrpoints,
               nrow = nr,

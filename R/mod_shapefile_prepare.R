@@ -136,7 +136,7 @@ mod_shapefile_prepare_ui <- function(id){
                         value = "Shapefile Build"),
               hl(),
               fluidRow(
-                col_3(
+                col_6(
                   selectInput(
                     ns("plotlayout"),
                     label = "Layout",
@@ -144,7 +144,7 @@ mod_shapefile_prepare_ui <- function(id){
                     selected = "lrtb",
                   )
                 ),
-                col_5(
+                col_6(
                   prettyCheckbox(
                     inputId = ns("serpentine"),
                     label = "Serpentine?",
@@ -154,9 +154,17 @@ mod_shapefile_prepare_ui <- function(id){
                     plain = TRUE,
                     outline = TRUE,
                     animation = "rotate"
-                  )
-                ),
-                col_4(
+                  ),
+                  prettyCheckbox(
+                    inputId = ns("grid"),
+                    label = "Grid layout?",
+                    value = TRUE,
+                    status = "info",
+                    icon = icon("thumbs-up"),
+                    plain = TRUE,
+                    outline = TRUE,
+                    animation = "rotate"
+                  ),
                   prettyCheckbox(
                     inputId = ns("buildblocks"),
                     label = "Blocks?",
@@ -188,7 +196,6 @@ mod_shapefile_prepare_ui <- function(id){
               ),
               hl(),
               fluidRow(
-                style = "margin-top: -10px;",
                 col_7(
                   actionBttn(
                     ns("createupdate"),
@@ -212,43 +219,44 @@ mod_shapefile_prepare_ui <- function(id){
                 )
               ),
               fluidRow(
-                col_3(
+                col_4(
                   textInput(ns("ncols"),
                             label = "Columns",
                             value = 1)
                 ),
-                col_3(
-                  textInput(ns("nrows"),
-                            label = "Rows",
-                            value = 1)
-                ),
-                col_3(
+                col_4(
                   textInput(ns("plot_width"),
                             label = "Width",
                             value = NA)
                 ),
-                col_3(
-                  textInput(ns("plot_height"),
-                            label = "Height",
+                col_4(
+                  textInput(ns("buffercol"),
+                            label = "Col buffer",
                             value = NA)
                 )
               ),
               fluidRow(
-                style = "margin-top: -10px;",
-                col_6(
-                  textInput(ns("buffercol"),
-                            label = "Plot buffer",
-                            value = 0)
+                col_4(
+                  textInput(ns("nrows"),
+                            label = "Rows",
+                            value = 1)
                 ),
-                col_6(
-                  textInput(ns("numplots"),
-                            label = "Number of plots",
-                            value = "")
+                col_4(
+                  textInput(ns("plot_height"),
+                            label = "Height",
+                            value = NA)
+                ),
+                col_4(
+                  textInput(ns("bufferrow"),
+                            label = "Row buffer",
+                            value = NA)
                 )
               ),
+              textInput(ns("numplots"),
+                        label = "No. of plots",
+                        value = ""),
               hl(),
               fluidRow(
-                style = "margin-top: -10px;",
                 prettyCheckbox(
                   inputId = ns("shapedone"),
                   label = "Shapefile finished",
@@ -554,28 +562,28 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
             if(!is.null(cpoints()$finished)){
               drawn$finished <-
                 cpoints()$finished |>
-                convert_to_metric() |>
-                point_to_polygon() |>
+                # convert_to_metric() |>
+                # point_to_polygon() |>
                 dplyr::slice_tail(n = 1)
             }
             if(!is.null(cpoints()$edited) & !is.null(cpoints()$finished)){
               idedit <-
                 cpoints()$edited |>
-                convert_to_metric() |>
-                point_to_polygon() |>
+                # convert_to_metric() |>
+                # point_to_polygon() |>
                 dplyr::slice_tail(n = 1) |>
                 dplyr::pull(edit_id)
               drawnedit <-
                 cpoints()$finished |>
-                convert_to_metric() |>
-                point_to_polygon() |>
+                # convert_to_metric() |>
+                # point_to_polygon() |>
                 dplyr::slice_tail(n = 1) |>
                 dplyr::pull(edit_id)
               if(idedit == drawnedit){
                 drawn$finished <-
                   cpoints()$edited |>
-                  convert_to_metric() |>
-                  point_to_polygon() |>
+                  # convert_to_metric() |>
+                  # point_to_polygon() |>
                   dplyr::slice_tail(n = 1)
               }
             }
@@ -604,7 +612,7 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
             shpt <- shapefile_build(
               mosaic_data$mosaic$data,
               basemap$map,
-              controlpoints = drawn$finished,
+              controlpoints = drawn,
               nrow = nr,
               ncol = nc,
               layout = input$plotlayout,
@@ -614,6 +622,7 @@ mod_shapefile_prepare_server <- function(id, mosaic_data, basemap, shapefile, ac
               plot_width = pw,
               plot_height = ph,
               crop_to_shape_ext = FALSE,
+              grid = input$grid,
               verbose = FALSE
             )[[1]]
             if(input$numplots != ""){
