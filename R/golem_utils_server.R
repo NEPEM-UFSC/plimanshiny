@@ -2081,4 +2081,11 @@ extract_geometry_string <- function(fc_string) {
   return(substr(substr_from_geom, 1, end_pos))
 }
 
-
+colors_sf <- function(feature, alpha = 1){
+  breaks <- cut(feature, breaks = 200, include.lowest = TRUE, labels = FALSE)
+  feature_colors <- colorRampPalette(scales::brewer_pal(palette = "RdYlGn")(8))(200)[breaks]
+  adjustcolor(
+    col = feature_colors,
+    alpha.f = alpha
+  )
+}

@@ -521,21 +521,192 @@ make_action_button <- function(tag, inputId = NULL) {
 }
 
 
-plimanshiny_canvas_output <- function(prefix = "geor", ns = identity) {
+# plimanshiny_canvas_output <- function(prefix = "geor", ns = identity) {
+#   # Create namespaced IDs
+#   ids <- function(x) ns(paste0(x, "_", prefix))
+#
+#   # JavaScript template with {{PREFIX}} placeholder
+#   js_template <- "
+#     let canvas_{{PREFIX}}, ctx_{{PREFIX}}, drawing_{{PREFIX}} = false;
+#     let rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}}, rectEndX_{{PREFIX}}, rectEndY_{{PREFIX}};
+#     let selectedPoints_{{PREFIX}} = [];
+#     let rasterImage_{{PREFIX}} = null;
+#     let canvas_{{PREFIX}}Width = 1280;
+#     let canvas_{{PREFIX}}Height = 720;
+#
+#     function initcanvas_{{PREFIX}}() {
+#       canvas_{{PREFIX}} = document.getElementById('%s');
+#       ctx_{{PREFIX}} = canvas_{{PREFIX}}.getContext('2d');
+#       canvas_{{PREFIX}}.width = canvas_{{PREFIX}}Width;
+#       canvas_{{PREFIX}}.height = canvas_{{PREFIX}}Height;
+#
+#       canvas_{{PREFIX}}.addEventListener('mousedown', handleMouseDown_{{PREFIX}});
+#       canvas_{{PREFIX}}.addEventListener('mousemove', handleMouseMove_{{PREFIX}});
+#       canvas_{{PREFIX}}.addEventListener('mouseup', handleMouseUp_{{PREFIX}});
+#       canvas_{{PREFIX}}.addEventListener('dblclick', handleDoubleClick_{{PREFIX}});
+#     }
+#
+#     function adjustcanvas_{{PREFIX}}Size(width, height) {
+#       canvas_{{PREFIX}}Width = width;
+#       canvas_{{PREFIX}}Height = height;
+#       canvas_{{PREFIX}}.width = canvas_{{PREFIX}}Width;
+#       canvas_{{PREFIX}}.height = canvas_{{PREFIX}}Height;
+#       Shiny.setInputValue('%s', { width: canvas_{{PREFIX}}Width, height: canvas_{{PREFIX}}Height }, { priority: 'event' });
+#       drawcanvas_{{PREFIX}}();
+#     }
+#
+#     function handleMouseDown_{{PREFIX}}(e) {
+#       const rect = canvas_{{PREFIX}}.getBoundingClientRect();
+#       rectStartX_{{PREFIX}} = e.clientX - rect.left;
+#       rectStartY_{{PREFIX}} = e.clientY - rect.top;
+#       timeoutID = setTimeout(() => {
+#         drawPoint_{{PREFIX}}(rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}});
+#         selectedPoints_{{PREFIX}}.push({ x: rectStartX_{{PREFIX}}, y: rectStartY_{{PREFIX}} });
+#         Shiny.setInputValue('%s', [rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}}]);
+#       }, 1000);
+#       drawing_{{PREFIX}} = true;
+#     }
+#
+#     function handleMouseMove_{{PREFIX}}(e) {
+#       if (!drawing_{{PREFIX}}) return;
+#       clearTimeout(timeoutID);
+#       const rect = canvas_{{PREFIX}}.getBoundingClientRect();
+#       rectEndX_{{PREFIX}} = e.clientX - rect.left;
+#       rectEndY_{{PREFIX}} = e.clientY - rect.top;
+#       drawcanvas_{{PREFIX}}();
+#       drawRectangle_{{PREFIX}}(rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}}, rectEndX_{{PREFIX}}, rectEndY_{{PREFIX}});
+#     }
+#
+#     function handleMouseUp_{{PREFIX}}() {
+#       clearTimeout(timeoutID);
+#       drawing_{{PREFIX}} = false;
+#       Shiny.setInputValue('%s', {
+#         startX: Math.min(rectStartX_{{PREFIX}}, rectEndX_{{PREFIX}}),
+#         startY: Math.min(rectStartY_{{PREFIX}}, rectEndY_{{PREFIX}}),
+#         endX: rectEndX_{{PREFIX}},
+#         endY: rectEndY_{{PREFIX}},
+#         width: Math.abs(rectEndX_{{PREFIX}} - rectStartX_{{PREFIX}}),
+#         height: Math.abs(rectEndY_{{PREFIX}} - rectStartY_{{PREFIX}})
+#       });
+#       rectStartX_{{PREFIX}} = rectStartY_{{PREFIX}} = rectEndX_{{PREFIX}} = rectEndY_{{PREFIX}} = 0;
+#     }
+#
+#     function drawPoint_{{PREFIX}}(x, y) {
+#       if (!ctx_{{PREFIX}}) return;
+#       ctx_{{PREFIX}}.strokeStyle = 'red';
+#       ctx_{{PREFIX}}.lineWidth = 2;
+#       ctx_{{PREFIX}}.beginPath();
+#       ctx_{{PREFIX}}.arc(x, y, 10, 0, 2 * Math.PI);
+#       ctx_{{PREFIX}}.stroke();
+#       ctx_{{PREFIX}}.beginPath();
+#       ctx_{{PREFIX}}.moveTo(x - 10, y);
+#       ctx_{{PREFIX}}.lineTo(x + 10, y);
+#       ctx_{{PREFIX}}.moveTo(x, y - 10);
+#       ctx_{{PREFIX}}.lineTo(x, y + 10);
+#       ctx_{{PREFIX}}.stroke();
+#     }
+#
+#     function drawRectangle_{{PREFIX}}(x1, y1, x2, y2) {
+#       ctx_{{PREFIX}}.strokeStyle = 'red';
+#       ctx_{{PREFIX}}.lineWidth = 2;
+#       ctx_{{PREFIX}}.strokeRect(x1, y1, x2 - x1, y2 - y1);
+#     }
+#
+#     function drawcanvas_{{PREFIX}}() {
+#       ctx_{{PREFIX}}.clearRect(0, 0, canvas_{{PREFIX}}.width, canvas_{{PREFIX}}.height);
+#       drawRaster_{{PREFIX}}();
+#     }
+#
+#     function drawRaster_{{PREFIX}}() {
+#       if (rasterImage_{{PREFIX}}) {
+#         ctx_{{PREFIX}}.drawImage(rasterImage_{{PREFIX}}, 0, 0, canvas_{{PREFIX}}.width, canvas_{{PREFIX}}.height);
+#       }
+#     }
+#
+#     Shiny.addCustomMessageHandler('updateTiles_{{PREFIX}}', function(data) {
+#       rasterImage_{{PREFIX}} = new Image();
+#       rasterImage_{{PREFIX}}.src = 'data:image/png;base64,' + data.img;
+#       rasterImage_{{PREFIX}}.onload = drawcanvas_{{PREFIX}};
+#     });
+#
+#     Shiny.addCustomMessageHandler('adjustcanvas_{{PREFIX}}Size', function(data) {
+#       adjustcanvas_{{PREFIX}}Size(data.width, data.height);
+#     });
+#
+#     function handleDoubleClick_{{PREFIX}}() {
+#       Shiny.setInputValue('%s', new Date().getTime());
+#     }
+#
+#     window.addEventListener('load', initcanvas_{{PREFIX}});
+# Shiny.setInputValue('drawn_rectangle_geor', {
+#   startX: Math.min(rectStartX_geor, rectEndX_geor),
+#   startY: Math.min(rectStartY_geor, rectEndY_geor),
+#   endX: rectEndX_geor,
+#   endY: rectEndY_geor
+# });
+#
+#
+#   "
+#
+#   # Replace {{PREFIX}} with the actual prefix
+#   js_code <- gsub("\\{\\{PREFIX\\}\\}", prefix, js_template)
+#
+#   # Insert dynamic IDs using sprintf for remaining placeholders
+#   js_code <- sprintf(js_code, ids("rastercanvas"), ids("canvas_size"), ids("picked_point"), ids("drawn_rectangle"), ids("reset_view"))
+#
+#   tagList(
+#     tags$head(
+#       tags$style(HTML(sprintf(
+#         "#%s {
+#           border: 1px solid #ddd;
+#           box-shadow: 3px 3px 8px rgba(40, 167,69, 0.3);
+#           cursor: crosshair;
+#           user-select: none;
+#         }", ids("rastercanvas")
+#       ))),
+#       tags$script(HTML(js_code))
+#     ),
+#     tags$canvas(id = ids("rastercanvas"))
+#   )
+# }
+plimanshiny_canvas_output <- function(prefix = "geor", ns = identity, transparent = FALSE, width = 1080, height = 608) {
+
   # Create namespaced IDs
   ids <- function(x) ns(paste0(x, "_", prefix))
 
-  # JavaScript template with {{PREFIX}} placeholder
+  # --- Lógica CSS Condicional ---
+  if(transparent){
+    css_bg <- "background-color: transparent;"
+  } else {
+    css_bg <- "
+          background-image:
+            linear-gradient(45deg, #f0f0f0 25%, transparent 25%),
+            linear-gradient(-45deg, #f0f0f0 25%, transparent 25%),
+            linear-gradient(45deg, transparent 75%, #f0f0f0 75%),
+            linear-gradient(-45deg, transparent 75%, #f0f0f0 75%);
+          background-size: 20px 20px;
+          background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+          background-color: white;
+    "
+  }
+
+  # --- Template JS com Placeholders para Width e Height ---
   js_template <- "
     let canvas_{{PREFIX}}, ctx_{{PREFIX}}, drawing_{{PREFIX}} = false;
     let rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}}, rectEndX_{{PREFIX}}, rectEndY_{{PREFIX}};
     let selectedPoints_{{PREFIX}} = [];
     let rasterImage_{{PREFIX}} = null;
-    let canvas_{{PREFIX}}Width = 1280;
-    let canvas_{{PREFIX}}Height = 720;
+
+    // --- ALTERAÇÃO AQUI: Valores injetados via R ---
+    let canvas_{{PREFIX}}Width = {{WIDTH}};
+    let canvas_{{PREFIX}}Height = {{HEIGHT}};
+
+    let timeoutID_{{PREFIX}};
 
     function initcanvas_{{PREFIX}}() {
       canvas_{{PREFIX}} = document.getElementById('%s');
+      if(!canvas_{{PREFIX}}) return;
+
       ctx_{{PREFIX}} = canvas_{{PREFIX}}.getContext('2d');
       canvas_{{PREFIX}}.width = canvas_{{PREFIX}}Width;
       canvas_{{PREFIX}}.height = canvas_{{PREFIX}}Height;
@@ -559,7 +730,7 @@ plimanshiny_canvas_output <- function(prefix = "geor", ns = identity) {
       const rect = canvas_{{PREFIX}}.getBoundingClientRect();
       rectStartX_{{PREFIX}} = e.clientX - rect.left;
       rectStartY_{{PREFIX}} = e.clientY - rect.top;
-      timeoutID = setTimeout(() => {
+      timeoutID_{{PREFIX}} = setTimeout(() => {
         drawPoint_{{PREFIX}}(rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}});
         selectedPoints_{{PREFIX}}.push({ x: rectStartX_{{PREFIX}}, y: rectStartY_{{PREFIX}} });
         Shiny.setInputValue('%s', [rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}}]);
@@ -569,7 +740,7 @@ plimanshiny_canvas_output <- function(prefix = "geor", ns = identity) {
 
     function handleMouseMove_{{PREFIX}}(e) {
       if (!drawing_{{PREFIX}}) return;
-      clearTimeout(timeoutID);
+      clearTimeout(timeoutID_{{PREFIX}});
       const rect = canvas_{{PREFIX}}.getBoundingClientRect();
       rectEndX_{{PREFIX}} = e.clientX - rect.left;
       rectEndY_{{PREFIX}} = e.clientY - rect.top;
@@ -578,7 +749,7 @@ plimanshiny_canvas_output <- function(prefix = "geor", ns = identity) {
     }
 
     function handleMouseUp_{{PREFIX}}() {
-      clearTimeout(timeoutID);
+      clearTimeout(timeoutID_{{PREFIX}});
       drawing_{{PREFIX}} = false;
       Shiny.setInputValue('%s', {
         startX: Math.min(rectStartX_{{PREFIX}}, rectEndX_{{PREFIX}}),
@@ -638,36 +809,204 @@ plimanshiny_canvas_output <- function(prefix = "geor", ns = identity) {
     }
 
     window.addEventListener('load', initcanvas_{{PREFIX}});
-Shiny.setInputValue('drawn_rectangle_geor', {
-  startX: Math.min(rectStartX_geor, rectEndX_geor),
-  startY: Math.min(rectStartY_geor, rectEndY_geor),
-  endX: rectEndX_geor,
-  endY: rectEndY_geor
-});
-
-
+    setTimeout(initcanvas_{{PREFIX}}, 100);
   "
 
-  # Replace {{PREFIX}} with the actual prefix
+  # --- 1. Substituir PREFIX ---
   js_code <- gsub("\\{\\{PREFIX\\}\\}", prefix, js_template)
 
-  # Insert dynamic IDs using sprintf for remaining placeholders
+  # --- 2. Substituir WIDTH e HEIGHT pelos parâmetros R ---
+  js_code <- gsub("\\{\\{WIDTH\\}\\}", width, js_code)
+  js_code <- gsub("\\{\\{HEIGHT\\}\\}", height, js_code)
+
+  # Insert dynamic IDs (sprintf)
   js_code <- sprintf(js_code, ids("rastercanvas"), ids("canvas_size"), ids("picked_point"), ids("drawn_rectangle"), ids("reset_view"))
 
   tagList(
     tags$head(
-      tags$style(HTML(sprintf(
-        "#%s {
-          border: 1px solid #ddd;
-          box-shadow: 3px 3px 8px rgba(40, 167,69, 0.3);
-        }", ids("rastercanvas")
-      ))),
+      tags$style(HTML(sprintf("
+        /* Container */
+        .pliman-canvas-container-%s {
+           background-color: %s;
+           border: 1px solid #e2e8f0;
+           border-radius: 8px;
+           display: inline-block;
+           overflow: hidden;
+           position: relative;
+        }
+
+        /* O Canvas */
+        #%s {
+          display: block;
+          cursor: crosshair;
+          border-radius: 4px;
+          %s
+          -webkit-user-select: none;
+          -moz-user-select: none;
+          -ms-user-select: none;
+          user-select: none;
+        }
+      ", prefix, ifelse(transparent, "transparent", "#ffffff"), ids("rastercanvas"), css_bg))),
       tags$script(HTML(js_code))
     ),
-    tags$canvas(id = ids("rastercanvas"))
+
+    # Container
+    div(class = paste0("pliman-canvas-container-", prefix),
+        tags$canvas(id = ids("rastercanvas"))
+    )
   )
 }
-
+# plimanshiny_canvas_ui <- function(id, width = 1280, height = 720) {
+#   # Standard module namespacing
+#   ns <- NS(id)
+#
+#   # A unique prefix for JavaScript variables, sanitized to be a valid JS identifier
+#   js_prefix <- gsub("-", "_", ns(""))
+#
+#   # JavaScript template with a placeholder for the unique prefix
+#   js_template <- "
+#     let canvas_{{PREFIX}}, ctx_{{PREFIX}}, drawing_{{PREFIX}} = false;
+#     let rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}}, rectEndX_{{PREFIX}}, rectEndY_{{PREFIX}};
+#     let rasterImage_{{PREFIX}} = null;
+#     let canvasWidth_{{PREFIX}}, canvasHeight_{{PREFIX}};
+#     let timeoutID_{{PREFIX}};
+#
+#     function initcanvas_{{PREFIX}}() {
+#       canvas_{{PREFIX}} = document.getElementById('%s');
+#       if (!canvas_{{PREFIX}}) return;
+#       ctx_{{PREFIX}} = canvas_{{PREFIX}}.getContext('2d');
+#       canvasWidth_{{PREFIX}} = canvas_{{PREFIX}}.width;
+#       canvasHeight_{{PREFIX}} = canvas_{{PREFIX}}.height;
+#
+#       canvas_{{PREFIX}}.addEventListener('mousedown', handleMouseDown_{{PREFIX}});
+#       canvas_{{PREFIX}}.addEventListener('mousemove', handleMouseMove_{{PREFIX}});
+#       canvas_{{PREFIX}}.addEventListener('mouseup', handleMouseUp_{{PREFIX}});
+#       canvas_{{PREFIX}}.addEventListener('dblclick', handleDoubleClick_{{PREFIX}});
+#     }
+#
+#     function adjustcanvas_{{PREFIX}}Size(width, height) {
+#       canvasWidth_{{PREFIX}} = width;
+#       canvasHeight_{{PREFIX}} = height;
+#       canvas_{{PREFIX}}.width = canvasWidth_{{PREFIX}};
+#       canvas_{{PREFIX}}.height = canvasHeight_{{PREFIX}};
+#       Shiny.setInputValue('%s', { width: canvasWidth_{{PREFIX}}, height: canvasHeight_{{PREFIX}} }, { priority: 'event' });
+#       drawcanvas_{{PREFIX}}();
+#     }
+#
+#     function handleMouseDown_{{PREFIX}}(e) {
+#       const rect = canvas_{{PREFIX}}.getBoundingClientRect();
+#       rectStartX_{{PREFIX}} = e.clientX - rect.left;
+#       rectStartY_{{PREFIX}} = e.clientY - rect.top;
+#       rectEndX_{{PREFIX}} = rectStartX_{{PREFIX}};
+#       rectEndY_{{PREFIX}} = rectStartY_{{PREFIX}};
+#       timeoutID_{{PREFIX}} = setTimeout(() => {
+#         if (rectStartX_{{PREFIX}} === rectEndX_{{PREFIX}} && rectStartY_{{PREFIX}} === rectEndY_{{PREFIX}}) {
+#           drawPoint_{{PREFIX}}(rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}});
+#           Shiny.setInputValue('%s', [rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}}], { priority: 'event' });
+#         }
+#       }, 1000);
+#       drawing_{{PREFIX}} = true;
+#     }
+#
+#     function handleMouseMove_{{PREFIX}}(e) {
+#       if (!drawing_{{PREFIX}}) return;
+#       clearTimeout(timeoutID_{{PREFIX}});
+#       const rect = canvas_{{PREFIX}}.getBoundingClientRect();
+#       rectEndX_{{PREFIX}} = e.clientX - rect.left;
+#       rectEndY_{{PREFIX}} = e.clientY - rect.top;
+#       drawcanvas_{{PREFIX}}();
+#       drawRectangle_{{PREFIX}}(rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}}, rectEndX_{{PREFIX}}, rectEndY_{{PREFIX}});
+#     }
+#
+#     function handleMouseUp_{{PREFIX}}() {
+#       clearTimeout(timeoutID_{{PREFIX}});
+#       if (!drawing_{{PREFIX}}) return;
+#       drawing_{{PREFIX}} = false;
+#       if (Math.abs(rectEndX_{{PREFIX}} - rectStartX_{{PREFIX}}) > 5 || Math.abs(rectEndY_{{PREFIX}} - rectStartY_{{PREFIX}}) > 5) {
+#         Shiny.setInputValue('%s', {
+#           startX: Math.min(rectStartX_{{PREFIX}}, rectEndX_{{PREFIX}}),
+#           startY: Math.min(rectStartY_{{PREFIX}}, rectEndY_{{PREFIX}}),
+#           endX: Math.max(rectStartX_{{PREFIX}}, rectEndX_{{PREFIX}}),
+#           endY: Math.max(rectStartY_{{PREFIX}}, rectEndY_{{PREFIX}}),
+#           width: Math.abs(rectEndX_{{PREFIX}} - rectStartX_{{PREFIX}}),
+#           height: Math.abs(rectEndY_{{PREFIX}} - rectStartY_{{PREFIX}})
+#         }, { priority: 'event' });
+#       }
+#       rectStartX_{{PREFIX}} = rectStartY_{{PREFIX}} = rectEndX_{{PREFIX}} = rectEndY_{{PREFIX}} = undefined;
+#     }
+#
+#     function drawPoint_{{PREFIX}}(x, y) {
+#       if (!ctx_{{PREFIX}}) return;
+#       ctx_{{PREFIX}}.strokeStyle = 'red';
+#       ctx_{{PREFIX}}.lineWidth = 2;
+#       ctx_{{PREFIX}}.beginPath();
+#       ctx_{{PREFIX}}.arc(x, y, 10, 0, 2 * Math.PI);
+#       ctx_{{PREFIX}}.stroke();
+#       ctx_{{PREFIX}}.beginPath();
+#       ctx_{{PREFIX}}.moveTo(x - 10, y);
+#       ctx_{{PREFIX}}.lineTo(x + 10, y);
+#       ctx_{{PREFIX}}.moveTo(x, y - 10);
+#       ctx_{{PREFIX}}.lineTo(x, y + 10);
+#       ctx_{{PREFIX}}.stroke();
+#     }
+#
+#     function drawRectangle_{{PREFIX}}(x1, y1, x2, y2) {
+#       if (!ctx_{{PREFIX}}) return;
+#       ctx_{{PREFIX}}.strokeStyle = 'red';
+#       ctx_{{PREFIX}}.lineWidth = 2;
+#       ctx_{{PREFIX}}.strokeRect(x1, y1, x2 - x1, y2 - y1);
+#     }
+#
+#     function drawcanvas_{{PREFIX}}() {
+#       if (!ctx_{{PREFIX}} || !canvas_{{PREFIX}}) return;
+#       ctx_{{PREFIX}}.clearRect(0, 0, canvas_{{PREFIX}}.width, canvas_{{PREFIX}}.height);
+#       if (rasterImage_{{PREFIX}}) {
+#         ctx_{{PREFIX}}.drawImage(rasterImage_{{PREFIX}}, 0, 0, canvas_{{PREFIX}}.width, canvas_{{PREFIX}}.height);
+#       }
+#     }
+#
+#     Shiny.addCustomMessageHandler('updateTiles_{{PREFIX}}', function(data) {
+#       rasterImage_{{PREFIX}} = new Image();
+#       rasterImage_{{PREFIX}}.src = 'data:image/png;base64,' + data.img;
+#       rasterImage_{{PREFIX}}.onload = drawcanvas_{{PREFIX}};
+#     });
+#
+#     Shiny.addCustomMessageHandler('adjustcanvas_{{PREFIX}}Size', function(data) {
+#       adjustcanvas_{{PREFIX}}Size(data.width, data.height);
+#     });
+#
+#     function handleDoubleClick_{{PREFIX}}() {
+#       Shiny.setInputValue('%s', new Date().getTime(), { priority: 'event' });
+#     }
+#
+#     if (document.readyState === 'loading') {
+#       window.addEventListener('DOMContentLoaded', initcanvas_{{PREFIX}});
+#     } else {
+#       initcanvas_{{PREFIX}}();
+#     }
+#   "
+#
+#   # Replace placeholder with the unique JS prefix
+#   js_code <- gsub("\\{\\{PREFIX\\}\\}", js_prefix, js_template)
+#
+#   tagList(
+#     tags$head(
+#       tags$style(HTML(sprintf(
+#         "#%s { border: 1px solid #ddd; box-shadow: 3px 3px 8px rgba(40, 167,69, 0.3); }",
+#         ns("rastercanvas")
+#       ))),
+#       tags$script(HTML(sprintf(
+#         js_code,
+#         ns("rastercanvas"),
+#         ns("canvas_size"),
+#         ns("picked_point"),
+#         ns("drawn_rectangle"),
+#         ns("reset_view")
+#       )))
+#     ),
+#     tags$canvas(id = ns("rastercanvas"), width = width, height = height)
+#   )
+# }
 plimanshiny_canvas_ui <- function(id, width = 1280, height = 720) {
   # Standard module namespacing
   ns <- NS(id)
@@ -675,7 +1014,7 @@ plimanshiny_canvas_ui <- function(id, width = 1280, height = 720) {
   # A unique prefix for JavaScript variables, sanitized to be a valid JS identifier
   js_prefix <- gsub("-", "_", ns(""))
 
-  # JavaScript template with a placeholder for the unique prefix
+  # JavaScript template (MANTIDO INTACTO)
   js_template <- "
     let canvas_{{PREFIX}}, ctx_{{PREFIX}}, drawing_{{PREFIX}} = false;
     let rectStartX_{{PREFIX}}, rectStartY_{{PREFIX}}, rectEndX_{{PREFIX}}, rectEndY_{{PREFIX}};
@@ -803,10 +1142,41 @@ plimanshiny_canvas_ui <- function(id, width = 1280, height = 720) {
 
   tagList(
     tags$head(
-      tags$style(HTML(sprintf(
-        "#%s { border: 1px solid #ddd; box-shadow: 3px 3px 8px rgba(40, 167,69, 0.3); }",
-        ns("rastercanvas")
-      ))),
+      # AQUI O CSS FOI ATUALIZADO
+      tags$style(HTML(sprintf("
+        /* Container com estilo de 'Card' Profissional */
+        .pliman-canvas-container-%s {
+           background-color: #ffffff;
+           border: 1px solid #e2e8f0;
+           border-radius: 8px;
+           box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+           padding: 4px;
+           display: inline-block;
+           overflow: hidden;
+        }
+
+        /* O Canvas com fundo estilo Photoshop (Xadrez) */
+        #%s {
+          display: block;
+          cursor: crosshair;
+          border-radius: 4px;
+          background-image:
+            linear-gradient(45deg, #f0f0f0 25%%, transparent 25%%),
+            linear-gradient(-45deg, #f0f0f0 25%%, transparent 25%%),
+            linear-gradient(45deg, transparent 75%%, #f0f0f0 75%%),
+            linear-gradient(-45deg, transparent 75%%, #f0f0f0 75%%);
+          background-size: 20px 20px;
+          background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+          background-color: white;
+
+          /* UX: Impede seleção de texto ao desenhar */
+          -webkit-user-select: none;
+          -moz-user-select: none;
+          -ms-user-select: none;
+          user-select: none;
+        }
+      ", js_prefix, ns("rastercanvas")))),
+
       tags$script(HTML(sprintf(
         js_code,
         ns("rastercanvas"),
@@ -816,6 +1186,10 @@ plimanshiny_canvas_ui <- function(id, width = 1280, height = 720) {
         ns("reset_view")
       )))
     ),
-    tags$canvas(id = ns("rastercanvas"), width = width, height = height)
+
+    # Nova estrutura HTML envolvendo o canvas
+    div(class = paste0("pliman-canvas-container-", js_prefix),
+        tags$canvas(id = ns("rastercanvas"), width = width, height = height)
+    )
   )
 }
