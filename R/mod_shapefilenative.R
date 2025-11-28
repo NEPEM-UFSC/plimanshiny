@@ -143,6 +143,31 @@ mod_shapefilenative_ui <- function(id) {
                     )
                   ),
                   col_6(
+                    selectInput(
+                      ns("method"),
+                      label = "Method",
+                      choices = c("rectangular", "radial", "landmark"),
+                      selected = "rectangular",
+                    )
+                  ),
+                  conditionalPanel(
+                    condition = "input.method != 'rectangular'", ns = ns,
+                    prettyCheckbox(
+                      inputId = ns("curved"),
+                      label = "Vertex Densification (curved shapes)",
+                      value = TRUE,
+                      status = "info",
+                      icon = icon("thumbs-up"),
+                      plain = TRUE,
+                      outline = TRUE,
+                      animation = "rotate"
+                    )
+
+                  )
+
+                ),
+                fluidRow(
+                  col_4(
                     prettyCheckbox(
                       inputId = ns("serpentine"),
                       label = "Serpentine?",
@@ -152,7 +177,9 @@ mod_shapefilenative_ui <- function(id) {
                       plain = TRUE,
                       outline = TRUE,
                       animation = "rotate"
-                    ),
+                    )
+                  ),
+                  col_4(
                     prettyCheckbox(
                       inputId = ns("grid"),
                       label = "Grid layout?",
@@ -162,7 +189,9 @@ mod_shapefilenative_ui <- function(id) {
                       plain = TRUE,
                       outline = TRUE,
                       animation = "rotate"
-                    ),
+                    )
+                  ),
+                  col_4(
                     prettyCheckbox(
                       inputId = ns("buildblocks"),
                       label = "Blocks?",
@@ -250,9 +279,18 @@ mod_shapefilenative_ui <- function(id) {
                               value = NA)
                   )
                 ),
-                textInput(ns("numplots"),
-                          label = "No. of plots",
-                          value = ""),
+                fluidRow(
+                  col_6(
+                    textInput(ns("numplots"),
+                              label = "No. of plots",
+                              value = "")
+                  ),
+                  col_6(
+                    textInput(ns("buffer"),
+                              label = "Buffer",
+                              value = NA)
+                  )
+                ),
                 prettyCheckbox(
                   inputId = ns("showplotid"),
                   label = "Show plot ID?",
@@ -379,7 +417,7 @@ mod_shapefilenative_ui <- function(id) {
 #' shapefilenative Server Functions
 #'
 #' @noRd
-mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, shapefile, zlim) {
+mod_shapefilenative_server <- function(id, mosaic_data, r, g, b, activemosaic, shapefile, zlim) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
     mosaitoshape <- reactiveVal()
@@ -462,7 +500,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           xmax <- xmin_val + rect$endX / fact_canva_rast_x
           ymin <- ymin_val + (input$canvas_size_shp$height - rect$endY) / fact_canva_rast_y
           ymax <- ymin_val + (input$canvas_size_shp$height - rect$startY) / fact_canva_rast_y
-          current_extent(ext(c(xmin, xmax, ymin, ymax)))  # Update the extent
+          current_extent(ext(c(xmin, xmax, ymin, ymax))) # Update the extent
           xrange <- abs(xmax - xmin)
           originalres <- res(mosaitoshape())[[1]]
           newres <- max(c(xrange / 720, originalres))
@@ -555,7 +593,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
                   text(
                     x = points_df[, 1],
-                    y = points_df[, 2],  # You can adjust the offset if needed
+                    y = points_df[, 2], # You can adjust the offset if needed
                     labels = 1:nrow(points_df),
                     col = "red",
                     cex = 2,
@@ -574,12 +612,13 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                       col = NA
                     )
                   } else{
+                    col <- as.integer(sub("^[A-Za-z]+", "", shapefile[[input$shapefiletoanalyze]]$data[input$fillid]))
                     plot(
                       shapefile[[input$shapefiletoanalyze]]$data[input$fillid],
                       add = TRUE,
                       border = input$colorstroke,
                       lwd = input$lwdt,
-                      col = NA
+                      col = colors_sf(col, input$alpha)
                     )
                   }
 
@@ -620,7 +659,8 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                       shptoplot[input$fillid],
                       add = TRUE,
                       border = input$colorstroke,
-                      lwd = input$lwdt
+                      lwd = input$lwdt,
+                      col = colors_sf(shptoplot[[input$fillid]], input$alpha)
                     )
                   }
 
@@ -710,15 +750,15 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                 )
               ),
               callback = DT::JS(sprintf("
-      table.on('click', '.delete-point-btn', function() {
-        var id = $(this).attr('id');
-        Shiny.setInputValue('%s', {id: id}, {priority: 'event'});
-      });
-      table.on('click', '.edit-btn', function() {
-        var id = $(this).attr('id');
-        Shiny.setInputValue('%s', {id: id}, {priority: 'event'});
-      });
-    ", ns("delete_point_click"), ns("edit_point_click")))
+   table.on('click', '.delete-point-btn', function() {
+    var id = $(this).attr('id');
+    Shiny.setInputValue('%s', {id: id}, {priority: 'event'});
+   });
+   table.on('click', '.edit-btn', function() {
+    var id = $(this).attr('id');
+    Shiny.setInputValue('%s', {id: id}, {priority: 'event'});
+   });
+  ", ns("delete_point_click"), ns("edit_point_click")))
             ) |> DT::formatStyle(
               'edited',
               target = 'row',
@@ -773,7 +813,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
               text(
                 x = x,
-                y = y,  # Apply dynamic offset if needed
+                y = y, # Apply dynamic offset if needed
                 labels = row_id(),
                 col = "black",
                 cex = 2,
@@ -800,10 +840,16 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
 
         observeEvent(input$editiondone, {
-          points$data[[row_id()]][[1]] <- points$data[[length(points$data)]][[1]]
-          points$data[[row_id()]][[2]] <- points$data[[length(points$data)]][[2]]
-          points$data[[row_id()]][[3]] <- FALSE
-          points$data[[length(points$data)]] <- NULL
+          last_idx <- length(points$data)
+          target_idx <- row_id()
+          if (last_idx > target_idx) {
+            points$data[[target_idx]][[1]] <- points$data[[last_idx]][[1]] # Coord X
+            points$data[[target_idx]][[2]] <- points$data[[last_idx]][[2]] # Coord Y
+            points$data[[last_idx]] <- NULL
+          }
+          if(length(points$data) >= target_idx){
+            points$data[[target_idx]][[3]] <- FALSE
+          }
           output$show_panel <- reactive({
             FALSE
           })
@@ -849,7 +895,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
               tags$i(class = "fa fa-spinner fa-spin"), " Building plots at lightning speed..."
             ),
             type = "message",
-            duration = NULL,  # Remains until manually removed
+            duration = NULL, # Remains until manually removed
             id = "buildingplot"
           )
           pdata <- isolate(do.call(rbind, points$data))
@@ -880,10 +926,17 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           } else{
             bufferrow <- chrv2numv(input$bufferrow)
           }
+          if(input$buffer == ""){
+            pb <- FALSE
+          } else{
+            pb <- chrv2numv(input$buffer)
+          }
           # Build shape and store it temporarily
           shpt <-
             shapefile_build(
               basemap = FALSE,
+              method = input$method,
+              curved = input$curved,
               grid = input$grid,
               mosaitoshape(),
               controlpoints = contrpoints,
@@ -893,6 +946,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
               serpentine = input$serpentine,
               buffer_col = buffercol,
               buffer_row = bufferrow,
+              buffer = pb,
               plot_width = pw,
               plot_height = ph,
               crop_to_shape_ext = FALSE,
@@ -966,7 +1020,8 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                 shptoplot[input$fillid],
                 add = TRUE,
                 border = input$colorstroke,
-                lwd = input$lwdt
+                lwd = input$lwdt,
+                col = colors_sf(shptoplot[[input$fillid]], input$alpha)
               )
             }
 
@@ -1044,7 +1099,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
         observeEvent(c(input$reset_view_shp, input$delete_point_click, input$editiondone), {
           wid(widori())
           hei(heiori())
-          current_extent(ext(mosaitoshape()))  # Reset extent to the full raster
+          current_extent(ext(mosaitoshape())) # Reset extent to the full raster
           if (length(points$data) > 0) {
             sizes <- adjust_canvas(mosaitoshape())
             png(basepolygon, width = sizes[[1]], height = sizes[[2]])
@@ -1065,7 +1120,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
               # Label the points
               text(
                 x = points_df[, 1],
-                y = points_df[, 2],  # Apply dynamic offset if necessary
+                y = points_df[, 2], # Apply dynamic offset if necessary
                 labels = 1:nrow(points_df),
                 col = "black",
                 cex = 2,
@@ -1082,11 +1137,13 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                     col = NA
                   )
                 } else{
+                  col <- as.integer(sub("^[A-Za-z]+", "", shapefile[[input$shapefiletoanalyze]]$data[input$fillid]))
                   plot(
                     shapefile[[input$shapefiletoanalyze]]$data[input$fillid],
                     add = TRUE,
                     border = input$colorstroke,
-                    lwd = input$lwdt
+                    lwd = input$lwdt,
+                    col = colors_sf(col, input$alpha)
                   )
                 }
 
@@ -1122,7 +1179,8 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                     shptoplot[input$fillid],
                     add = TRUE,
                     border = input$colorstroke,
-                    lwd = input$lwdt
+                    lwd = input$lwdt,
+                    col = colors_sf(shptoplot[[input$fillid]], input$alpha)
                   )
                 }
 
@@ -1155,7 +1213,8 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                     shptoplot[input$fillid],
                     add = TRUE,
                     border = input$colorstroke,
-                    lwd = input$lwdt
+                    lwd = input$lwdt,
+                    col = colors_sf(shptoplot[[input$fillid]], input$alpha)
                   )
                 }
 
@@ -1204,7 +1263,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
       if(input$inputshptypenat == "example shapefile"){
         filepath <- file.path(system.file(package = "plimanshiny"), "app/www/soy_shape.rds")
         shapefile[["example_shp"]] <- create_reactval("example_shp", shapefile_input(filepath, info = FALSE))
-        mosaicnames <-  setdiff(names(shapefile), c("mosaic", "shapefileplot"))
+        mosaicnames <- setdiff(names(shapefile), c("mosaic", "shapefileplot"))
         updateSelectInput(session, "shapefiletoanalyze",
                           choices = mosaicnames,
                           selected = mosaicnames[[1]])
@@ -1280,7 +1339,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
         observe({
           shinyFileChoose(input, "shapefileinput",
                           root = getVolumes()(),
-                          filetypes = c("rds",  "shp",  "json", "geojson", "kml",  "gml",  "dbf",  "sbn",  "sbx",  "shx",  "prj", "cpg"),
+                          filetypes = c("rds", "shp", "json", "geojson", "kml", "gml", "dbf", "sbn", "sbx", "shx", "prj", "cpg"),
                           session = session)
           if(!is.null(input$shapefileinput)){
             pathshape$file <- parseFilePaths(getVolumes()(), input$shapefileinput)
@@ -1295,7 +1354,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           showNotification(
             ui = "Importing the shapefile(s)... Please, wait!",
             type = "message",
-            duration = NULL,   # Infinite duration until manually removed
+            duration = NULL, # Infinite duration until manually removed
             id = "importshp"
           )
           if(length(pathshape$file$datapath) != 0){
@@ -1331,7 +1390,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
             }
 
             observe({
-              mosaicnames <-  setdiff(names(shapefile), c("mosaic", "shapefileplot"))
+              mosaicnames <- setdiff(names(shapefile), c("mosaic", "shapefileplot"))
               updateSelectInput(session, "shapefiletoanalyze",
                                 choices = mosaicnames,
                                 selected = mosaicnames[[1]])
@@ -1361,7 +1420,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
 
 
         observe({
-          req(input$shapefiletoanalyze)  # Ensure mosaic_data$mosaic$data is not NULL
+          req(input$shapefiletoanalyze) # Ensure mosaic_data$mosaic$data is not NULL
 
           updateSelectInput(session, "colorshapeimport", choices = c("none", names(shapefile[[input$shapefiletoanalyze]]$data)))
           updateSelectInput(session, "fillid", choices = c("none", names(shapefile[[input$shapefiletoanalyze]]$data)))
@@ -1372,7 +1431,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                 session = session,
                 title = "Invalid CRS",
                 text = "The Coordinate Reference System (CRS) of the shapefile does
-            not match the input mosaic. Trying to set the shapefile's CRS to match the mosaic one.",
+      not match the input mosaic. Trying to set the shapefile's CRS to match the mosaic one.",
                 type = "warning"
               )
               shp <- shapefile[[input$shapefiletoanalyze]]$data |> sf::st_transform(crs = sf::st_crs(mosaic_data$mosaic$data))
@@ -1405,11 +1464,13 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
                   col = NA
                 )
               } else{
+                col <- as.integer(sub("^[A-Za-z]+", "", shapefile[[input$shapefiletoanalyze]]$data[input$fillid]))
                 plot(
                   shapefile[[input$shapefiletoanalyze]]$data[input$fillid],
                   add = TRUE,
                   border = input$colorstroke,
-                  lwd = input$lwdt
+                  lwd = input$lwdt,
+                  col = colors_sf(col, input$alpha)
                 )
               }
             } else {
@@ -1473,7 +1534,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           coords <- sf::st_coordinates(shpinfo)[, 1:2]
           buff <- diff(range(coords[, 1])) * input$buffershapeinfo
           measures <- shapefile_measures(shpinfo, n = 1)
-          dists <-  suppressWarnings(as.matrix(sf::st_distance(sf::st_cast(shpinfo, "POINT")$geometry)))
+          dists <- suppressWarnings(as.matrix(sf::st_distance(sf::st_cast(shpinfo, "POINT")$geometry)))
           seq_dists <- c()
           for (i in 1:(ncol(dists) - 1)) {
             seq_dists <- c(seq_dists, dists[i, i + 1])
@@ -1499,15 +1560,15 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
           wid$val <- ifelse(npoints > 5, "-", paste0(round(measures$width, 3), " m"))
           hei$val <- ifelse(npoints > 5, "-", paste0(round(measures$height, 3), " m"))
           if(npoints < 15){
-            boxtext(x =  ncoors[, 1],
-                    y =  ncoors[, 2],
+            boxtext(x = ncoors[, 1],
+                    y = ncoors[, 2],
                     labels = paste0(round(seq_dists, 2), " m"),
                     col.bg = "salmon",
                     cex = 1.5)
           }
           cmass <- poly_mass(ncoors)
-          boxtext(x =  mean(cmass[1]),
-                  y =  mean(cmass[2]),
+          boxtext(x = mean(cmass[1]),
+                  y = mean(cmass[2]),
                   labels = paste0(round(area$val, 2), " m2"),
                   col.bg = "salmon",
                   cex = 1.5)
@@ -1540,7 +1601,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
         output$phight <- renderValueBox({
           valueBox(
             value = tags$p(hei$val, style = "font-size: 200%;"),
-            subtitle = "Plot height (m)       ",
+            subtitle = "Plot height (m)   ",
             color = "success",
             icon = icon("arrows-up-down")
           )
@@ -1549,7 +1610,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
         output$pperimeter <- renderValueBox({
           valueBox(
             value = tags$p(round(perim$val, 3), style = "font-size: 200%;"),
-            subtitle = "Perimeter (m)       ",
+            subtitle = "Perimeter (m)   ",
             color = "success",
             icon = icon("draw-polygon")
           )
@@ -1557,7 +1618,7 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
         output$parea <- renderValueBox({
           valueBox(
             value = tags$p(round(area$val, 3), style = "font-size: 200%;"),
-            subtitle = "Area (m2)       ",
+            subtitle = "Area (m2)   ",
             color = "success",
             icon = icon("draw-polygon")
           )
@@ -1623,8 +1684,5 @@ mod_shapefilenative_server <- function(id, mosaic_data,  r, g, b, activemosaic, 
         )
       }
     })
-
-
-
   })
 }
