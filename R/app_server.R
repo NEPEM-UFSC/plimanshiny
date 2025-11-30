@@ -106,6 +106,8 @@ app_server <- function(input, output, session) {
       mod_spatjoin_server("spatjoin_1", shapefile, settings)
       mod_vectorize_server("vectorize_1", mosaic_data, shapefile, basemap)
       mod_cropbatch_server("cropbatch_1", shapefile, mosaiclist, settings)
+      mod_cropbatch_server("cropbatch_1", shapefile, mosaiclist, settings)
+      mod_shapefiletransform_server("shapefiletransform_1", mosaic_data, shapefile, r, g, b, zlim)
     }
 
     if(input$tabshome == "mosaicindex" && is.null(module_loaded$mosaicindex)){

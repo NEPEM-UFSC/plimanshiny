@@ -70,6 +70,11 @@ mod_manipula_ui <- function(id){
         mod_spatjoin_ui("spatjoin_1")
       ),
       tabPanel(
+        title = "Shapefile Transformation",
+        icon = icon("draw-polygon"),
+        mod_shapefiletransform_ui("shapefiletransform_1")
+      ),
+      tabPanel(
         title = "Vectorize",
         icon = icon("vector-square"),
         mod_vectorize_ui("vectorize_1")

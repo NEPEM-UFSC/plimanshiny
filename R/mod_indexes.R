@@ -323,6 +323,7 @@ mod_indexes_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, bas
             type = "warning"
           )
         }
+        print(shapefile[[input$shapefiletoplot]]$data)
         mosaictmp$mosaic <- terra::crop(mosaic_data[[input$rastertocompute]]$data, terra::ext(shapefile_input(shapefile[[input$shapefiletoplot]]$data, as_sf = FALSE, info = FALSE)))
       } else{
         mosaictmp$mosaic <- mosaic_data[[input$rastertocompute]]$data

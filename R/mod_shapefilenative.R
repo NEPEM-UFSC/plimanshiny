@@ -1075,12 +1075,20 @@ mod_shapefilenative_server <- function(id, mosaic_data, r, g, b, activemosaic, s
               return()
             } else{
               observe({
+                current_selection <- isolate(input$shapefiletoanalyze)
                 shapefilenames <- setdiff(c("none", names(shapefile)), c("shapefile", "shapefileplot"))
                 shapefile[[input$shapenamebuild]] <- create_reactval(input$shapenamebuild, shptemp)
-                # Update selectInput choices
+
+                new_selection <- if (current_selection %in% shapefilenames) {
+                  current_selection
+                } else if (length(shapefilenames) > 0) {
+                  shapefilenames[[length(shapefilenames)]]
+                } else {
+                  NULL
+                }
                 updateSelectInput(session, "shapefiletoanalyze",
                                   choices = shapefilenames,
-                                  selected = shapefilenames[[length(shapefilenames)]])
+                                  selected = new_selection)
               })
               sendSweetAlert(
                 session = session,
@@ -1263,10 +1271,10 @@ mod_shapefilenative_server <- function(id, mosaic_data, r, g, b, activemosaic, s
       if(input$inputshptypenat == "example shapefile"){
         filepath <- file.path(system.file(package = "plimanshiny"), "app/www/soy_shape.rds")
         shapefile[["example_shp"]] <- create_reactval("example_shp", shapefile_input(filepath, info = FALSE))
-        mosaicnames <- setdiff(names(shapefile), c("mosaic", "shapefileplot"))
+        shapefilenames <- setdiff(names(shapefile), c("mosaic", "shapefileplot"))
         updateSelectInput(session, "shapefiletoanalyze",
-                          choices = mosaicnames,
-                          selected = mosaicnames[[1]])
+                          choices = shapefilenames,
+                          selected = shapefilenames[[1]])
 
 
         observe({
@@ -1390,10 +1398,20 @@ mod_shapefilenative_server <- function(id, mosaic_data, r, g, b, activemosaic, s
             }
 
             observe({
-              mosaicnames <- setdiff(names(shapefile), c("mosaic", "shapefileplot"))
+              current_selection <- isolate(input$shapefiletoanalyze)
+              shapefilenames <- setdiff(names(shapefile), c("mosaic", "shapefileplot"))
+              new_selection <- if (current_selection %in% shapefilenames) {
+                current_selection
+              } else if (length(shapefilenames) > 0) {
+                shapefilenames[[1]]
+              } else {
+                NULL
+              }
               updateSelectInput(session, "shapefiletoanalyze",
-                                choices = mosaicnames,
-                                selected = mosaicnames[[1]])
+                                choices = shapefilenames,
+                                selected = new_selection)
+              req(input$shapefiletoanalyze)
+              req(shapefile[[input$shapefiletoanalyze]]$data)
               shapefile[["shapefileplot"]] <- shapefile[[input$shapefiletoanalyze]]$data
               removeNotification(id = "importshp")
 
@@ -1403,11 +1421,6 @@ mod_shapefilenative_server <- function(id, mosaic_data, r, g, b, activemosaic, s
 
 
         observe({
-          shapefilenames <- setdiff(c("none", names(shapefile)), c("shapefile", "shapefileplot"))
-          # Update selectInput choices
-          updateSelectInput(session, "shapefiletoanalyze",
-                            choices = shapefilenames,
-                            selected = shapefilenames[[length(shapefilenames)]])
           if ("shapefile" %in% names(shapefile)) {
             sendSweetAlert(
               session = session,
