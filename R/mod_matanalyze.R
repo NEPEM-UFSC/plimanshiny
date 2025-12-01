@@ -405,8 +405,8 @@ mod_matanalyze_server <- function(id, dfs, shapefile, basemap, settings){
           updatePickerInput(session, "dftoedit",
                             choices = c("none", names(dfs)),
                             selected = "df_timeseries_vi")
-          updateDateInput(session, "sowing",
-                          value = as.Date("2024-11-07"))
+          updateAirDateInput(session, "sowing",
+                             value = as.Date("2024-11-07"))
         })
       }
     })

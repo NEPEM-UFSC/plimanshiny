@@ -129,8 +129,18 @@ app_ui <- function(request) {
           ),
           bs4SidebarMenuItem(
             text = "Manipulate",
-            tabName = "mosaicmanipula",
-            icon = shiny::icon("screwdriver-wrench", verify_fa = FALSE)
+            icon = shiny::icon("screwdriver-wrench", verify_fa = FALSE),
+            startExpanded = F,
+            bs4SidebarMenuSubItem(
+              text = "Raster",
+              tabName = "mosaicmanipula",
+              icon = shiny::icon("image")
+            ),
+            bs4SidebarMenuSubItem(
+              text = "Shapefile",
+              tabName = "shapefilemanipula",
+              icon = shiny::icon("draw-polygon")
+            )
           ),
           bs4SidebarMenuItem(
             "Single orthomosaic",
@@ -376,6 +386,10 @@ app_ui <- function(request) {
           bs4TabItem(
             tabName = "mosaicmanipula",
             mod_manipula_ui("manipula_1")
+          ),
+          bs4TabItem(
+            tabName = "shapefilemanipula",
+            mod_manipulashp_ui("manipulashp_1")
           ),
           bs4TabItem(
             tabName = "shapefileimport",

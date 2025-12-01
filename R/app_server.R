@@ -103,10 +103,12 @@ app_server <- function(input, output, session) {
       mod_resample_server("resample_1", mosaic_data, settings)
       mod_segment_server("segment_1", mosaic_data, r, g, b, re, nir, swir, tir, settings, basemap, zlim)
       mod_sentinel_server("sentinel_1", mosaic_data, settings)
+      mod_cropbatch_server("cropbatch_1", shapefile, mosaiclist, settings)
+    }
+    if(input$tabshome == "shapefilemanipula" && is.null(module_loaded$shapefilemanipula)){
+      module_loaded$shapefilemanipula <- TRUE
       mod_spatjoin_server("spatjoin_1", shapefile, settings)
       mod_vectorize_server("vectorize_1", mosaic_data, shapefile, basemap)
-      mod_cropbatch_server("cropbatch_1", shapefile, mosaiclist, settings)
-      mod_cropbatch_server("cropbatch_1", shapefile, mosaiclist, settings)
       mod_shapefiletransform_server("shapefiletransform_1", mosaic_data, shapefile, r, g, b, zlim)
     }
 

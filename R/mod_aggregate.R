@@ -47,11 +47,11 @@ mod_aggregate_ui <- function(id){
         fluidRow(
           col_6(
             h2("Original raster"),
-            plimanshiny_viewer_ui(ns("mosori"), prefix = "mosori", width = 540)
+            plimanshiny_viewer_ui(ns("mosori"), prefix = "mosori", width = 540, height = 500)
           ),
           col_6(
             h2("Aggregated raster"),
-            plimanshiny_viewer_ui(ns("mosagg"), prefix = "mosagg", width = 540)
+            plimanshiny_viewer_ui(ns("mosagg"), prefix = "mosagg", width = 540, height = 500)
 
           )
         )

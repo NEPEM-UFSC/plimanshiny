@@ -6,30 +6,23 @@ mod_shapefiletransform_ui <- function(id) {
     fluidRow(
       col_4(
         bs4Card(
-          title = "Grid Fine Tuning",
+          title = "Shapefile Manipulation",
           collapsible = FALSE,
           width = 12,
           status = "success",
-
           selectInput(ns("mosaic_input"), "Background Mosaic", choices = NULL),
           selectInput(ns("shapefile_input"), "Grid to Align", choices = NULL),
-
           hl(),
-
-          div(
-            style = "display: flex; justify-content: center; margin-bottom: 15px;",
-            prettyRadioButtons(
-              inputId = ns("tuning_mode"),
-              label = NULL,
-              choices = c("Manual Tuning", "Point Alignment"),
-              icon = icon("check"),
-              status = "info",
-              shape = "curve",
-              animation = "jelly",
-              inline = TRUE
-            )
+          radioGroupButtons(
+            inputId = ns("tuning_mode"),
+            label = NULL,
+            choices = c("Manual Tuning", "Point Alignment"),
+            selected = "Manual Tuning",
+            justified = TRUE,
+            status = "success",
+            size = "normal",
+            checkIcon = list(yes = icon("check"))
           ),
-
           # --- TAB 1: MANUAL TUNING ---
           conditionalPanel(
             condition = sprintf("input['%s'] == 'Manual Tuning'", ns("tuning_mode")),
