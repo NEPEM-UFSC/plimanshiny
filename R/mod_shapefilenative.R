@@ -1516,13 +1516,45 @@ mod_shapefilenative_server <- function(id, mosaic_data, r, g, b, activemosaic, s
     ############################################# DOWNLOAD SHAPEFILE ##########################################################
     observe({
       req(input$shapefiletoanalyze)
-      if(input$shapefiletoanalyze == "none"){
+
+      # Obter o nome do shapefile selecionado
+      selected_shapefile_name <- input$shapefiletoanalyze
+
+      if (selected_shapefile_name == "none" || is.null(shapefile[[selected_shapefile_name]])) {
         shapefile[["shapefileplot"]] <- NULL
-      } else{
-        shapefile[["shapefileplot"]] <- shapefile[[input$shapenamebuild]]$data
+      } else {
+        # Usa os dados do shapefile selecionado como a fonte para download
+        req(shapefile[[selected_shapefile_name]]$data)
+        shapefile[["shapefileplot"]] <- shapefile[[selected_shapefile_name]]$data
       }
     })
-    mod_download_shapefile_server("downloadshapefile2", terra::vect(shapefile[["shapefileplot"]]), name = "created_shp")
+
+    # A função reativa que retorna o objeto para download
+    shp_for_download <- reactive({
+      req(shapefile$shapefileplot)
+      # A função `terra::vect` é necessária se o módulo de download
+      # esperar um objeto 'terra::SpatVector'
+      return(terra::vect(shapefile$shapefileplot))
+    })
+
+    # A função reativa para o nome do arquivo de download
+    download_name <- reactive({
+      if(is.null(input$shapefiletoanalyze) || input$shapefiletoanalyze == "none"){
+        "created_shp"
+      } else {
+        input$shapefiletoanalyze
+      }
+    })
+
+    # observe({print()})
+    observeEvent(download_name(), {
+      mod_download_shapefile_server("downloadshapefile2",
+                                    data = shp_for_download(),
+                                    name = download_name())
+    })
+    # Chamada ao servidor do módulo de download
+
+
 
 
     ############################################# PLOT INFO ##########################################################

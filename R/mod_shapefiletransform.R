@@ -111,13 +111,12 @@ mod_shapefiletransform_ui <- function(id) {
             div(
               class = "alert alert-info",
               icon("info-circle"), " Instructions:", br(),
-              "1. Click 'Source' & select 2 points on Grid.", br(),
-              "2. Click 'Target' & select 2 points on Mosaic."
+              "1. Click 'point1' & select 2 points on Grid.", br(),
+              "2. Click 'point2' & select 2 points on Mosaic."
             ),
 
             fluidRow(
-              col_6(actionBttn(ns("btn_capture_source"), "Capture Source (Grid)", style = "simple", color = "primary", block = TRUE, icon = icon("crosshairs"))),
-              col_6(actionBttn(ns("btn_capture_target"), "Capture Target (Mosaic)", style = "simple", color = "danger", block = TRUE, icon = icon("map-marker-alt")))
+              actionBttn(ns("btn_start_capture"), "Start Sequential Capture", style = "gradient", color = "primary", block = TRUE, icon = icon("crosshairs"))
             ),
             br(),
             uiOutput(ns("points_status_ui")),
@@ -142,7 +141,9 @@ mod_shapefiletransform_ui <- function(id) {
           fluidRow(
             col_6(actionBttn(ns("reset"), "Reset", style = "pill", color = "warning", icon = icon("undo"))),
             col_6(actionBttn(ns("save"), "Save", style = "pill", color = "success", icon = icon("save")))
-          )
+          ),
+          hl(),
+          mod_download_shapefile_ui(ns("downloadshpmodified"), label = "Download")
         )
       ),
       col_8(
@@ -185,11 +186,13 @@ mod_shapefiletransform_server <- function(id, mosaic_data, shapefile_data, r, g,
     current_extent <- reactiveVal()
     canvas_dims <- reactiveValues(w = 1000, h = 720) # Fallback seguro
 
-    # State for Points Alignment
+    # ESTADO SEQUENCIAL: S1 -> T1 -> S2 -> T2
     align_pts <- reactiveValues(
-      source = list(), # Pontos do Grid
-      target = list(), # Pontos do Mosaico
-      mode = "none"    # "source", "target", "none"
+      P1s = NULL, # S1 (Source 1 - Grid)
+      P1t = NULL, # T1 (Target 1 - Mosaic)
+      P2s = NULL, # S2 (Source 2 - Grid)
+      P2t = NULL, # T2 (Target 2 - Mosaic)
+      mode = "none" # Estados: "P1s" -> "P1t" -> "P2s" -> "P2t" -> "none"
     )
 
     output$is_capturing_points <- reactive({ align_pts$mode != "none" })
@@ -253,9 +256,8 @@ mod_shapefiletransform_server <- function(id, mosaic_data, shapefile_data, r, g,
       req(grid_sf)
 
       input$showplotid; input$colorstroke; input$lwdt
-      # Força atualização visual ao adicionar pontos
-      force(align_pts$source)
-      force(align_pts$target)
+      force(align_pts$P1s); force(align_pts$P1t)
+      force(align_pts$P2s); force(align_pts$P2t)
 
       # Preparar Mosaico
       mosaic <- mosaic_data[[input$mosaic_input]]$data
@@ -292,32 +294,37 @@ mod_shapefiletransform_server <- function(id, mosaic_data, shapefile_data, r, g,
           boxtext(x = centrs[, 1], y = centrs[, 2], labels = shptoplot$plot_id, col.bg = "salmon", cex = 1.5)
         }
 
-        # C. Pontos de Controle (Sobrepostos)
-        if(length(align_pts$source) > 0){
-          pts_s <- do.call(rbind, align_pts$source)
-          points(pts_s[,1], pts_s[,2], pch = 3, col = "blue", cex = 4, lwd = 4)
-          text(pts_s[,1], pts_s[,2], labels = paste0("S", 1:nrow(pts_s)), col = "blue", pos = 3, font=2, cex=2)
+        # C. Pontos e Setas (S1->T1 e S2->T2)
+        pts <- list(P1s = align_pts$P1s, P1t = align_pts$P1t, P2s = align_pts$P2s, P2t = align_pts$P2t)
+
+        # S1
+        if(!is.null(pts$P1s)) {
+          points(pts$P1s[1], pts$P1s[2], pch = 3, col = "blue", cex = 4, lwd = 4)
+          text(pts$P1s[1], pts$P1s[2], labels = "S1", col = "blue", pos = 3, font=2, cex=2)
+        }
+        # T1
+        if(!is.null(pts$P1t)) {
+          points(pts$P1t[1], pts$P1t[2], pch = 4, col = "red", cex = 4, lwd = 4)
+          text(pts$P1t[1], pts$P1t[2], labels = "T1", col = "red", pos = 3, font=2, cex=2)
+        }
+        # Seta S1 -> T1
+        if(!is.null(pts$P1s) && !is.null(pts$P1t)) {
+          arrows(x0=pts$P1s[1], y0=pts$P1s[2], x1=pts$P1t[1], y1=pts$P1t[2], col="black", lwd=2, length=0.15, angle=25, code=2, lty="dashed")
         }
 
-        if(length(align_pts$target) > 0){
-          pts_t <- do.call(rbind, align_pts$target)
-          points(pts_t[,1], pts_t[,2], pch = 4, col = "red", cex = 4, lwd = 4)
-          text(pts_t[,1], pts_t[,2], labels = paste0("T", 1:nrow(pts_t)), col = "red", pos = 3, font=2, cex=2)
+        # S2
+        if(!is.null(pts$P2s)) {
+          points(pts$P2s[1], pts$P2s[2], pch = 3, col = "blue", cex = 4, lwd = 4)
+          text(pts$P2s[1], pts$P2s[2], labels = "S2", col = "blue", pos = 3, font=2, cex=2)
         }
-        num_pairs <- min(length(align_pts$source), length(align_pts$target))
-        if (num_pairs > 0) {
-          pts_s_arr <- do.call(rbind, align_pts$source)
-          pts_t_arr <- do.call(rbind, align_pts$target)
-          arrows(x0 = pts_s_arr[1:num_pairs, 1],
-                 y0 = pts_s_arr[1:num_pairs, 2],
-                 x1 = pts_t_arr[1:num_pairs, 1],
-                 y1 = pts_t_arr[1:num_pairs, 2],
-                 col = "black",
-                 lwd = 2,
-                 length = 0.15,
-                 angle = 25,
-                 code = 2,
-                 lty = "dashed")
+        # T2
+        if(!is.null(pts$P2t)) {
+          points(pts$P2t[1], pts$P2t[2], pch = 4, col = "red", cex = 4, lwd = 4)
+          text(pts$P2t[1], pts$P2t[2], labels = "T2", col = "red", pos = 3, font=2, cex=2)
+        }
+        # Seta S2 -> T2
+        if(!is.null(pts$P2s) && !is.null(pts$P2t)) {
+          arrows(x0=pts$P2s[1], y0=pts$P2s[2], x1=pts$P2t[1], y1=pts$P2t[2], col="black", lwd=2, length=0.15, angle=25, code=2, lty="dashed")
         }
 
       }, finally = {
@@ -354,18 +361,26 @@ mod_shapefiletransform_server <- function(id, mosaic_data, shapefile_data, r, g,
       pt <- c(x = x_raster, y = y_raster)
 
       # Armazenar Pontos
-      if(align_pts$mode == "source"){
-        align_pts$source[[length(align_pts$source) + 1]] <- pt
-        if(length(align_pts$source) >= 2) {
-          align_pts$mode <- "none"
-          sendSweetAlert(session, title = "Source Done", text = "Source points captured. Now capture Target points.", type = "success")
-        }
-      } else if(align_pts$mode == "target"){
-        align_pts$target[[length(align_pts$target) + 1]] <- pt
-        if(length(align_pts$target) >= 2) {
-          align_pts$mode <- "none"
-          sendSweetAlert(session, title = "Target Done", text = "Target points captured. Ready to apply transformation.", type = "success")
-        }
+      # Máquina de Estados
+      if(align_pts$mode == "P1s"){
+        align_pts$P1s <- pt
+        align_pts$mode <- "P1t"
+        showNotification("S1 (Grid) Captured. Now click T1 (Mosaic).", type = "warning", duration = 4)
+
+      } else if(align_pts$mode == "P1t"){
+        align_pts$P1t <- pt
+        align_pts$mode <- "P2s"
+        showNotification("T1 (Mosaic) Captured. Now click S2 (Grid).", type = "message", duration = 4)
+
+      } else if(align_pts$mode == "P2s"){
+        align_pts$P2s <- pt
+        align_pts$mode <- "P2t"
+        showNotification("S2 (Grid) Captured. Now click T2 (Mosaic).", type = "warning", duration = 4)
+
+      } else if(align_pts$mode == "P2t"){
+        align_pts$P2t <- pt
+        align_pts$mode <- "none"
+        sendSweetAlert(session, title = "Ready", text = "All points captured. Click 'Apply Transformation'.", type = "success")
       }
     })
 
@@ -407,54 +422,38 @@ mod_shapefiletransform_server <- function(id, mosaic_data, shapefile_data, r, g,
     })
 
     # --- 7. Setup Buttons ---
-    observeEvent(input$btn_capture_source, {
-      align_pts$mode <- "source"
-      align_pts$source <- list()
-      showNotification("Click 2 points on the VECTOR GRID", type = "message")
-    })
-
-    observeEvent(input$btn_capture_target, {
-      align_pts$mode <- "target"
-      align_pts$target <- list()
-      showNotification("Click 2 points on the BACKGROUND IMAGE", type = "message")
+    observeEvent(input$btn_start_capture, {
+      align_pts$P1s <- NULL; align_pts$P1t <- NULL; align_pts$P2s <- NULL; align_pts$P2t <- NULL;
+      align_pts$mode <- "P1s"
+      showNotification("Click S1 on the Vector Grid", type = "message", duration = 5)
     })
 
     output$points_status_ui <- renderUI({
-      # Lógica para definir cor e ícone
-      src_ok <- length(align_pts$source) == 2
-      trg_ok <- length(align_pts$target) == 2
+      p1s <- !is.null(align_pts$P1s); p1t <- !is.null(align_pts$P1t)
+      p2s <- !is.null(align_pts$P2s); p2t <- !is.null(align_pts$P2t)
 
-      tagList(
-        div(
-          style = "display: flex; justify-content: space-between; margin-bottom: 10px;",
-          span(
-            class = ifelse(src_ok, "badge badge-success", "badge badge-warning"),
-            style = "font-size: 1em; padding: 10px; width: 48%;",
-            icon(ifelse(src_ok, "check", "hourglass-half")),
-            paste0(" Grid: ", length(align_pts$source), "/2")
-          ),
-          span(
-            class = ifelse(trg_ok, "badge badge-success", "badge badge-danger"),
-            style = "font-size: 1em; padding: 10px; width: 48%;",
-            icon(ifelse(trg_ok, "check", "hourglass-half")),
-            paste0(" Mosaic: ", length(align_pts$target), "/2")
-          )
-        )
-      )
+      tagList(div(style = "display: flex; justify-content: space-around;",
+                  span(class = ifelse(p1s, "badge badge-success", "badge badge-primary"), "S1", icon(ifelse(p1s, "check", "circle"))),
+                  span(class = ifelse(p1t, "badge badge-success", "badge badge-danger"), "T1", icon(ifelse(p1t, "check", "circle"))),
+                  span(class = ifelse(p2s, "badge badge-success", "badge badge-primary"), "S2", icon(ifelse(p2s, "check", "circle"))),
+                  span(class = ifelse(p2t, "badge badge-success", "badge badge-danger"), "T2", icon(ifelse(p2t, "check", "circle")))))
     })
 
     output$capture_instruction_text <- renderText({
-      if(align_pts$mode == "source") return(paste0("Click Source Pt ", length(align_pts$source) + 1, "/2"))
-      if(align_pts$mode == "target") return(paste0("Click Target Pt ", length(align_pts$target) + 1, "/2"))
-      return("")
+      switch(align_pts$mode,
+             "P1s" = "Click S1 (Grid)",
+             "P1t" = "Click T1 (Mosaic)",
+             "P2s" = "Click S2 (Grid)",
+             "P2t" = "Click T2 (Mosaic)",
+             "Ready")
     })
 
     # --- 8. Calculation Logic ---
     observeEvent(input$btn_calc_transform, {
-      req(length(align_pts$source) == 2, length(align_pts$target) == 2)
+      req(align_pts$P1s, align_pts$P1t, align_pts$P2s, align_pts$P2t)
 
-      P1s <- as.numeric(align_pts$source[[1]]); P2s <- as.numeric(align_pts$source[[2]])
-      P1m <- as.numeric(align_pts$target[[1]]); P2m <- as.numeric(align_pts$target[[2]])
+      P1s <- as.numeric(align_pts$P1s); P2s <- as.numeric(align_pts$P2s)
+      P1m <- as.numeric(align_pts$P1t); P2m <- as.numeric(align_pts$P2t)
 
       # Cálculos de Escala e Rotação
       len_s <- sqrt((P2s[1] - P1s[1])^2 + (P2s[2] - P1s[2])^2)
@@ -502,9 +501,9 @@ mod_shapefiletransform_server <- function(id, mosaic_data, shapefile_data, r, g,
       updateSliderInput(session, "off_x", value = shift_x)
       updateSliderInput(session, "off_y", value = shift_y)
 
-      updatePrettyRadioButtons(session, "tuning_mode", selected = "Manual Tuning")
+      updateRadioButtons(session, "tuning_mode", selected = "Manual Tuning")
 
-      align_pts$source <- list(); align_pts$target <- list(); align_pts$mode <- "none"
+      align_pts$point1 <- list(); align_pts$point2 <- list(); align_pts$mode <- "none"
     })
 
     # --- 9. Helpers & Save ---
@@ -528,7 +527,7 @@ mod_shapefiletransform_server <- function(id, mosaic_data, shapefile_data, r, g,
       updateSliderInput(session, "angle", value = 0)
       updateNumericInput(session, "off_x", value = 0); updateNumericInput(session, "off_y", value = 0)
       updateNumericInput(session, "scale_x", value = 1.0); updateNumericInput(session, "scale_y", value = 1.0)
-      align_pts$source <- list(); align_pts$target <- list(); align_pts$mode <- "none"
+      align_pts$P1s=NULL; align_pts$P1t=NULL; align_pts$P2s=NULL; align_pts$P2t=NULL; align_pts$mode="none"
     })
 
     observeEvent(input$save, {
@@ -536,5 +535,12 @@ mod_shapefiletransform_server <- function(id, mosaic_data, shapefile_data, r, g,
       shapefile_data[[input$new_shape_name]] <- create_reactval(name = input$new_shape_name, data = transformed_grid_r())
       sendSweetAlert(session, title = "Saved!", text = "Grid updated successfully.", type = "success")
     })
+
+    observeEvent(input$new_shape_name, {
+      req(transformed_grid_r())
+      mod_download_shapefile_server("downloadshpmodified", data = terra::vect(transformed_grid_r()), name = input$new_shape_name)
+    })
+
+
   })
 }
