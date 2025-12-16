@@ -507,7 +507,7 @@ mod_shapefilenative_server <- function(id, mosaic_data, r, g, b, activemosaic, s
           tfc <- file.path(tempdir(), "croppedshape_shp.png")
           session$onSessionEnded(function() {
             if (file.exists(tfc)) {
-              resultado_remocao <- try(file.remove(tfc), silent = TRUE)
+              resultado_remocao <- suppressWarnings(try(file.remove(tfc), silent = TRUE))
             }
           })
           if(terra::nlyr(mosaitoshape()) < 3){
@@ -932,6 +932,15 @@ mod_shapefilenative_server <- function(id, mosaic_data, r, g, b, activemosaic, s
             pb <- chrv2numv(input$buffer)
           }
           # Build shape and store it temporarily
+          if((nrow(sf::st_coordinates(contrpoints$finished))%%2 == 0) & input$method == "landmark"){
+            sendSweetAlert(
+              session = session,
+              title = "Ops, incorrect number of points.",
+              text = "Points must form matched pairs when using Method equals to 'landmark'",
+              type = "error"
+            )
+            return()
+          }
           shpt <-
             shapefile_build(
               basemap = FALSE,

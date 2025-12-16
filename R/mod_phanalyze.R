@@ -43,7 +43,7 @@ mod_phanalyze_ui <- function(id){
               min = 0,
               max = 1,
               value = 0,
-              step = 0.05
+              step = 0.01
             ),
           ),
           pickerInput(

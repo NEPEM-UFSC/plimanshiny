@@ -407,7 +407,7 @@ plimanshiny_viewer_server <- function(id, mosaic,
       tfc <- file.path(tempdir(), paste0(id, "_", prefix, "_tempcropped.png"))
       session$onSessionEnded(function() {
         if (file.exists(tfc)) {
-          resultado_remocao <- try(file.remove(tfc), silent = TRUE)
+          resultado_remocao <- suppressWarnings(try(file.remove(tfc), silent = TRUE))
         }
       })
       if(nlyrs() < 3){
