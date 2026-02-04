@@ -43,4 +43,4 @@ run_app()
 
 The app will initiate and display the following home screen.
 
-![](https://github.com/TiagoOlivoto/images/blob/master/plimanshiny/Slide4.JPG?raw=true)
+![](https://github.com/TiagoOlivoto/images/blob/master/plimanshiny/plimanshiny_home.png?raw=true)
