@@ -1,0 +1,192 @@
+#' config UI Function
+#'
+#' @description A shiny Module.
+#'
+#' @param id,input,output,session Internal parameters for {shiny}.
+#'
+#' @noRd
+#'
+#' @importFrom shiny NS tagList
+mod_config_ui <- function(id){
+  ns <- NS(id)
+  tagList(
+    bs4Card(
+      title = tagList(icon("cogs"), tags$strong("Module and Tools Configuration Center")),
+      collapsible = FALSE,
+      width = 12,
+      # Enhanced description for better clarity
+      tags$div(
+        tags$p("Use the switches below to enable or disable features Changes will take effect immediately, and you can save your configuration for future sessions."),
+        tags$p(tags$em("Note:"), " Ensure you save your changes to retain them for future use.")
+      ),
+      hl(),
+      prettySwitch(
+        inputId = ns("enableall"),
+        label = "Enable all features",
+        status = "success",
+        fill = TRUE
+      ),
+      hl(),
+      fluidRow(
+        col_2(
+          h4("Feature"),
+        ),
+        col_5(
+          h4("Description"),
+        ),
+        col_3(
+          h4("Dependencies"),
+        ),
+        col_2(
+          h4("Check dependencies"),
+        )
+      ),
+      h5("Features"),
+      enable_module(mod_id = "cssloaders",
+                    mod_name = "cssloaders",
+                    description = "Add a loading animation (spinner) to outputs instead of greying them out",
+                    deps = "shinycssloaders",
+                    ns = ns),
+      enable_module(mod_id = "synckmaps",
+                    mod_name = "Synchronized Maps",
+                    description = "Enable synchronize the basemap (eg., RGB mosaic) with the index (eg., NDVI) layer.",
+                    deps = "leafsync",
+                    ns = ns),
+      enable_module(mod_id = "tidyterra",
+                    mod_name = "ggplot2-like plots for raster",
+                    description = "Enable the 'plot attribute' option in 'see as' dropdown menu of 'Evolution plot' in the 'Analyze' tab of time series module. This uses the tidyterra::geom_spatraster() to produce a ggplot2-like plot for the vegetation indexes.",
+                    deps = "tidyterra",
+                    ns = ns),
+      enable_module(mod_id = "introjs",
+                    mod_name = "Step-by-step introduction",
+                    description = "Enable step-by-step introductions, and clickable hints in the application",
+                    deps = "rintrojs",
+                    ns = ns),
+      enable_module(mod_id = "sparkline",
+                    mod_name = "Sparklines",
+                    description = "Include interactive sparkline charts at the bottom of a reactable output.",
+                    deps = "sparkline",
+                    ns = ns),
+      enable_module(mod_id = "overlayindex",
+                    mod_name = "Overlay Index and RGB",
+                    description = "Allows to overlay vegetation indexes above a true color (RGB) map in the 'Index' module.",
+                    deps = "leafem",
+                    ns = ns),
+
+      hl(),
+      actionButton(ns("save_btn"), label = tagList(icon("save"), "Save Settings"), class = "btn btn-primary"),
+      actionButton(ns("reset_btn"), label = tagList(icon("undo"), "Reset to default settings"), class = "btn btn-primary")
+    )
+  )
+}
+
+#' config Server Functions
+#'
+#' @noRd
+mod_config_server <- function(id, settings){
+  moduleServer( id, function(input, output, session){
+    ns <- session$ns
+    # Define paths: inst for default, user-specific for custom settings
+    inst_dir <- file.path(system.file(package = "plimanshiny"), "app/www")
+    settings_file_default <- file.path(inst_dir, "default_module_settings.rds")
+    # Create default settings (will be saved during package release)
+    default_settings <- list(cssloaders = FALSE,
+                             synckmaps = FALSE,
+                             tidyterra = FALSE,
+                             introjs = FALSE,
+                             sparkline = FALSE,
+                             license = FALSE,
+                             overlayindex = FALSE)
+    saveRDS(default_settings, settings_file_default)
+
+
+    # Path for user-specific settings
+    user_settings_dir <- tools::R_user_dir("plimanshiny", which = "config")
+    if (!dir.exists(user_settings_dir)) {
+      dir.create(user_settings_dir, recursive = TRUE)
+    }
+    settings_file_user <- file.path(user_settings_dir, "user_module_settings.rds")
+
+    # Load user settings if they exist, otherwise load default settings
+
+    if (file.exists(settings_file_user)) {
+      settings(readRDS(settings_file_user))
+    } else {
+      settings(readRDS(settings_file_default))
+    }
+
+
+    # load all
+    observeEvent(input$enableall, {
+      if (input$enableall) {
+        pkgs <- c("fields", "minpack.lm", "segmented", "magick", "shinycssloaders",
+                  "leafsync",  "tidyterra", "rintrojs",
+                  "sparkline", "leaflet.extras2", "lwgeom", "leafem", "terra")
+        check_and_install_dependencies(pkgs, ns, input, "enableall")
+        settings(lapply(default_settings, \(x){x = TRUE}))
+      }
+    })
+
+    # Update UI based on loaded settings
+    observe({
+      updatePrettySwitch(session = session, inputId = "cssloaders", value = settings()$cssloaders)
+      updatePrettySwitch(session = session, inputId = "synckmaps", value = settings()$synckmaps)
+      updatePrettySwitch(session = session, inputId = "tidyterra", value = settings()$tidyterra)
+      updatePrettySwitch(session = session, inputId = "introjs", value = settings()$introjs)
+      updatePrettySwitch(session = session, inputId = "sparkline", value = settings()$sparkline)
+      updatePrettySwitch(session = session, inputId = "overlayindex", value = settings()$overlayindex)
+    })
+
+    # Reactively save the settings whenever the switch is changed
+    observeEvent(input$save_btn, {
+      current_settings <- list(cssloaders = input$cssloaders,
+                               synckmaps = input$synckmaps,
+                               tidyterra = input$tidyterra,
+                               introjs = input$introjs,
+                               sparkline = input$sparkline,
+                               overlayindex = input$overlayindex,
+                               license = TRUE)
+      settings(current_settings)  # Update global reactive settings
+      saveRDS(current_settings, settings_file_user)
+      showNotification("Settings saved successfully! You may need to restart the app to apply changes.", type = "message")
+    })
+
+
+    observe_dependency("cssloaders", c("shinycssloaders"), ns, input)
+    observe_dependency("check_cssloaders", c("shinycssloaders"), ns, input)
+
+    observe_dependency("synckmaps", c("leafsync"), ns, input)
+    observe_dependency("check_synckmaps", c("leafsync"), ns, input)
+
+    observe_dependency("tidyterra", c("tidyterra"), ns, input)
+    observe_dependency("check_tidyterra", c("tidyterra"), ns, input)
+
+    observe_dependency("introjs", c("rintrojs"), ns, input)
+    observe_dependency("check_introjs", c("rintrojs"), ns, input)
+
+    observe_dependency("sparkline", c("sparkline"), ns, input)
+    observe_dependency("check_sparkline", c("sparkline"), ns, input)
+
+    observe_dependency("overlayindex", c("leafem"), ns, input)
+    observe_dependency("check_overlayindex", c("leafem"), ns, input)
+
+
+    # Option to reset to default settings
+    observeEvent(input$reset_btn, {
+      settings(readRDS(settings_file_default))  # Reset to default
+      # Remove the user-specific settings file, if it exists
+      if (file.exists(settings_file_user)) {
+        file.remove(settings_file_user)
+        showNotification("User-specific settings removed and reset to default!", type = "message")
+      } else {
+        showNotification("Settings reset to default!", type = "message")
+      }
+    })
+  })
+}
+
+## To be copied in the UI
+# mod_config_ui("config_1")
+
+## To be copied in the server
+# mod_config_server("config_1")

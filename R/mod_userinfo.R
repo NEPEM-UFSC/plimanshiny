@@ -1,0 +1,326 @@
+#' userinfo UI Function
+#'
+#' @description A shiny Module.
+#'
+#' @param id,input,output,session Internal parameters for {shiny}.
+#'
+#' @noRd
+#'
+#' @importFrom shiny NS tagList
+mod_userinfo_ui <- function(id) {
+  ns <- NS(id)
+  tagList()
+}
+
+#' userinfo Server Functions
+#'
+#' @noRd
+mod_userinfo_server <- function(id){
+  moduleServer(id, function(input, output, session){
+    ns <- session$ns
+    # Load country and region data
+    country_path <- system.file("app/www/country_data.rds", package = "plimanshiny", mustWork = FALSE)
+    mun_df <- readRDS(country_path)
+
+    user_dir <- tools::R_user_dir("plimanshiny", which = "config")
+    if (!dir.exists(user_dir)){
+      dir.create(user_dir, recursive = TRUE)
+    }
+    user_info_file <- file.path(user_dir, "user_info.rds")
+    user_info <- reactiveVal()
+
+    # Create modal UI with dynamic inputs
+    if (file.exists(user_info_file)) {
+      user_info(readRDS(user_info_file))
+    } else {
+      showModal(
+        modalDialog(
+          title = "Welcome to plimanshiny!",
+          h2("User information"),
+          fluidRow(
+            col_4(
+              textInput(ns("user_name"), label = tagList(icon("user"), "Name"), placeholder = "Enter your name")
+            ),
+            col_4(
+              textInput(ns("user_email"), label = tagList(icon("envelope"), "Email"), placeholder = "Enter a valid email")
+            ),
+            col_4(
+              textInput(ns("user_inst"), label = tagList(icon("university"), "Institution"), placeholder = "Enter your institution name")
+            )
+          ),
+          fluidRow(
+            col_4(
+              pickerInput(ns("country"),
+                          label = tagList(icon("globe"), "Country"),
+                          choices = c("", unique(mun_df$country_name)),
+                          selected = NA,
+                          options = list(
+                            `live-search` = TRUE
+                          ))
+            ),
+            col_4(
+              uiOutput(ns("region_ui"))
+            ),
+            col_4(
+              pickerInput(ns("user_type"),
+                          label = tagList(icon("user"), "User type"),
+                          choices = c(
+                            "",
+                            "Student (Undergraduate)",
+                            "Student (Graduate)",
+                            "Professor / Lecturer",
+                            "Researcher (Academic)",
+                            "Postdoctoral Fellow",
+                            "Technical Staff (University/Public Sector)",
+                            "Extension Professional",
+                            "Government Employee",
+                            "Private Consultant (Commercial)",
+                            "Company Representative (Commercial)",
+                            "Researcher (Commercial)",
+                            "Software Developer (Commercial)",
+                            "Other"
+                          ),
+                          selected = NULL)
+            )
+          ),
+          br(),
+          h4("Privacy and Data Protection"),
+          "Your personal data (name, email, and institution) are collected solely for internal use to improve the application and track non-commercial usage. ",
+          "These data will never be shared with third parties, sold, or used for any commercial or advertising purpose. ",
+          "All information is stored securely and treated with confidentiality.", br(),
+          footer = tagList(
+            fluidRow(
+              column(8, checkboxInput(ns("agree_terms"), "I agree with the terms and conditions", value = FALSE)),
+              column(4, align = "right", actionButton(ns("save_user_info"), "Submit informations", class = "btn btn-primary", disabled = TRUE))
+            )
+          ),
+          easyClose = FALSE,
+          size = "xl"
+        )
+      )
+    }
+
+    # Update region dropdown based on selected country
+    output$region_ui <- renderUI({
+      req(input$country)
+      choices <- c("", mun_df$subdivision_name[mun_df$country_name == input$country])
+      pickerInput(ns("region"),
+                  label = tagList(icon("map"), "Region / State"),
+                  choices = choices,
+                  selected = NULL,
+                  options = list(
+                    `live-search` = TRUE
+                  ))
+    })
+
+    observe({
+      shinyjs::toggleState(id = "save_user_info", condition = isTRUE(input$agree_terms))
+    })
+
+
+
+    observeEvent(input$save_user_info, {
+      # req(input$user_name, input$user_email, input$user_inst, input$country, input$region, input$user_type, input$agree_terms)
+
+      # Nome
+      if (is.null(input$user_name) || trimws(input$user_name) == "") {
+        show_alert(
+          title = "Missing name",
+          text = "Please enter your full name.",
+          type = "warning"
+        )
+        return()
+      }
+
+      # E-mail
+      if (is.null(input$user_email) || trimws(input$user_email) == "") {
+        show_alert(
+          title = "Missing email",
+          text = "Please enter your email address.",
+          type = "warning"
+        )
+        return()
+      }
+      if (!grepl("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$", input$user_email)) {
+        show_alert(
+          title = "Invalid email",
+          text = "Please enter a valid email address (e.g., yourname@example.com).",
+          type = "error"
+        )
+        return()
+      }
+
+      # Instituição
+      if (is.null(input$user_inst) || trimws(input$user_inst) == "") {
+        show_alert(
+          title = "Missing institution",
+          text = "Please enter your institution or organization.",
+          type = "warning"
+        )
+        return()
+      }
+
+      # País
+      if (is.null(input$country) || trimws(input$country) == "") {
+        show_alert(
+          title = "Missing country",
+          text = "Please select your country.",
+          type = "warning"
+        )
+        return()
+      }
+
+      # Região
+      if (is.null(input$region) || trimws(input$region) == "") {
+        show_alert(
+          title = "Missing region",
+          text = "Please select your region.",
+          type = "warning"
+        )
+        return()
+      }
+
+      # Tipo de usuário
+      if (is.null(input$user_type) || trimws(input$user_type) == "") {
+        show_alert(
+          title = "Missing user type",
+          text = "Please select your user type.",
+          type = "warning"
+        )
+        return()
+      }
+
+
+      info <- list(
+        name = input$user_name,
+        email = input$user_email,
+        institution = input$user_inst,
+        country = input$country,
+        region = input$region,
+        user_type = input$user_type,
+        token = generate_uuid(input$user_name, input$user_email),
+        appversion = "free",
+        os = .Platform$OS.type
+      )
+
+      # Mostrar mensagem de progresso
+      sendSweetAlert(
+        session = session,
+        title = "Registering your data",
+        text = "{plimanshiny} is sending your information. Please wait...",
+        type = "info",
+        btn_labels = NA
+      )
+
+      tryCatch({
+        resp <-
+          httr2::request("https://script.google.com/macros/s/AKfycbzO94Fqlp8xyyZ4Q4fbbMzpaP0fGcsaKAygwmsU_Y7dK-Lof6FpX9plvt2_5iAykaeH/exec") |>
+          httr2::req_method("POST") |>
+          httr2::req_headers(`Content-Type` = "application/json") |>
+          httr2::req_body_json(info) |>
+          httr2::req_options(followlocation = FALSE) |>
+          httr2::req_perform()
+
+        status <- httr2::resp_status(resp)
+        if (status >= 200 && status < 400) {
+          closeSweetAlert(session = session)
+          removeModal()
+          saveRDS(info, user_info_file)
+          user_info(info)
+          if (grepl("\\(Commercial\\)", input$user_type)) {
+            content <- tags$span(
+              tags$h1(icon("triangle-exclamation"), "Information Saved (License Warning)", style = "color: darkorange;"),
+              tags$p(
+                icon("circle-check", style = "color: green;"),
+                tags$b("Your information has been successfully saved."),
+                " Enjoy using plimanshiny!"
+              ),
+              tags$p(
+                icon("lock"), tags$b("IMPORTANT:"),
+                " Please note that ", tags$span("{plimanshiny}"), " is provided exclusively for ",
+                tags$span(style = "font-weight: bold; color: darkred;", "non-commercial use only.")
+              ),
+              tags$p(
+                "If you intend to use this software for commercial purposes or business gain, explicit permission and a commercial license are required. Please contact us at:"
+              ),
+              tags$p(
+                icon("envelope"), tags$b("E-mail:"),
+                tags$a(href="mailto:contato@nepemufsc.com", "contato@nepemufsc.com")
+              )
+            )
+            show_alert(
+              title = NULL,
+              text = div(content, style = "text-align: left; line-height: 1.5"),
+              html = TRUE,
+              type = "warning", # Mantém a cor de fundo do alerta como Warning (Laranja)
+              width = 1080
+            )
+          } else {
+            show_alert(
+              title = "All set!",
+              text = "Your information has been successfully saved. Enjoy using plimanshiny!",
+              type = "success"
+            )
+          }
+        } else {
+          closeSweetAlert(session = session)
+          title_alert <- "Registration Failure (Unexpected Server Status)"
+          technical_detail <- sprintf("The server returned HTTP Status Code: %s.", status)
+
+          # 3. Construir o conteúdo HTML formatado
+          content <- tags$span(
+            tags$h1(icon("server"), "Server Status Error", style = "color: darkorange;"),
+            tags$p("The server processed the request but returned an unexpected status code. This prevents the application from confirming your successful registration."),
+            tags$h4("Details & Suggested Actions:", style = "color: #333; margin-top: 15px;"),
+            icon("circle-exclamation"), tags$b("Status Returned:"), tags$span(technical_detail), tags$br(),
+            icon("bug"), tags$b("Possible Cause:"), tags$span("internal server error, or an unexpected network response."), tags$br(),
+            tags$h4("Next Steps:", style = "color: #333; margin-top: 15px;"),
+            tags$ul(
+              tags$li(
+                tags$b("Check Firewall/Proxy:"),
+                " Ensure that your network is not interfering with the server's response path."
+              ),
+              tags$li(tags$b("Try Again:"), "If the status is a temporary error (like 500), try submitting your information again in a few minutes.")
+            )
+          )
+
+          show_alert(
+            title = NULL,
+            text = div(content, style = "text-align: left; line-height: 1.2"),
+            html = TRUE,
+            width = 1080
+          )
+        }
+      }, error = function(e) {
+        closeSweetAlert(session = session)
+        technical_error_raw <- conditionMessage(e)
+        technical_error_clean <- gsub("\033\\[[0-9;]*m", "", technical_error_raw)
+
+        content <- tags$span(
+          tags$h1(icon("unlink"), "Connection Failure", style = "color: firebrick;"),
+          tags$p("Failed to send data to the registration server. This indicates a low-level network failure."),
+          tags$h4("Possible Causes & Details:", style = "color: #333; margin-top: 15px;"),
+          icon("circle-exclamation"), tags$b("Technical Error:"), tags$span(technical_error_clean), tags$br(),
+          icon("triangle-exclamation"), tags$b("Status:"), tags$span(" Network failure, Timeout, or Host Unresolved."), tags$br(),
+          tags$h4("Suggested Actions to Resolve:", style = "color: #333; margin-top: 15px;"),
+          tags$ul(
+            tags$li(tags$b("Check Connection:"), " Ensure your internet connection is stable."),
+            tags$li(
+              tags$b("Proxy/Firewall Block:"),
+              " If you are on a restricted network (corporate/university), a firewall or proxy server might be blocking ",
+              tags$code("POST"), " requests.",
+            ),
+            tags$li(tags$b("Try Later:"), " The server might be temporarily unavailable. Please try submitting again in a few minutes.")
+          )
+        )
+        show_alert(
+          title = NULL,
+          text = div(content, style = "text-align: left; line-height: 1.2"),
+          html = TRUE,
+          width = 1080
+        )
+      })
+    })
+    return(user_info)
+  })
+}

@@ -1,0 +1,61 @@
+Package: plimanshiny
+Title: A shiny app for the pliman package
+Version: 0.7.0
+Authors@R: 
+    person("Tiago", "Olivoto", , "tiagoolivoto@gmail.com", role = c("aut", "cre"))
+Description: Provides an interactive Shiny-based graphical user interface
+    for the 'pliman' package, enabling user-friendly access to advanced
+    plant image analysis tools without requiring extensive programming
+    expertise. The application integrates functionalities for
+    high-throughput phenotyping, including orthomosaic analysis from drone
+    and satellite imagery, shapefile creation and management, image
+    processing, and phytopathometry.
+License: file LICENSE
+URL: https://github.com/NEPEM-UFSC/plimanshiny
+BugReports: https://github.com/NEPEM-UFSC/plimanshiny/issues
+Depends: 
+    R (>= 4.1)
+Imports: 
+    bs4Dash,
+    config (>= 0.3.2),
+    datamods,
+    dplyr,
+    esquisse,
+    ggplot2,
+    glue,
+    golem (>= 0.4.1),
+    graphics,
+    grDevices,
+    httr2,
+    leaflet,
+    mapedit,
+    mapview (>= 2.11.2),
+    mirai,
+    pak,
+    parallel,
+    pliman (>= 3.1.1),
+    plotly,
+    purrr,
+    reactable,
+    rlang,
+    scales,
+    sf,
+    shiny (>= 1.7.5.1),
+    shinyFiles,
+    shinyjs,
+    shinyWidgets,
+    terra,
+    tidyr,
+    utils,
+    waiter
+Suggests:
+    leafem,
+    leaflet.extras2,
+    leafsync,
+    rintrojs,
+    shinycssloaders,
+    sparkline,
+    tidyterra
+Config/testthat/edition: 3
+Encoding: UTF-8
+RoxygenNote: 7.3.3

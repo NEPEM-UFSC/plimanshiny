@@ -1,0 +1,594 @@
+#' mosaic_prepare UI Function
+#'
+#' @description A shiny Module.
+#'
+#' @param id,input,output,session Internal parameters for {shiny}.
+#'
+#' @noRd
+#'
+#' @importFrom shiny NS tagList
+#' @importFrom utils read.csv
+mod_mosaic_prepare_ui <- function(id){
+  ns <- NS(id)
+  fluidRow(
+    col_3(
+      bs4TabCard(
+        id = "tabs",
+        width = 12,
+        status = "success",
+        title = "Settings",
+        selected = "Input",
+        solidHeader = FALSE,
+        type = "tabs",
+        tabPanel(
+          title = "Input",
+          width = 12,
+          status = "success",
+          fluidRow(
+            col_4(
+              conditionalPanel(
+                condition = "input['config_1-introjs'] === true",
+                actionButton(
+                  inputId = ns("guidemosaic"),
+                  label = tagList(
+                    icon = icon("question-circle", verify_fa = FALSE), "Guide"
+                  ),
+                  style = "color: white ; background-color: #dd4b39",
+                  class = "btn-danger"
+                )
+              )
+            ),
+            col_3(
+              dropdown(
+                tags$h3("Settings"),
+                fluidRow(
+                  col_3(
+                    selectInput(
+                      inputId = ns("r_band"),
+                      label = "R",
+                      choices = 1:5,
+                      selected = 1
+                    )
+                  ),
+                  col_3(
+                    selectInput(
+                      inputId = ns("g_band"),
+                      label = "G",
+                      choices = 1:5,
+                      selected = 2,
+                    )
+                  ),
+                  col_3(
+                    selectInput(
+                      inputId = ns("b_band"),
+                      label = "B",
+                      choices = 1:5,
+                      selected = 3,
+                    )
+                  ),
+                  col_3(
+                    selectInput(
+                      inputId = ns("re_band"),
+                      label = "RE",
+                      choices = NA
+                    )
+                  )
+                ),
+                fluidRow(
+                  col_4(
+                    selectInput(
+                      inputId = ns("nir_band"),
+                      label = "NIR",
+                      choices = NA
+                    )
+                  ),
+                  col_4(
+                    selectInput(
+                      inputId = ns("swir_band"),
+                      label = "SWIR",
+                      choices = NA
+                    )
+                  ),
+                  col_4(
+                    selectInput(
+                      inputId = ns("tir_band"),
+                      label = "TIR",
+                      choices = NA
+                    )
+                  )
+                ),
+                sliderInput(ns("quantileplot"),
+                            label = "Quantiles",
+                            min = 0,
+                            max = 1,
+                            value = c(0, 1),
+                            step = 0.001),
+                numericInput(ns("maxpixels"),
+                             label = "Maximum Pixels",
+                             value = 1e6),
+                actionBttn(
+                  ns("donebands"),
+                  label = "Done",
+                  no_outline = FALSE,
+                  icon = icon("check"),
+                  color = "success"
+                ),
+                circle = FALSE,
+                status = "success",
+                style = "unite",
+                width = "550px",
+                icon = icon("gear"),
+                animate = animateOptions(enter = "fadeInLeft", exit = "fadeOutRight", duration = 1),
+                tooltip = tooltipOptions(title = "Configure the bands")
+              ) |>
+                add_help(step = 1,
+                         intro = "Here, the bands are configured. You can configure up
+                       to 7 layers and also define the maximum number of pixels to be rendered in the basemap.")
+            ),
+            col_5(
+              actionButton(
+                inputId = ns("mosaicinfomosaic"),
+                label = tagList(
+                  icon = icon("circle-info", verify_fa = FALSE), "Mosaic Info"
+                ),
+                status = "info"
+              ) |> add_help(step = 2,
+                            intro = "Here, you can see the information about the mosaic.")
+            )
+          ),
+          hl(),
+          awesomeRadio(
+            inputId = ns("inputrastertype"),
+            label = "Entry method",
+            choices = c("load rasters", "example raster"),
+            selected = "load rasters",
+            status = "success",
+            inline = TRUE
+          ),
+          conditionalPanel(
+            condition = "input.inputrastertype == 'load rasters'", ns = ns,
+            add_help(
+              shinyFilesButton(id=ns("filemosaic"),
+                               label="Raster file(s)",
+                               title="Raster file(s)",
+                               buttonType = "primary",
+                               multiple = TRUE,
+                               class = NULL,
+                               icon = icon("magnifying-glass"),
+                               style = NULL),
+              fluidRow(
+                textInput(
+                  ns("filemosaicpath"),
+                  label = "Choosen file(s)",
+                  value = "",
+                  width = "100%"
+                )
+              ),
+              step = 3,
+              intro = "Search by rasters files to be imported."),
+            conditionalPanel(
+              condition = "input.filemosaicpath != ''", ns = ns,
+              fluidRow(
+                actionBttn(ns("importmosaic"),
+                           label = "Import the choosen file(s)",
+                           no_outline = FALSE,
+                           icon = icon("file-import"),
+                           style = "material-flat",
+                           color = "primary")
+              )
+            )
+          ),
+          hl(),
+          strong("Manage Rasters"),
+          fluidRow(
+            actionBttn(
+              ns("removeone"),
+              label = "Remove active",
+              icon = icon("trash-can"),
+              style = "material-flat",
+              color = "danger"
+            ),
+            actionBttn(
+              ns("removeall"),
+              label = "Remove all",
+              icon = icon("trash"),
+              style = "material-flat",
+              color = "danger"
+            )
+          ),
+          hl(),
+          selectInput(ns("mosaictoanalyze"),
+                      label = "Active Mosaic",
+                      choices = NULL) |>
+            add_help(step = 4,
+                     intro = "Here you can define which raster file is active.
+                   It will define the basemap for further modules"),
+          add_help(
+            fluidRow(
+              col_6(
+                awesomeRadio(
+                  inputId = ns("showmosaic"),
+                  label = "Show",
+                  choices = c("rgb", "bands", "hist"),
+                  selected = "rgb",
+                  inline = FALSE
+                )
+              ),
+              col_6(
+                selectInput(
+                  ns("stretch"),
+                  label = "Stretch",
+                  choices = c("none", "lin", "hist")
+                )
+              )
+            ),
+            step = 5,
+            intro = "Choose how to display the mosaic. You can select the display
+            mode (RGB, individual bands, or histogram) and apply optional stretch
+            techniques to enhance the image visualization."
+          ),
+          prettyCheckbox(
+            inputId = ns("showlegend"),
+            label = "Show plot legend?",
+            value = FALSE,
+            icon = icon("check"),
+            status = "success",
+            animation = "rotate"
+          ) |>
+            add_help(step = 6,
+                     intro = "Enable this option to display the legend.
+                     To crop the raster accurately, disable this option to
+                     ensure the canvas area matches the raster's extents
+                     without additional padding."),
+          hl(),
+          selectInput(ns("howtoplot"),
+                      label = "How to plot",
+                      choices = NULL)
+        ),
+        tabPanel(
+          title = "Download",
+          mod_download_mosaic_ui(ns("downloadmosaic")) |>
+            add_help(step = 8,
+                     intro = "Download the active mosaic.")
+        )
+      )
+    ),
+    col_9(
+      bs4Card(
+        width = 12,
+        height = "760px",
+        title = "Leaflet view",
+        color = "success",
+        status = "success",
+        maximizable = TRUE,
+        leafletOutput(ns("mosaic_mapview"), height = "740px") |> add_spinner()
+      )
+    )
+  )
+}
+
+#' mosaic_prepare Server Functions
+#'
+#' @noRd
+mod_mosaic_prepare_server <- function(id, mosaic_data, r, g, b, re, nir, swir, tir, basemap, pathmosaic, quantiles, maxpixel, activemosaic, zlim, settings) {
+  moduleServer(id, function(input, output, session) {
+    ns <- session$ns
+
+    observeEvent(input$guidemosaic,
+                 if(read_pars()$introjs){
+                   rintrojs::introjs(session,
+                                     options = list("nextLabel"="Next",
+                                                    "prevLabel"="Previous",
+                                                    "skipLabel"="Skip"),
+                                     events = list("oncomplete"=I('alert("Hope it helped!")')))
+                 }
+    )
+    slider_range <- reactiveVal()
+
+    # GUIA
+
+    observeEvent(input$donebands, {
+      # Update reactiveValues for color bands
+      r$r <- input$r_band |> as.numeric()
+      g$g <- input$g_band |> as.numeric()
+      b$b <- input$b_band |> as.numeric()
+      re$re <- input$re_band |> as.numeric()
+      nir$nir <- input$nir_band |> as.numeric()
+      swir$swir <- input$swir_band |> as.numeric()
+      tir$tir <- input$tir_band |> as.numeric()
+      quantiles$q <- input$quantileplot
+      maxpixel$mp <- input$maxpixels
+      if(!input$useminmax){
+        zlim$zlim <- NULL
+      }
+      showNotification(
+        ui = "Configuring the layers and re-building the basemap. Please, wait!",
+        type = "message",
+        duration = NULL,   # Infinite duration until manually removed
+        id = "rebuilding"
+      )
+    })
+
+
+    input_file_selected <- reactiveValues(paths = NULL)
+    observe({
+      shinyFileChoose(input, "filemosaic",
+                      root = getVolumes()(),
+                      filetypes = c('tif', 'jp2', 'tiff', 'jpeg', "dat", "jpg"),
+                      session = session)
+      if(!is.null(input$filemosaic)){
+        input_file_selected$paths <- parseFilePaths(getVolumes()(), input$filemosaic)
+        if(length(input_file_selected$paths$datapath) != 0){
+          updateTextInput(session, "filemosaicpath", value = paste0(input_file_selected$paths$datapath, collapse = ", "))
+        }
+      }
+    })
+    observeEvent(input$importmosaic, {
+      if(length(input_file_selected$paths$datapath) != 0){
+        new_mosaic_name <- sapply(input_file_selected$paths$datapath, file_name)
+        pathmosaic$path <- input_file_selected$paths$datapath
+        # Check if the mosaic already exists in mosaic_data
+        if (any(new_mosaic_name %in% names(mosaic_data))) {
+          # If it exists, update the existing reactiveValues
+          moname <- new_mosaic_name[new_mosaic_name %in% names(mosaic_data)]
+          ask_confirmation(
+            inputId = "confirmmosaicname",
+            type = "warning",
+            title = "Mosaic already imported",
+            text = paste0("The object '", paste0(moname, collapse = ", "), "' is already available in the list of imported mosaics. Do you really want to overwrite it?"),
+            btn_labels = c("Nope", "Yep"),
+            btn_colors = c("#FE642E", "#04B404")
+          )
+          observe({
+            if (!is.null(input$confirmmosaicname)) {
+              if (input$confirmmosaicname) {
+                for (i in 1:length(new_mosaic_name)) {
+                  mosaic_data[[new_mosaic_name[[i]]]] <- create_reactval(new_mosaic_name[[i]], mosaic_input(input_file_selected$paths$datapath[[i]], info = FALSE))
+                }
+              } else {
+                return()
+              }
+            }
+          })
+        } else {
+          # If it doesn't exist, create a new reactiveValues and add it to mosaic_data
+          for (i in 1:length(new_mosaic_name)) {
+            mosaic_data[[new_mosaic_name[[i]]]] <- create_reactval(new_mosaic_name[[i]], mosaic_input(input_file_selected$paths$datapath[[i]], info = FALSE))
+          }
+        }
+
+
+        observe({
+          mosaicnames <-  setdiff(names(mosaic_data), "mosaic")
+          if ("mosaic" %in% mosaicnames) {
+            sendSweetAlert(
+              session = session,
+              title = "Reserved name used",
+              text = "'mosaic' is a reserved name and is strongly suggested to not use this name for files. It may be omitted in some dropdown menus.",
+              type = "warning"
+            )
+          }
+
+        })
+      }
+    })
+
+    # if example mosaic is used
+    # mosaic provided by Arthur Bernardeli https://www.linkedin.com/in/arthur-bernardeli-5a1a0b5a/
+    observeEvent(input$inputrastertype, {
+      if(input$inputrastertype == "example raster"){
+        filepath <- file.path(system.file(package = "plimanshiny"), "app/www/soy_ortho.tif")
+        mosaic_data[["example_raster"]] <- create_reactval("example_raster", mosaic_input(filepath, info = FALSE))
+      }
+    })
+
+    observe({
+      current_names <- names(Filter(Negate(is.null), reactiveValuesToList(mosaic_data)))
+      mosaicnames <- setdiff(current_names, "mosaic")
+      if (length(mosaicnames) == 0) {
+        updateSelectInput(session, "mosaictoanalyze", choices = "")
+        return()
+      } else{
+        current <- isolate(input$mosaictoanalyze)
+        new_sel <- if (current %in% mosaicnames) current else mosaicnames[[1]]
+        updateSelectInput(session, "mosaictoanalyze",
+                          choices  = mosaicnames,
+                          selected = new_sel
+        )
+      }
+    })
+
+    observeEvent(input$removeone, {
+      req(input$mosaictoanalyze)
+      confirmSweetAlert(
+        session = session,
+        inputId = ns("confirm_remove_one"),
+        title = "Remove active raster?",
+        text = paste0("Are you sure you want to remove the '", input$mosaictoanalyze, "' raster? This action cannot be undone."),
+        type = "warning",
+        btn_labels = c("Cancel", "Yes, remove it!"),
+        btn_colors = c("#d33", "#3085d6")
+      )
+    })
+    # Observer for the confirmation callback
+    observeEvent(input$confirm_remove_one, {
+      if (isTRUE(input$confirm_remove_one)) {
+        mosaic_data[[input$mosaictoanalyze]] <- NULL
+        show_toast("Success", "Raster removed", timer = 3000)
+      }
+    }, ignoreNULL = TRUE)
+
+
+    # >> New: Remove all datasets ----
+    observeEvent(input$removeall, {
+      # Require at least one dataset to exist
+      req(names(mosaic_data))
+      confirmSweetAlert(
+        session = session,
+        inputId = ns("confirm_remove_all"),
+        title = "Remove all rasters?",
+        text = "Are you sure you want to remove all raster files? This action cannot be undone.",
+        type = "error",
+        btn_labels = c("Cancel", "Yes, remove all!"),
+        btn_colors = c("#d33", "#3085d6")
+      )
+    })
+    # Observer for the confirmation callback
+    observeEvent(input$confirm_remove_all, {
+      if (isTRUE(input$confirm_remove_all)) {
+        # Loop through names and NULL them out
+        for(name in names(mosaic_data)){
+          mosaic_data[[name]] <- NULL
+        }
+        show_toast("Success", "All rasters have been removed", timer = 3000)
+      }
+    }, ignoreNULL = TRUE)
+
+
+
+
+    observe({
+      req(input$mosaictoanalyze)
+      req(mosaic_data[[input$mosaictoanalyze]])
+      activemosaic$name <- input$mosaictoanalyze
+      mosaic_data[["mosaic"]] <- create_reactval("mosaic", mosaic_data[[input$mosaictoanalyze]]$data)
+      nl <- terra::nlyr(mosaic_data[[input$mosaictoanalyze]]$data)
+      updateSelectInput(session, "r_band",
+                        choices = paste0(c("NA", paste(1:nl))),
+                        selected = "1")
+      updateSelectInput(session, "g_band",
+                        choices = paste0(c("NA", paste(1:nl))),
+                        selected = ifelse(nl > 1, "2", "NA"))
+      updateSelectInput(session, "b_band",
+                        choices = paste0(c("NA", paste(1:nl))),
+                        selected = ifelse(nl > 2, "3", "NA"))
+      updateSelectInput(session, "re_band",
+                        choices = paste0(c("NA", paste(1:nl))))
+      updateSelectInput(session, "nir_band",
+                        choices = paste0(c("NA", paste(1:nl))))
+      updateSelectInput(session, "swir_band",
+                        choices = paste0(c("NA", paste(1:nl))))
+      updateSelectInput(session, "tir_band",
+                        choices = paste0(c("NA", paste(1:nl))))
+    })
+
+    observe({
+      # Check if a mosaic is selected
+      req(input$mosaictoanalyze)
+      showNotification(
+        ui = "Importing the mosaic and generating the basemap. Please, wait!",
+        type = "message",
+        duration = NULL,   # Infinite duration until manually removed
+        id = "importmosaic"
+      )
+      updateSelectInput(session, "howtoplot",
+                        choices = c("RGB", names(mosaic_data[[input$mosaictoanalyze]]$data)))
+    })
+    observe({
+      req(input$mosaictoanalyze)
+      req(mosaic_data[[input$mosaictoanalyze]])
+      crsmo <- terra::crs(mosaic_data[[input$mosaictoanalyze]]$data) != ""
+      if(crsmo && terra::is.lonlat(mosaic_data[[input$mosaictoanalyze]]$data)){
+        eps <- mosaic_epsg(mosaic_data[[input$mosaictoanalyze]]$data)
+        text <- paste0("The current raster is in the lat/lon coordinate system, which may result in processing errors when trying to segment individuals in the `mosaic_analyze()` function. It is highly suggested to reproject the raster using mosaic_project() with ", eps)
+        show_alert("CRS is on Lon/Lat format.",
+                   text = text,
+                   type = "warning")
+      }
+    })
+    observeEvent(input$mosaicinfomosaic, {
+      req(input$mosaictoanalyze)
+      req(mosaic_data[[input$mosaictoanalyze]]$data)
+      mosaic_info(mosaic_data[[input$mosaictoanalyze]]$data)
+    })
+
+
+    observeEvent(input$useminmax, {
+      if(input$useminmax){
+        req(input$mosaictoanalyze)
+        req(mosaic_data[[input$mosaictoanalyze]]$data)
+        samplebands <- na.omit(c(suppressWarnings(as.numeric(r$r)), suppressWarnings(as.numeric(g$g)), suppressWarnings(as.numeric(b$b))))
+        vals <- terra::spatSample(mosaic_data[[input$mosaictoanalyze]]$data[[samplebands]], 2000)
+        slider_range <- mod_histo_slider_server("historaster", data_reactive = reactiveVal(as.numeric(as.matrix(vals))))
+
+        observeEvent(input$donebands, {
+          if(!input$useminmax){
+            zlim$zlim <- NULL
+          } else{
+            zlim$zlim <- c(slider_range()$min, slider_range()$max)
+          }
+        })
+      }
+    })
+
+
+    output$mosaic_plot <- renderPlot({
+      req(input$mosaictoanalyze)
+      if (input$showmosaic == "bands") {
+        terra::plot(mosaic_data[[input$mosaictoanalyze]]$data)
+      }
+      if(input$showmosaic == "hist"){
+        terra::hist(mosaic_data[[input$mosaictoanalyze]]$data)
+      }
+      removeNotification(id = "importmosaic")
+      removeNotification(id = "rebuilding")
+    })
+
+
+
+    removeNotification(id = "rebuilding")
+
+    #
+    observe({
+        req(input$mosaictoanalyze)
+        req(input$howtoplot)
+        if(input$howtoplot == "RGB"){
+          if(nlyr(mosaic_data[[input$mosaictoanalyze]]$data) >= 3){
+            bmtmp <- mosaic_view(
+              mosaic_data[[input$mosaictoanalyze]]$data,
+              r = ifelse(is.na(r$r), 1, suppressWarnings(as.numeric(r$r))),
+              g = ifelse(is.na(g$g), 2, suppressWarnings(as.numeric(g$g))),
+              b = ifelse(is.na(b$b), 3, suppressWarnings(as.numeric(b$b))),
+              quantiles = quantiles$q,
+              max_pixels = maxpixel$mp
+            )
+          } else{
+            show_alert("Ops, too few bands",
+                       text = "The current mosaic has too few bands and an RGB image cannot be rendered. Plotting the first layer of the raster image. Change `Show` to `bands` to choose which band to plot.",
+                       type = "warning")
+            bmtmp <- mosaic_view(
+              mosaic_data[[input$mosaictoanalyze]]$data[[1]],
+              color_regions  = scales::brewer_pal(palette = "RdYlGn")(8),
+              max_pixels = maxpixel$mp,
+              na.color = "transparent"
+            )
+          }
+
+        } else{
+          bmtmp <-
+            mosaic_view(mosaic_data[[input$mosaictoanalyze]]$data[input$howtoplot],
+                        show = "index",
+                        color_regions  = scales::brewer_pal(palette = "RdYlGn")(8),
+                        max_pixels = maxpixel$mp,
+                        na.color = "transparent")
+        }
+
+        basemap$map <- bmtmp
+        output$mosaic_mapview <- renderLeaflet({
+          req(bmtmp)
+          removeNotification(id = "importmosaic")
+          removeNotification(id = "rebuilding")
+          bmtmp@map
+        })
+    })
+
+    mod_download_mosaic_server("downloadmosaic", mosaic_data[["mosaic"]]$data)
+  })
+}
+
+
+## To be copied in the UI
+# mod_mosaic_prepare_ui("mosaic_prepare_1")
+
+## To be copied in the server
+# mod_mosaic_prepare_server("mosaic_prepare_1")
