@@ -214,7 +214,7 @@ mod_userinfo_server <- function(id){
 
       tryCatch({
         resp <-
-          httr2::request("https://script.google.com/macros/s/AKfycbzO94Fqlp8xyyZ4Q4fbbMzpaP0fGcsaKAygwmsU_Y7dK-Lof6FpX9plvt2_5iAykaeH/exec") |>
+          httr2::request("https://script.google.com/macros/s/AKfycbzf2apTP3s59J8OXI2c7BPIimHg_b26qtSlOp9UxuFYsOWHTNgO-Xj_dM-s_M42WUY/exec") |>
           httr2::req_method("POST") |>
           httr2::req_headers(`Content-Type` = "application/json") |>
           httr2::req_body_json(info) |>
