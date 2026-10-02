@@ -421,13 +421,24 @@ read_pars <- function(){
   user_settings_dir <- tools::R_user_dir("plimanshiny", which = "config")
   settings_file_user <- file.path(user_settings_dir, "user_module_settings.rds")
   if (file.exists(settings_file_user)) {
-    pars <- readRDS(settings_file_user)
-  } else {
-    inst_dir <- file.path(system.file(package = "plimanshiny"), "app/www")
-    settings_file_default <- file.path(inst_dir, "default_module_settings.rds")
-    pars <- readRDS(settings_file_default)
+    pars <- tryCatch(readRDS(settings_file_user), error = function(e) NULL)
+    if (!is.null(pars)) return(pars)
   }
-  return(pars)
+  inst_dir <- file.path(system.file(package = "plimanshiny"), "app/www")
+  settings_file_default <- file.path(inst_dir, "default_module_settings.rds")
+  if (file.exists(settings_file_default)) {
+    pars <- tryCatch(readRDS(settings_file_default), error = function(e) NULL)
+    if (!is.null(pars)) return(pars)
+  }
+  return(list(
+    cssloaders = FALSE,
+    synckmaps = FALSE,
+    tidyterra = FALSE,
+    introjs = FALSE,
+    sparkline = FALSE,
+    license = FALSE,
+    overlayindex = FALSE
+  ))
 }
 
 add_spinner <- function(x, type = 4, color = "#28a745") {

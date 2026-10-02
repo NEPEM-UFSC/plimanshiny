@@ -89,7 +89,6 @@ mod_config_server <- function(id, settings){
     # Define paths: inst for default, user-specific for custom settings
     inst_dir <- file.path(system.file(package = "plimanshiny"), "app/www")
     settings_file_default <- file.path(inst_dir, "default_module_settings.rds")
-    # Create default settings (will be saved during package release)
     default_settings <- list(cssloaders = FALSE,
                              synckmaps = FALSE,
                              tidyterra = FALSE,
@@ -97,8 +96,6 @@ mod_config_server <- function(id, settings){
                              sparkline = FALSE,
                              license = FALSE,
                              overlayindex = FALSE)
-    saveRDS(default_settings, settings_file_default)
-
 
     # Path for user-specific settings
     user_settings_dir <- tools::R_user_dir("plimanshiny", which = "config")
@@ -108,11 +105,22 @@ mod_config_server <- function(id, settings){
     settings_file_user <- file.path(user_settings_dir, "user_module_settings.rds")
 
     # Load user settings if they exist, otherwise load default settings
-
     if (file.exists(settings_file_user)) {
-      settings(readRDS(settings_file_user))
+      user_pars <- tryCatch(readRDS(settings_file_user), error = function(e) NULL)
+      if (!is.null(user_pars)) {
+        settings(user_pars)
+      } else {
+        settings(default_settings)
+      }
+    } else if (file.exists(settings_file_default)) {
+      def_pars <- tryCatch(readRDS(settings_file_default), error = function(e) NULL)
+      if (!is.null(def_pars)) {
+        settings(def_pars)
+      } else {
+        settings(default_settings)
+      }
     } else {
-      settings(readRDS(settings_file_default))
+      settings(default_settings)
     }
 
 
@@ -173,7 +181,12 @@ mod_config_server <- function(id, settings){
 
     # Option to reset to default settings
     observeEvent(input$reset_btn, {
-      settings(readRDS(settings_file_default))  # Reset to default
+      if (file.exists(settings_file_default)) {
+        def_pars <- tryCatch(readRDS(settings_file_default), error = function(e) default_settings)
+      } else {
+        def_pars <- default_settings
+      }
+      settings(def_pars)  # Reset to default
       # Remove the user-specific settings file, if it exists
       if (file.exists(settings_file_user)) {
         file.remove(settings_file_user)
